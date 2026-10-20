@@ -157,6 +157,17 @@ final class Tokens {
 		return (int) $row['booking_id'];
 	}
 
+	/**
+	 * Emite un CSRF nuevo para una sesión válida (por ejemplo, al recargar el portal).
+	 * La cookie es SameSite=Strict, así que otro sitio no puede leer esta respuesta con ella.
+	 */
+	public static function rotateCsrf( string $session ): string {
+		$csrf = bin2hex( random_bytes( 32 ) );
+		$wpdb = Db::wpdb();
+		$wpdb->query( $wpdb->prepare( 'UPDATE ' . Schema::table( 'portal_sessions' ) . ' SET csrf_hash = %s WHERE session_hash = %s', self::hash( $csrf ), self::hash( $session ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $csrf;
+	}
+
 	public static function endSession( ?string $session ): void {
 		if ( ! $session ) {
 			return;

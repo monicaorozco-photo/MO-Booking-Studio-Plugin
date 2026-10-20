@@ -252,7 +252,7 @@ final class Schedules {
 			try {
 				self::assertDate( $m[1] );
 				$windows = array();
-				foreach ( preg_split( '/\s*[,;y]\s+|\s*[,;]\s*/u', trim( $m[2] ) ) as $chunk ) {
+				foreach ( preg_split( '/\s*[,;]\s*|\s+y\s+/u', trim( $m[2] ) ) as $chunk ) {
 					if ( ! preg_match( '/^(\d{1,2}:\d{2})\s*(?:-|–|a)\s*(\d{1,2}:\d{2})$/u', trim( $chunk ), $t ) ) {
 						throw new DomainException( 'invalid_time', sprintf( 'no se entiende "%s"; usa 13:00-15:30.', trim( $chunk ) ) );
 					}

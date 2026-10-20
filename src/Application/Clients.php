@@ -82,7 +82,8 @@ final class Clients {
 		if ( '' === $name ) {
 			throw new DomainException( 'invalid_client', 'El cliente necesita un nombre.' );
 		}
-		$country = in_array( strtoupper( (string) ( $data['phone_country'] ?? 'MX' ) ), array( 'MX', 'US' ), true ) ? strtoupper( (string) $data['phone_country'] ) : 'MX';
+		$country = strtoupper( (string) ( $data['phone_country'] ?? 'MX' ) );
+		$country = in_array( $country, array( 'MX', 'US' ), true ) ? $country : 'MX';
 		$now     = Db::toSql( Plugin::clock()->now() );
 		$wpdb    = Db::wpdb();
 		Db::check(
@@ -122,7 +123,8 @@ final class Clients {
 		if ( '' === $name ) {
 			throw new DomainException( 'invalid_client', 'El cliente necesita un nombre.' );
 		}
-		$country = in_array( strtoupper( (string) ( $data['phone_country'] ?? $client['phone_country'] ) ), array( 'MX', 'US' ), true ) ? strtoupper( (string) ( $data['phone_country'] ?? $client['phone_country'] ) ) : 'MX';
+		$country = strtoupper( (string) ( $data['phone_country'] ?? $client['phone_country'] ) );
+		$country = in_array( $country, array( 'MX', 'US' ), true ) ? $country : 'MX';
 		$phone   = trim( (string) ( $data['phone'] ?? $client['phone'] ) );
 		$email   = trim( (string) ( $data['email'] ?? $client['email'] ) );
 		$row     = array(

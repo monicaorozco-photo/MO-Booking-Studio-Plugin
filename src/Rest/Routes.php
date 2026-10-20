@@ -24,6 +24,7 @@ final class Routes {
 	public function register(): void {
 		add_action( 'rest_api_init', array( $this, 'routes' ) );
 		add_filter( 'rest_post_dispatch', array( $this, 'headers' ), 10, 3 );
+		add_filter( 'rest_pre_serve_request', array( $this, 'noCors' ), 20, 3 );
 	}
 
 	public function routes(): void {
@@ -65,6 +66,18 @@ final class Routes {
 			$response->header( 'X-Robots-Tag', 'noindex, nofollow' );
 		}
 		return $response;
+	}
+
+	/**
+	 * WordPress refleja el origen en las cabeceras CORS. Las rutas del plugin solo se usan
+	 * desde el propio sitio, así que se retiran para no permitir lecturas desde otros orígenes.
+	 */
+	public function noCors( $served, $result, $request ) {
+		if ( 0 === strpos( (string) $request->get_route(), '/' . self::NS ) && ! headers_sent() ) {
+			header_remove( 'Access-Control-Allow-Origin' );
+			header_remove( 'Access-Control-Allow-Credentials' );
+		}
+		return $served;
 	}
 
 	private function wrap( callable $handler ): callable {
@@ -133,7 +146,10 @@ final class Routes {
 
 	public function portalBooking( \WP_REST_Request $r ): array {
 		$id = Tokens::sessionBooking( Portal::cookie(), null, false );
-		return array( 'booking' => Portal::view( Bookings::get( $id ) ) );
+		return array(
+			'csrf'    => Tokens::rotateCsrf( (string) Portal::cookie() ),
+			'booking' => Portal::view( Bookings::get( $id ) ),
+		);
 	}
 
 	public function portalProof( \WP_REST_Request $r ): array {

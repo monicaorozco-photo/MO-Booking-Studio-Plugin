@@ -216,7 +216,7 @@ final class Bookings {
 		$status   = $result['deposit_cents'] > 0
 			? BookingStatus::PENDING_PAYMENT
 			: ( 'auto' === $service['confirmation_mode'] ? BookingStatus::CONFIRMED : BookingStatus::PENDING_APPROVAL );
-		$isTest      = ! empty( $options['is_test'] );
+		$isTest      = ! empty( $options['is_test'] ) || ! empty( $service['is_test'] );
 		$extrasInput = $context['extras'];
 
 		$created = Db::transaction(
@@ -224,7 +224,7 @@ final class Bookings {
 				$resource = (int) $service['resource_id'];
 				self::lockDays( $resource, $occupy->utcDays() );
 
-				$slot = Catalog::findAvailableSlot( $service, $start, $now );
+				$slot = Catalog::findAvailableSlot( $service, $start, $now, null, 'admin' === $source );
 				if ( ! $slot ) {
 					throw new DomainException( 'slot_unavailable', 'Lo sentimos, alguien acaba de apartar ese horario. Elige otro, por favor.', 409, array( 'field' => 'start' ) );
 				}
@@ -868,7 +868,7 @@ final class Bookings {
 			throw new DomainException( 'not_found', 'El servicio de la reserva ya no existe.', 404 );
 		}
 		$now  = Plugin::clock()->now();
-		$slot = Catalog::findAvailableSlot( $service, $newStart, $now, $booking['id'] );
+		$slot = Catalog::findAvailableSlot( $service, $newStart, $now, $booking['id'], true );
 		if ( ! $slot ) {
 			throw new DomainException( 'slot_unavailable', 'Ese horario no está disponible.', 409 );
 		}
@@ -1038,7 +1038,7 @@ final class Bookings {
 
 	public static function portalBase(): string {
 		$page = (int) Settings::get( 'portal_page_id' );
-		$url  = $page ? get_permalink( $page ) : '';
+		$url  = ( $page && 'publish' === get_post_status( $page ) ) ? get_permalink( $page ) : '';
 		return $url ?: add_query_arg( 'mo_portal', '1', home_url( '/' ) );
 	}
 

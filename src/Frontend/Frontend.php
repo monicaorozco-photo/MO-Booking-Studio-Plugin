@@ -1,7 +1,152 @@
 <?php
 namespace MOBookingStudio\Frontend;
 
+use MOBookingStudio\Application\Services;
+use MOBookingStudio\Infrastructure\Settings;
+use MOBookingStudio\Rest\Routes;
+
+/**
+ * Shortcodes [mo_booking service="slug"] y [mo_booking_portal]. El widget de Elementor
+ * usa el mismo renderizado. Los assets solo se cargan en las páginas que los usan.
+ */
 final class Frontend {
 	public function register(): void {
+		add_action( 'init', array( $this, 'shortcodes' ) );
+		add_action( 'wp_enqueue_scripts', array( $this, 'registerAssets' ) );
+		add_action( 'template_redirect', array( $this, 'privateHeaders' ), 1 );
+		add_action( 'template_redirect', array( $this, 'portalFallback' ), 5 );
+	}
+
+	public function shortcodes(): void {
+		add_shortcode( 'mo_booking', array( $this, 'bookingShortcode' ) );
+		add_shortcode( 'mo_booking_portal', array( $this, 'portalShortcode' ) );
+	}
+
+	public function registerAssets(): void {
+		self::registerAssetHandles();
+	}
+
+	public static function registerAssetHandles(): void {
+		$v = MO_BOOKING_VERSION;
+		wp_register_style( 'mo-booking', MO_BOOKING_URL . 'assets/css/frontend.css', array(), $v );
+		wp_register_script( 'mo-booking-common', MO_BOOKING_URL . 'assets/js/common.js', array(), $v, true );
+		wp_register_script( 'mo-booking', MO_BOOKING_URL . 'assets/js/booking.js', array( 'mo-booking-common' ), $v, true );
+		wp_register_script( 'mo-booking-portal', MO_BOOKING_URL . 'assets/js/portal.js', array( 'mo-booking-common' ), $v, true );
+	}
+
+	public function bookingShortcode( $atts ): string {
+		$atts = shortcode_atts(
+			array(
+				'service' => '',
+				'intro'   => '',
+			),
+			(array) $atts,
+			'mo_booking'
+		);
+		return self::renderBooking( (string) $atts['service'], array( 'intro' => (string) $atts['intro'] ) );
+	}
+
+	public function portalShortcode(): string {
+		return self::renderPortal();
+	}
+
+	/**
+	 * Renderizado único para shortcode y widget.
+	 *
+	 * @param array $options intro, preview (bool), show_description, show_policies, layout
+	 */
+	public static function renderBooking( string $slug, array $options = array() ): string {
+		self::registerAssetHandles();
+		$preview = ! empty( $options['preview'] );
+		if ( ! $preview ) {
+			$service = $slug ? Services::findBySlug( $slug ) : null;
+			if ( ! $service || 'published' !== $service['status'] ) {
+				if ( current_user_can( 'mo_manage_settings' ) ) {
+					return '<div class="mo-booking mo-booking--notice">' . esc_html( $slug ? sprintf( 'MO Booking Studio: el servicio "%s" no existe o no está publicado.', $slug ) : 'MO Booking Studio: indica el servicio, por ejemplo [mo_booking service="mi-servicio"].' ) . '</div>';
+				}
+				return '';
+			}
+		}
+		wp_enqueue_style( 'mo-booking' );
+		wp_enqueue_script( 'mo-booking' );
+		$config = array(
+			'api'             => esc_url_raw( rest_url( Routes::NS . '/' ) ),
+			'service'         => $slug,
+			'preview'         => $preview,
+			'intro'           => (string) ( $options['intro'] ?? '' ),
+			'showDescription' => ! isset( $options['show_description'] ) || $options['show_description'],
+			'showPolicies'    => ! isset( $options['show_policies'] ) || $options['show_policies'],
+			'portalUrl'       => esc_url_raw( \MOBookingStudio\Application\Bookings::portalBase() ),
+		);
+		$layout = (string) ( $options['layout'] ?? 'stacked' );
+		$layout = in_array( $layout, array( 'stacked', 'columns' ), true ) ? $layout : 'stacked';
+		return sprintf(
+			'<div class="mo-booking mo-booking--%1$s" data-mo-booking="%2$s"><noscript>%3$s</noscript><p class="mo-booking__loading" role="status">%4$s</p></div>',
+			esc_attr( $layout ),
+			esc_attr( wp_json_encode( $config ) ),
+			esc_html__( 'Para reservar necesitas activar JavaScript en tu navegador.', 'mo-booking-studio' ),
+			esc_html__( 'Cargando disponibilidad…', 'mo-booking-studio' )
+		);
+	}
+
+	public static function renderPortal(): string {
+		self::registerAssetHandles();
+		wp_enqueue_style( 'mo-booking' );
+		wp_enqueue_script( 'mo-booking-portal' );
+		$config = array(
+			'api' => esc_url_raw( rest_url( Routes::NS . '/' ) ),
+		);
+		return sprintf(
+			'<div class="mo-booking mo-booking-portal" data-mo-portal="%1$s"><noscript>%2$s</noscript><p class="mo-booking__loading" role="status">%3$s</p></div>',
+			esc_attr( wp_json_encode( $config ) ),
+			esc_html__( 'Para ver tu reserva necesitas activar JavaScript en tu navegador.', 'mo-booking-studio' ),
+			esc_html__( 'Cargando tu reserva…', 'mo-booking-studio' )
+		);
+	}
+
+	/**
+	 * Las páginas de reserva y portal no deben guardarse en caché de página ni enviar
+	 * el enlace como referencia a otros sitios.
+	 */
+	public function privateHeaders(): void {
+		$isPortal = isset( $_GET['mo_portal'] ); // phpcs:ignore WordPress.Security.NonceVerification
+		$post     = get_queried_object();
+		if ( ! $isPortal && $post instanceof \WP_Post ) {
+			$isPortal = (int) Settings::get( 'portal_page_id' ) === (int) $post->ID || has_shortcode( (string) $post->post_content, 'mo_booking_portal' );
+			$isBooking = has_shortcode( (string) $post->post_content, 'mo_booking' ) || (int) Settings::get( 'booking_page_id' ) === (int) $post->ID;
+		} else {
+			$isBooking = false;
+		}
+		if ( $isPortal || $isBooking ) {
+			if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+				define( 'DONOTCACHEPAGE', true );
+			}
+			nocache_headers();
+			header( 'Referrer-Policy: no-referrer' );
+		}
+	}
+
+	/** Ruta de respaldo del portal (?mo_portal=1) si todavía no hay página configurada. */
+	public function portalFallback(): void {
+		if ( ! isset( $_GET['mo_portal'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+			return;
+		}
+		status_header( 200 );
+		header( 'X-Robots-Tag: noindex, nofollow' );
+		add_filter( 'pre_get_document_title', static function () {
+			return 'Mi reserva';
+		} );
+		add_action( 'wp_head', static function () {
+			echo '<meta name="robots" content="noindex, nofollow">' . "\n";
+		} );
+		$content = self::renderPortal();
+		if ( function_exists( 'wp_is_block_theme' ) && wp_is_block_theme() ) {
+			?><!doctype html><html <?php language_attributes(); ?>><head><meta charset="<?php bloginfo( 'charset' ); ?>"><meta name="viewport" content="width=device-width, initial-scale=1"><?php wp_head(); ?></head><body <?php body_class(); ?>><main class="mo-booking-portal-page" style="max-width:760px;margin:0 auto;padding:24px 16px"><?php echo $content; // phpcs:ignore WordPress.Security.EscapeOutput ?></main><?php wp_footer(); ?></body></html><?php
+		} else {
+			get_header();
+			echo '<main class="mo-booking-portal-page" style="max-width:760px;margin:0 auto;padding:24px 16px">' . $content . '</main>'; // phpcs:ignore WordPress.Security.EscapeOutput
+			get_footer();
+		}
+		exit;
 	}
 }

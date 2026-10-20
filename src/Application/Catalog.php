@@ -282,10 +282,23 @@ final class Catalog {
 		return $row;
 	}
 
-	public static function findAvailableSlot( array $service, \DateTimeImmutable $start, \DateTimeImmutable $now, ?int $excludeBookingId = null ): ?array {
+	/**
+	 * @param bool $relaxed Para la administradora: ignora anticipación mínima, horizonte y
+	 *                      fechas de venta, pero nunca solapamientos, cierres ni bloqueos.
+	 */
+	public static function findAvailableSlot( array $service, \DateTimeImmutable $start, \DateTimeImmutable $now, ?int $excludeBookingId = null, bool $relaxed = false ): ?array {
 		$zone     = Settings::timezone();
 		$engine   = new Availability( $zone );
 		$params   = Services::availabilityParams( $service );
+		if ( $relaxed ) {
+			$params['min_notice_minutes'] = 0;
+			$params['horizon_days']       = 0;
+			$params['sale_from']          = null;
+			$params['sale_until']         = null;
+			if ( $start <= $now ) {
+				return null;
+			}
+		}
 		$resource = (int) $service['resource_id'];
 		$from     = $start->modify( '-2 days' );
 		$to       = $start->modify( '+2 days' );

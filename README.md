@@ -2,7 +2,7 @@
 
 Plugin de WordPress para reservas y administración de un estudio fotográfico: servicios, disponibilidad, tarifas, reservas con anticipo por transferencia, comprobantes privados, portal del cliente y panel de administración.
 
-**Versión 0.1.0 (prototipo).** Antes de usarlo con clientes reales, revisa el estado y los pendientes en [`docs/estado.md`](docs/estado.md).
+**Versión 0.1.1 (prototipo).** Antes de usarlo con clientes reales, revisa el estado y los pendientes en [`docs/estado.md`](docs/estado.md).
 
 ## Requisitos
 
@@ -15,7 +15,7 @@ Plugin de WordPress para reservas y administración de un estudio fotográfico: 
 ## Instalación
 
 1. Haz un respaldo del sitio con UpdraftPlus. De preferencia, prueba primero en una copia (staging).
-2. En WordPress ve a *Plugins → Añadir nuevo → Subir plugin* y sube `mo-booking-studio-0.1.0.zip`.
+2. En WordPress ve a *Plugins → Añadir nuevo → Subir plugin* y sube `mo-booking-studio-0.1.1.zip`.
 3. Activa el plugin. Aparece el menú **Reservas**.
 
 El plugin se instala **vacío**. No crea servicios, horarios ni precios y no modifica la zona horaria general del sitio, otros plugins ni los formularios de Gravity Forms.
@@ -34,9 +34,10 @@ El plugin se instala **vacío**. No crea servicios, horarios ni precios y no mod
    2026-12-06 12:00-15:00, 17:00-19:00
    ```
    La *Vista previa de espacios* muestra cuántos horarios genera cada servicio.
-4. **Tarifas y descuentos**: precios por fecha, preventa o cliente frecuente, con un simulador para comprobarlos.
-5. **Políticas**: reprogramación, cancelación e inasistencia, con horas y montos libres y un simulador.
-6. **Páginas**: en Ajustes, pulsa *Crear páginas*. Se crean "Reservas" y "Mi reserva" como borradores; revísalas y publícalas.
+4. **Precios por temporada** (dentro del servicio): fecha límite de preventa y, por rango de fechas, precios de público y de cliente frecuente en preventa y regular. Un solo enlace: al pasar la fecha límite se cobran solos los precios regulares. Para casos especiales existe **Tarifas y descuentos**, con simulador.
+5. **Clientes**: da de alta a tus clientas con sus sesiones previas. Al reservar, quien elige "Ya me he tomado fotos con ustedes" y tiene las sesiones necesarias (3 por defecto, se cambia en Ajustes) ve los precios de cliente frecuente.
+6. **Políticas**: reprogramación, cancelación e inasistencia, con horas y montos libres y un simulador.
+7. **Páginas**: en Ajustes, pulsa *Crear páginas*. Se crean "Reservas" y "Mi reserva" como borradores; revísalas y publícalas.
 
 ## Mostrar el formulario
 

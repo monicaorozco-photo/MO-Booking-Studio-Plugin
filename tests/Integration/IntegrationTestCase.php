@@ -68,6 +68,28 @@ abstract class IntegrationTestCase extends TestCase {
 		return Services::get( $id );
 	}
 
+	/** Mismo servicio pero con la tabla de precios por temporada (forma simple del panel). */
+	protected function christmasTableService(): array {
+		$resource = Schedules::defaultResourceId();
+		$id       = Services::save(
+			array_merge(
+				array(
+					'title'            => 'Minis con tabla',
+					'slug'             => 'minis-tabla',
+					'status'           => 'published',
+					'min_notice_hours' => 0,
+					'horizon_days'     => 0,
+					'price_table'      => Christmas::priceTable(),
+				),
+				Christmas::service()
+			)
+		);
+		foreach ( Christmas::dates() as $date => $windows ) {
+			Schedules::saveDate( $resource, $date, $windows );
+		}
+		return Services::get( $id );
+	}
+
 	protected function contact( array $overrides = array() ): array {
 		return array_merge(
 			array(

@@ -108,6 +108,17 @@ final class Christmas {
 		return $rules;
 	}
 
+	/** La misma matriz expresada como tabla de precios por temporada (forma simple del panel). */
+	public static function priceTable(): array {
+		return array(
+			'presale_until' => '2026-10-31 23:59',
+			'rows'          => array(
+				array( 'from' => '2026-11-15', 'to' => '2026-12-04', 'label' => '15 nov – 4 dic', 'general' => 160000, 'frequent' => 140000, 'presale_general' => 140000, 'presale_frequent' => 120000, 'special' => true ),
+				array( 'from' => '2026-12-05', 'to' => '2026-12-20', 'label' => '5 – 20 dic', 'general' => 180000, 'frequent' => 160000, 'presale_general' => 160000, 'presale_frequent' => 140000, 'special' => false ),
+			),
+		);
+	}
+
 	public static function reschedulePolicy(): array {
 		return array(
 			array(

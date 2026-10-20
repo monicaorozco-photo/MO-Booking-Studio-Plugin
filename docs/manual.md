@@ -34,7 +34,12 @@ En **Reservas → Nueva reserva**:
 
 ### Cliente frecuente
 
-Si la persona marcó "Ya he tenido una sesión", la reserva muestra **Frecuente por revisar**. Cuando lo confirmes:
+Al abrir el enlace de reservas, la persona elige **Soy cliente nuevo** o **Ya me he tomado fotos con ustedes**. En el segundo caso escribe su nombre y su correo o teléfono:
+
+- Si su expediente tiene las sesiones necesarias (umbral en Ajustes, 3 por defecto) o lo marcaste como frecuente, ve los precios de cliente frecuente y la reserva queda como "Cliente frecuente (verificado en línea)".
+- Si no se confirma, ve los precios generales y la reserva muestra **Frecuente por revisar**.
+
+Por eso conviene cargar a tus clientas con sus sesiones previas en **Clientes** antes de abrir reservas. Si confirmas a mano a alguien que quedó por revisar:
 
 1. Pulsa *Aplicar tarifa de cliente frecuente…*.
 2. Revisa la diferencia de precio y escribe el motivo.
@@ -67,10 +72,7 @@ Desde la reserva:
    - aviso para el 19 y 20 de diciembre;
    - estado **Publicado**.
 2. **Disponibilidad → Cargar varias fechas**: una línea por día, por ejemplo `2026-12-12 10:00-13:00, 15:00-19:00`. Revisa en la *Vista previa de espacios* que el total sea el esperado.
-3. **Tarifas y descuentos**: crea una tarifa final por cada combinación.
-   - Ejemplo: "Público preventa nov.", $1,400, citas del 15 nov al 4 dic, público general, reservada hasta 2026-10-31 23:59, prioridad 20.
-   - La regular equivalente lleva prioridad 10.
-   - Compruébalas con el simulador.
+3. **Precios por temporada** (en el mismo servicio): pon la fecha límite de preventa (31/10/2026 23:59) y una fila por rango de fechas con los cuatro precios. Ejemplo: 15 nov – 4 dic: preventa $1,400 / $1,200 (frecuente), regular $1,600 / $1,400, marcada como **Especial**. Al pasar la fecha límite, el mismo enlace cobra los precios regulares.
 4. **Políticas** del servicio:
    - **Reprogramación**: 0–24 h, anticipo retenido, nuevo anticipo $500; 24 h o más, anticipo a su favor.
    - **Cancelación**: 0 h o más, anticipo retenido.

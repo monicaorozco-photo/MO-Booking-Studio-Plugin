@@ -50,6 +50,13 @@ final class TestData {
 				'deposit_type'               => 'fixed',
 				'deposit_value'              => 50000,
 				'confirmation_mode'          => 'manual',
+				'price_table'                => array(
+					'presale_until' => '2026-10-31 23:59',
+					'rows'          => array(
+						array( 'from' => '2026-11-15', 'to' => '2026-12-04', 'label' => '15 nov – 4 dic', 'presale_general' => 140000, 'presale_frequent' => 120000, 'general' => 160000, 'frequent' => 140000, 'special' => true ),
+						array( 'from' => '2026-12-05', 'to' => '2026-12-20', 'label' => '5 – 20 dic', 'presale_general' => 160000, 'presale_frequent' => 140000, 'general' => 180000, 'frequent' => 160000, 'special' => false ),
+					),
+				),
 				'date_notices'               => array(
 					array(
 						'from' => '2026-12-19',
@@ -77,35 +84,6 @@ final class TestData {
 			Schedules::saveDate( $resource, $date, $windows, true );
 		}
 
-		$matrix = array(
-			array( 'Público regular (15 nov–4 dic)', '2026-11-15', '2026-12-04', 'general', false, 160000 ),
-			array( 'Público preventa (15 nov–4 dic)', '2026-11-15', '2026-12-04', 'general', true, 140000 ),
-			array( 'Frecuente regular (15 nov–4 dic)', '2026-11-15', '2026-12-04', 'frequent', false, 140000 ),
-			array( 'Frecuente preventa (15 nov–4 dic)', '2026-11-15', '2026-12-04', 'frequent', true, 120000 ),
-			array( 'Público regular (5–20 dic)', '2026-12-05', '2026-12-20', 'general', false, 180000 ),
-			array( 'Público preventa (5–20 dic)', '2026-12-05', '2026-12-20', 'general', true, 160000 ),
-			array( 'Frecuente regular (5–20 dic)', '2026-12-05', '2026-12-20', 'frequent', false, 160000 ),
-			array( 'Frecuente preventa (5–20 dic)', '2026-12-05', '2026-12-20', 'frequent', true, 140000 ),
-		);
-		foreach ( $matrix as $r ) {
-			Services::saveRule(
-				$serviceId,
-				array(
-					'name'       => $r[0],
-					'kind'       => 'rate',
-					'priority'   => $r[4] ? 20 : 10,
-					'value'      => $r[5],
-					'conditions' => array(
-						'session_from' => $r[1],
-						'session_to'   => $r[2],
-						'category'     => $r[3],
-						'booked_until' => $r[4] ? '2026-10-31 23:59:59' : '',
-					),
-				),
-				null,
-				true
-			);
-		}
 		Services::savePolicy( $serviceId, 'reschedule', array(
 			array( 'min_hours' => 0, 'max_hours' => 24, 'deposit' => 'retain', 'new_deposit_cents' => 50000 ),
 			array( 'min_hours' => 24, 'max_hours' => null, 'deposit' => 'credit' ),

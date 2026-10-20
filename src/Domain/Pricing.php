@@ -5,7 +5,10 @@ namespace MOBookingStudio\Domain;
  * Motor de precios. Todo en centavos y en el servidor.
  *
  * Orden de cálculo:
- * 1. Tarifa base: precio del servicio, o la tarifa final ("rate") aplicable con mayor prioridad.
+ * 1. Tarifa base, en este orden: una tarifa final avanzada ("rate") aplicable con mayor
+ *    prioridad; si no hay, la tabla de precios por temporada del servicio (precio general,
+ *    frecuente y de preventa por rango de fechas, con una fecha límite de preventa); si no,
+ *    el precio base del servicio.
  * 2. Promociones ("discount") sobre la base. Por defecto no se acumulan: se aplica la de
  *    mayor prioridad. Solo si esa promoción y otras están marcadas como acumulables se
  *    aplican en orden de prioridad sobre el importe restante.
@@ -65,10 +68,18 @@ final class Pricing {
 		$lines = array();
 
 		// 1. Tarifa base.
-		$rate = $this->pickRule( $rules, 'rate', $start, $requestedAt, $category );
+		$rate      = $this->pickRule( $rules, 'rate', $start, $requestedAt, $category );
+		$priceType = 'regular';
+		$special   = false;
+		$table     = $rate ? null : $this->tableEntry( (array) ( $service['price_table'] ?? array() ), $start, $requestedAt, $category );
 		if ( $rate ) {
 			$base      = max( 0, (int) $rate['value'] );
 			$baseLabel = (string) $rate['name'];
+		} elseif ( $table ) {
+			$base      = $table['amount'];
+			$baseLabel = $table['label'];
+			$priceType = $table['price_type'];
+			$special   = $table['special'];
 		} else {
 			$base      = max( 0, (int) ( $service['price_cents'] ?? 0 ) );
 			$baseLabel = 'Tarifa del servicio';
@@ -167,6 +178,8 @@ final class Pricing {
 			'category'       => $category,
 			'base_cents'     => $base,
 			'rate_rule_id'   => $rate ? (int) $rate['id'] : null,
+			'price_type'     => $priceType,
+			'special'        => $special,
 			'discount_ids'   => $applied,
 			'discount_cents' => $discountTotal,
 			'extras_cents'   => $participantsCost + $petsCost + $extrasCost,
@@ -176,6 +189,139 @@ final class Pricing {
 			'lines'          => $lines,
 			'participants'   => $participants,
 			'pets'           => $pets,
+		);
+	}
+
+	/**
+	 * ¿Sigue vigente la preventa de la tabla de precios en el momento de la solicitud?
+	 * La fecha límite incluye todo su último minuto (23:59 cubre hasta 23:59:59).
+	 */
+	public function presaleActive( array $table, \DateTimeImmutable $requestedAt ): bool {
+		$until = trim( (string) ( $table['presale_until'] ?? '' ) );
+		if ( '' === $until ) {
+			return false;
+		}
+		return $requestedAt <= $this->localInstant( $until, true );
+	}
+
+	/**
+	 * Precio de la tabla por temporada para una cita. Las filas con fechas tienen
+	 * prioridad sobre una fila sin fechas (precio para el resto de los días).
+	 *
+	 * Si una fila no tiene precio de preventa para un tipo de cliente, ese cliente paga
+	 * su precio regular. Si no tiene precio para frecuentes, pagan el precio general.
+	 *
+	 * @return array{amount:int,label:string,price_type:string,special:bool}|null
+	 */
+	public function tableEntry( array $table, \DateTimeImmutable $start, \DateTimeImmutable $requestedAt, string $category ): ?array {
+		$rows = (array) ( $table['rows'] ?? array() );
+		if ( ! $rows ) {
+			return null;
+		}
+		$date  = $start->setTimezone( $this->zone )->format( 'Y-m-d' );
+		$match = null;
+		foreach ( $rows as $row ) {
+			$from = (string) ( $row['from'] ?? '' );
+			$to   = (string) ( $row['to'] ?? '' );
+			if ( '' === $from && '' === $to ) {
+				$match = $match ?? $row;
+				continue;
+			}
+			if ( ( '' === $from || $date >= $from ) && ( '' === $to || $date <= $to ) ) {
+				$match = $row;
+				break;
+			}
+		}
+		if ( ! $match ) {
+			return null;
+		}
+		$frequent = self::CATEGORY_FREQUENT === $category;
+		$regular  = $frequent && null !== ( $match['frequent'] ?? null ) ? (int) $match['frequent'] : (int) $match['general'];
+		$presale  = $frequent ? ( $match['presale_frequent'] ?? null ) : ( $match['presale_general'] ?? null );
+		$isPre    = null !== $presale && $this->presaleActive( $table, $requestedAt );
+		$who      = $frequent ? 'cliente frecuente' : 'público general';
+		$label    = ( $isPre ? 'Preventa' : 'Precio regular' ) . ' · ' . $who;
+		if ( '' !== trim( (string) ( $match['label'] ?? '' ) ) ) {
+			$label .= ' (' . trim( (string) $match['label'] ) . ')';
+		}
+		return array(
+			'amount'     => max( 0, $isPre ? (int) $presale : $regular ),
+			'label'      => $label,
+			'price_type' => $isPre ? 'presale' : 'regular',
+			'special'    => ! empty( $match['special'] ),
+		);
+	}
+
+	/**
+	 * Valida la tabla de precios por temporada. Importes en centavos; null = sin precio.
+	 */
+	public static function validateTable( array $table ): array {
+		$until = trim( (string) ( $table['presale_until'] ?? '' ) );
+		if ( '' !== $until && ! preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/', $until ) ) {
+			throw new DomainException( 'invalid_price_table', 'La fecha límite de preventa debe tener fecha y hora.' );
+		}
+		$rows      = array();
+		$undated   = 0;
+		$hasPresale = false;
+		foreach ( (array) ( $table['rows'] ?? array() ) as $r ) {
+			$from = trim( (string) ( $r['from'] ?? '' ) );
+			$to   = trim( (string) ( $r['to'] ?? '' ) );
+			foreach ( array( $from, $to ) as $d ) {
+				if ( '' !== $d && ! self::isDate( $d ) ) {
+					throw new DomainException( 'invalid_price_table', sprintf( 'La fecha "%s" de la tabla de precios no es válida.', $d ) );
+				}
+			}
+			if ( '' !== $from && '' !== $to && $to < $from ) {
+				throw new DomainException( 'invalid_price_table', 'En la tabla de precios hay un rango que termina antes de empezar.' );
+			}
+			$money = static function ( $v ) {
+				return ( null === $v || '' === $v ) ? null : (int) $v;
+			};
+			$row = array(
+				'from'             => $from,
+				'to'               => $to,
+				'label'            => trim( (string) ( $r['label'] ?? '' ) ),
+				'general'          => $money( $r['general'] ?? null ),
+				'frequent'         => $money( $r['frequent'] ?? null ),
+				'presale_general'  => $money( $r['presale_general'] ?? null ),
+				'presale_frequent' => $money( $r['presale_frequent'] ?? null ),
+				'special'          => ! empty( $r['special'] ),
+			);
+			if ( null === $row['general'] ) {
+				throw new DomainException( 'invalid_price_table', 'Cada fila de la tabla de precios necesita al menos el precio regular de público general.' );
+			}
+			foreach ( array( 'general', 'frequent', 'presale_general', 'presale_frequent' ) as $k ) {
+				if ( null !== $row[ $k ] && $row[ $k ] < 0 ) {
+					throw new DomainException( 'invalid_price_table', 'Los precios no pueden ser negativos.' );
+				}
+			}
+			if ( null !== $row['presale_general'] || null !== $row['presale_frequent'] ) {
+				$hasPresale = true;
+			}
+			if ( '' === $from && '' === $to ) {
+				++$undated;
+			}
+			$rows[] = $row;
+		}
+		if ( $undated > 1 ) {
+			throw new DomainException( 'invalid_price_table', 'Solo puede haber una fila sin fechas (precio para el resto de los días).' );
+		}
+		$dated = array_values( array_filter( $rows, static function ( $r ) { return '' !== $r['from'] || '' !== $r['to']; } ) );
+		for ( $i = 0, $n = count( $dated ); $i < $n; $i++ ) {
+			for ( $j = $i + 1; $j < $n; $j++ ) {
+				$a = $dated[ $i ];
+				$b = $dated[ $j ];
+				if ( ( $a['from'] ?: '0000' ) <= ( $b['to'] ?: '9999' ) && ( $b['from'] ?: '0000' ) <= ( $a['to'] ?: '9999' ) ) {
+					throw new DomainException( 'invalid_price_table', 'Dos rangos de fechas de la tabla de precios se enciman. Cada día debe tener un solo precio.' );
+				}
+			}
+		}
+		if ( $hasPresale && '' === $until ) {
+			throw new DomainException( 'invalid_price_table', 'Hay precios de preventa: indica hasta qué fecha y hora aplica la preventa.' );
+		}
+		return array(
+			'presale_until' => $until,
+			'rows'          => $rows,
 		);
 	}
 

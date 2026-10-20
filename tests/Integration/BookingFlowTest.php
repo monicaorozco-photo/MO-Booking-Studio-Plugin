@@ -26,11 +26,8 @@ final class BookingFlowTest extends IntegrationTestCase {
 		$byDate = array_column( $dec['days'], null, 'date' );
 		$this->assertSame( 'closed', $byDate['2026-12-01']['status'] );
 		$this->assertSame( '$1,600 MXN', $byDate['2026-12-12']['price_txt'] ); // Preventa pública en diciembre.
+		// Con reglas avanzadas no hay ícono de precio especial: se marca en la tabla por temporada.
 		$this->assertFalse( $byDate['2026-12-12']['special'] );
-		$both    = Catalog::availability( $service, '2026-11-15', '2026-12-20' );
-		$all     = array_column( $both['days'], null, 'date' );
-		$this->assertTrue( $all['2026-11-20']['special'] );
-		$this->assertSame( '$200 MXN', $all['2026-11-20']['saving_txt'] );
 	}
 
 	public function test_full_flow_booking_proof_approval(): void {

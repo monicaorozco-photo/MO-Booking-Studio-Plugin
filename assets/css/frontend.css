@@ -9,8 +9,14 @@
 	--mo-surface: #f6f4f1;
 	--mo-border: #d9d4cc;
 	--mo-selected: #3f5e52;
-	--mo-special: #8a5a14;
-	--mo-special-bg: #fbf1df;
+	--mo-special: #5f9a25;
+	--mo-special-bg: #eef6e4;
+	--mo-presale: #dbe5ee;
+	--mo-presale-text: #23384a;
+	--mo-soldout: #a32020;
+	--mo-soldout-bg: #fbeaea;
+	--mo-notice: #8a5a14;
+	--mo-notice-bg: #fbf1df;
 	--mo-error: #a32020;
 	--mo-error-bg: #fdecec;
 	--mo-success: #1f6b3a;
@@ -84,7 +90,7 @@
 .mo-booking__check { display: flex; align-items: flex-start; gap: 10px; margin: 10px 0; min-height: 44px; cursor: pointer; }
 .mo-booking__check input { width: 22px; height: 22px; margin-top: 1px; flex: 0 0 auto; }
 .mo-booking__note { color: var(--mo-muted); font-size: 0.92em; }
-.mo-booking__notice { background: var(--mo-special-bg); color: var(--mo-special); padding: 8px 10px; border-radius: 8px; }
+.mo-booking__notice { background: var(--mo-notice-bg); color: var(--mo-notice); padding: 8px 10px; border-radius: 8px; }
 .mo-booking__alert { background: var(--mo-error-bg); color: var(--mo-error); padding: 10px 12px; border-radius: 8px; }
 .mo-booking__success { background: var(--mo-success-bg); color: var(--mo-success); padding: 10px 12px; border-radius: 8px; }
 .mo-booking__selected { font-weight: 600; }
@@ -101,7 +107,7 @@
 .mo-booking__bank, .mo-booking__upload-wrap, .mo-booking__portal-link, .mo-booking__instructions { margin: 16px 0; padding: 12px; background: var(--mo-surface); border-radius: 8px; overflow-wrap: anywhere; }
 .mo-booking__bank h4, .mo-booking__upload-wrap h4, .mo-booking__portal-link h4 { margin: 0 0 6px; }
 .mo-booking__file { display: block; width: 100%; margin: 6px 0 10px; min-height: 44px; }
-.mo-booking__deadline { padding: 10px 12px; border-left: 4px solid var(--mo-special); background: var(--mo-special-bg); }
+.mo-booking__deadline { padding: 10px 12px; border-left: 4px solid var(--mo-notice); background: var(--mo-notice-bg); }
 .mo-booking__ref { font-size: 1.05em; }
 .mo-booking__pill { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; font-size: 0.85em; }
 .mo-booking__pill--confirmed, .mo-booking__pill--completed { color: var(--mo-success); }
@@ -110,11 +116,37 @@
 .mo-booking__loading { color: var(--mo-muted); }
 .mo-booking__preview-badge { background: #fff4c2; color: #5a4600; padding: 6px 10px; border-radius: 6px; font-weight: 600; }
 .mo-booking__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Pantalla inicial */
+.mo-booking__choices { display: grid; gap: 12px; margin-top: 12px; }
+.mo-booking__choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; min-height: 64px; padding: 14px 16px; border: 2px solid var(--mo-border); border-radius: var(--mo-radius); background: var(--mo-bg); color: var(--mo-text); font: inherit; text-align: left; cursor: pointer; }
+.mo-booking__choice:hover, .mo-booking__choice:focus-visible { border-color: var(--mo-primary); }
+.mo-booking__choice-title { font-weight: 700; font-size: 1.05em; }
+.mo-booking__choice-text { color: var(--mo-muted); font-size: 0.9em; }
+.mo-booking__who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; }
+.mo-booking__who-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; background: var(--mo-primary); color: var(--mo-primary-contrast); font-size: 0.85em; font-weight: 600; }
+.mo-booking__who-badge--general { background: var(--mo-surface); color: var(--mo-text); border: 1px solid var(--mo-border); }
+.mo-booking__presale { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--mo-presale); color: var(--mo-presale-text); font-weight: 600; }
+/* Calendario: color por tipo de precio, ícono para precio especial */
+.mo-booking__day { position: relative; justify-content: center; }
+.mo-booking__day--presale { background: var(--mo-presale); color: var(--mo-presale-text); border-color: var(--mo-presale); }
+.mo-booking__day--regular { background: var(--mo-bg); border: 2px solid var(--mo-primary); color: var(--mo-text); }
+.mo-booking__day--soldout { background: var(--mo-soldout-bg); color: var(--mo-soldout); border-color: var(--mo-soldout-bg); }
+.mo-booking__soldout-mark { font-size: 0.9em; font-weight: 700; line-height: 1; }
+.mo-booking__day--special { border-color: var(--mo-special); }
+.mo-booking__day .mo-booking__tag { width: 22px; height: 22px; margin-top: 2px; color: var(--mo-special); }
+.mo-booking__day--selected, .mo-booking__day--selected.mo-booking__day--presale, .mo-booking__day--selected.mo-booking__day--regular { background: var(--mo-selected); border-color: var(--mo-selected); color: var(--mo-primary-contrast); box-shadow: 0 0 0 2px var(--mo-bg), 0 0 0 4px var(--mo-selected); }
+.mo-booking__day--selected .mo-booking__tag { color: var(--mo-primary-contrast); }
+.mo-booking__tag { display: inline-block; width: 20px; height: 20px; vertical-align: middle; color: var(--mo-special); }
+.mo-booking__legend { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; margin: 12px 0 0; padding: 0; font-size: 0.9em; }
+.mo-booking__legend li { display: flex; align-items: center; gap: 6px; }
+.mo-booking__swatch { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700; }
+.mo-booking__swatch--presale { background: var(--mo-presale); border: 1px solid var(--mo-presale-text); }
+.mo-booking__swatch--regular { background: var(--mo-bg); border: 2px solid var(--mo-primary); }
+.mo-booking__swatch--soldout { background: var(--mo-soldout-bg); color: var(--mo-soldout); border: 1px solid var(--mo-soldout); }
+.mo-booking__day-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 8px 10px; border-radius: 8px; background: var(--mo-surface); }
 @media (max-width: 420px) {
 	.mo-booking__panel { padding: 12px; }
 	.mo-booking__day { min-height: 56px; font-size: 0.72em; }
-	.mo-booking__day-price { display: none; }
-	.mo-booking__day--special .mo-booking__day-price { display: block; }
 	.mo-booking__phone { grid-template-columns: 1fr; }
 	.mo-booking__actions { flex-direction: column-reverse; }
 	.mo-booking__actions .mo-booking__button { width: 100%; }

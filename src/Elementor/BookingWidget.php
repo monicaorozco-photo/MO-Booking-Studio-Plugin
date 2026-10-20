@@ -66,7 +66,9 @@ class BookingWidget extends \Elementor\Widget_Base {
 			'bg'               => array( 'Fondo de tarjetas', '--mo-bg' ),
 			'surface'          => array( 'Fondo secundario', '--mo-surface' ),
 			'border'           => array( 'Bordes', '--mo-border' ),
-			'special'          => array( 'Precio especial', '--mo-special' ),
+			'special'          => array( 'Ícono de precio especial', '--mo-special' ),
+			'presale'          => array( 'Días con precio de preventa', '--mo-presale' ),
+			'soldout'          => array( 'Días agotados', '--mo-soldout' ),
 			'error'            => array( 'Errores', '--mo-error' ),
 		);
 		foreach ( $vars as $key => $info ) {

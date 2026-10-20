@@ -47,6 +47,7 @@ final class Services {
 			'sale_until'                 => '',
 			'date_notices'               => array(),
 			'terms_text'                 => '',
+			'price_table'                => array( 'presale_until' => '', 'rows' => array() ),
 		);
 	}
 
@@ -275,6 +276,7 @@ final class Services {
 		foreach ( array( 'description', 'location', 'instructions', 'delivery_text', 'terms_text' ) as $key ) {
 			$c[ $key ] = trim( (string) $c[ $key ] );
 		}
+		$c['price_table'] = Pricing::validateTable( (array) $c['price_table'] );
 		// Comprobar que la combinación de duración e intervalo es válida.
 		Availability::normalizeParams( self::availabilityParams( $c ) );
 		return $c;
@@ -423,7 +425,7 @@ final class Services {
 
 	/** Huella de la configuración de precios; si cambia, una cotización deja de ser válida. */
 	public static function pricingHash( array $service, array $rules ): string {
-		$keys = array( 'price_cents', 'participants_included', 'participants_max', 'extra_participant_cents', 'pets_allowed', 'pets_max', 'pet_fee_cents', 'pets_count_as_participants', 'extras', 'deposit_type', 'deposit_value' );
+		$keys = array( 'price_cents', 'participants_included', 'participants_max', 'extra_participant_cents', 'pets_allowed', 'pets_max', 'pet_fee_cents', 'pets_count_as_participants', 'extras', 'deposit_type', 'deposit_value', 'price_table' );
 		return hash( 'sha256', Db::json( array( array_intersect_key( $service, array_flip( $keys ) ), $rules ) ) );
 	}
 

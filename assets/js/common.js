@@ -45,6 +45,9 @@
 		if (options.csrf) {
 			headers['X-MO-CSRF'] = options.csrf;
 		}
+		if (options.frequent) {
+			headers['X-MO-Frequent'] = options.frequent;
+		}
 		// La base puede ser /wp-json/mo-booking/v1/ o ?rest_route=/mo-booking/v1/ (enlaces simples).
 		var parts = String(path).split('?');
 		var url = base + parts[0];

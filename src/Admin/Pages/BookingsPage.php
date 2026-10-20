@@ -121,7 +121,7 @@ final class BookingsPage {
 		$body .= '<dt>Correo</dt><dd>' . esc_html( $b['contact']['email'] ?? '' ) . '</dd>';
 		$body .= '<dt>Teléfono</dt><dd>' . esc_html( $b['contact']['phone'] ?? '' ) . ' <span class="description">' . esc_html( $b['contact']['phone_e164'] ?? '' ) . '</span></dd>';
 		$body .= '<dt>WhatsApp</dt><dd>' . ( ! empty( $b['consent']['whatsapp'] ) ? 'Aceptó avisos' : 'No aceptó avisos automáticos' ) . '</dd>';
-		$body .= '<dt>Categoría aplicada</dt><dd>' . ( 'frequent' === $b['client_category'] ? 'Cliente frecuente' : 'Público general' ) . ( $b['frequent_claim'] && 'frequent' !== $b['client_category'] ? ' · <span class="mo-pill mo-pill--review">Dice que ya tuvo sesión: validar</span>' : '' ) . '</dd>';
+		$body .= '<dt>Categoría aplicada</dt><dd>' . ( 'frequent' === $b['client_category'] ? 'Cliente frecuente' . ( ! empty( $b['quote']['frequent_check'] ) ? ' (verificado en línea por nombre y contacto)' : '' ) : 'Público general' ) . ( $b['frequent_claim'] && 'frequent' !== $b['client_category'] ? ' · <span class="mo-pill mo-pill--review">Dice que ya tuvo sesión: validar</span>' : '' ) . '</dd>';
 		if ( $client ) {
 			$body .= '<dt>Expediente</dt><dd><a href="' . esc_url( Ui::url( 'mo-booking-clients', array( 'client' => $client['id'] ) ) ) . '">' . esc_html( $client['name'] ) . '</a> · ' . Clients::sessions( $client ) . ' sesiones · categoría ' . ( 'frequent' === Clients::effectiveCategory( $client ) ? 'frecuente' : 'general' ) . ( $client['needs_review'] ? ' · <span class="mo-pill mo-pill--review">Revisar identidad</span>' : '' ) . '</dd>';
 		}

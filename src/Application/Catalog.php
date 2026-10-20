@@ -88,7 +88,10 @@ final class Catalog {
 	/**
 	 * Disponibilidad pública por día, con precio orientativo general.
 	 */
-	public static function availability( array $service, string $from, string $to ): array {
+	/**
+	 * @param string $category general o frequent (solo con una verificación de cliente frecuente vigente).
+	 */
+	public static function availability( array $service, string $from, string $to, string $category = Pricing::CATEGORY_GENERAL ): array {
 		$now  = Plugin::clock()->now();
 		Bookings::expireDue();
 		$zone   = Settings::timezone();
@@ -115,7 +118,7 @@ final class Catalog {
 		$pricing  = new Pricing( $zone );
 		$rules    = Services::rules( (int) $service['id'] );
 		$out      = array();
-		$prices   = array();
+		$anyPresale = false;
 		foreach ( $days as $date => $day ) {
 			$slots = array();
 			foreach ( $day['slots'] as $slot ) {
@@ -126,7 +129,9 @@ final class Catalog {
 					'label'     => $slot['available'] ? 'Disponible' : self::reasonLabel( $slot['reason'] ),
 				);
 			}
-			$price = null;
+			$price     = null;
+			$priceType = null;
+			$special   = false;
 			if ( $day['slots'] ) {
 				try {
 					$q     = $pricing->quote(
@@ -135,18 +140,18 @@ final class Catalog {
 						array(
 							'start'        => $day['slots'][0]['start'],
 							'requested_at' => $now,
-							'category'     => Pricing::CATEGORY_GENERAL,
+							'category'     => $category,
 							'participants' => (int) $service['participants_included'],
 						)
 					);
-					$price = $q['base_cents'] - $q['discount_cents'];
+					$price     = $q['base_cents'] - $q['discount_cents'];
+					$priceType = $q['price_type'];
+					$special   = $q['special'] || $q['discount_cents'] > 0;
 				} catch ( DomainException $e ) {
 					$price = null;
 				}
 			}
-			if ( null !== $price ) {
-				$prices[] = $price;
-			}
+			$anyPresale   = $anyPresale || 'presale' === $priceType;
 			$available    = count( array_filter( $slots, static function ( $s ) { return $s['available']; } ) );
 			$out[ $date ] = array(
 				'date'      => $date,
@@ -156,23 +161,21 @@ final class Catalog {
 				'status'    => ! $day['open'] ? 'closed' : ( $available ? 'available' : 'sold_out' ),
 				'price'     => $price,
 				'price_txt' => null !== $price ? Money::format( $price ) : null,
+				'price_type' => $priceType,
+				'special'   => $special,
 				'notices'   => Services::noticesFor( $service, $date ),
 				'slots'     => $slots,
 			);
 		}
-		// Precio especial por fecha: más bajo que la tarifa más alta de las fechas consultadas
-		// para la misma categoría (general) y el mismo periodo de reserva (ahora).
-		$reference = $prices ? max( $prices ) : null;
-		foreach ( $out as &$day ) {
-			$day['special'] = null !== $day['price'] && null !== $reference && $day['price'] < $reference;
-			$day['saving']  = $day['special'] ? $reference - $day['price'] : 0;
-			$day['saving_txt'] = $day['special'] ? Money::format( $reference - $day['price'] ) : null;
-		}
-		unset( $day );
+		$table = (array) ( $service['price_table'] ?? array() );
+		$until = $anyPresale ? ( new Pricing( $zone ) )->presaleActive( $table, $now ) : false;
 		return array(
-			'timezone' => Settings::timezoneInfo()['requested'],
-			'days'     => array_values( $out ),
-			'note'     => 'Precio general orientativo por fecha para el número de personas incluido. El precio final se confirma en el resumen.',
+			'timezone'     => Settings::timezoneInfo()['requested'],
+			'category'     => $category,
+			'presale'      => $anyPresale,
+			'presale_txt'  => $until && ! empty( $table['presale_until'] ) ? 'Preventa hasta el ' . self::dateTimeText( \DateTimeImmutable::createFromFormat( strlen( $table['presale_until'] ) === 16 ? '!Y-m-d H:i' : '!Y-m-d H:i:s', $table['presale_until'], $zone )->setTimezone( new \DateTimeZone( 'UTC' ) ) ) : '',
+			'days'         => array_values( $out ),
+			'note'         => ( Pricing::CATEGORY_FREQUENT === $category ? 'Precios para clientes frecuentes' : 'Precios para público general' ) . ', para el número de personas incluido. El precio final se confirma en el resumen.',
 		);
 	}
 
@@ -203,8 +206,9 @@ final class Catalog {
 		if ( ! $slot ) {
 			throw new DomainException( 'slot_unavailable', 'Ese horario ya no está disponible. Elige otro, por favor.', 409, array( 'field' => 'start' ) );
 		}
-		$context = self::pricingContext( $input, $start, $now );
-		$result  = ( new Pricing( Settings::timezone() ) )->quote( $service, Services::rules( (int) $service['id'] ), $context );
+		$category = FrequentCheck::category( isset( $input['frequent_token'] ) ? (string) $input['frequent_token'] : null );
+		$context  = self::pricingContext( $input, $start, $now, $category );
+		$result   = ( new Pricing( Settings::timezone() ) )->quote( $service, Services::rules( (int) $service['id'] ), $context );
 		$key     = bin2hex( random_bytes( 16 ) );
 		$expires = $now->modify( '+' . self::QUOTE_MINUTES . ' minutes' );
 		$payload = array(
@@ -213,6 +217,7 @@ final class Catalog {
 				'participants' => $context['participants'],
 				'pets'         => $context['pets'],
 				'extras'       => $context['extras'],
+				'category'     => $category,
 			),
 			'result' => $result,
 		);

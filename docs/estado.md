@@ -1,4 +1,11 @@
-# Estado de la versión 0.1.0
+# Estado de la versión 0.1.1
+
+## Cambios en 0.1.1 (pedidos por Mónica)
+
+1. **Pantalla inicial** "Soy cliente nuevo" / "Ya me he tomado fotos con ustedes". Si la clienta es frecuente (por nombre y correo o teléfono), ve los precios de frecuente; si no se confirma, ve los precios generales y la reserva queda "frecuente por revisar".
+2. **Un solo enlace con preventa automática**: tabla "Precios por temporada" en el servicio con fecha límite de preventa. Al pasar esa fecha se muestran y cobran solos los precios regulares de público general y de frecuente.
+3. **Calendario nuevo**: color por tipo de precio (preventa o regular), ícono de etiqueta en las fechas con precio especial, días agotados en rojo y leyenda. El precio se ve al elegir el día.
+
 
 Fecha: 20 de octubre de 2026. Alcance: **versión reducida para las minis**, acordada con Mónica (etapas A y B, más parte de C y D).
 
@@ -50,14 +57,15 @@ Entorno: contenedor Linux, MariaDB 10.11, WordPress 7.1.3, PHP 8.3.6 y PHP 7.4.3
 
 | Prueba | Comando | Resultado |
 |---|---|---|
-| Unitarias + integración, PHP 8.3 | `MO_WP_DIR=… vendor/bin/phpunit` | 84 pruebas, 259 aserciones, todas OK |
-| Unitarias + integración, PHP 7.4 | igual, en el contenedor `php:7.4` | 84 pruebas, todas OK |
+| Unitarias + integración, PHP 8.3 | `MO_WP_DIR=… vendor/bin/phpunit` | 105 pruebas, 315 aserciones, todas OK |
+| Unitarias + integración, PHP 7.4 | igual, en el contenedor `php:7.4` | 105 pruebas, todas OK |
 | Activación en PHP 7.2 | script con WordPress simulado | Activación rechazada con aviso, sin error fatal |
 | Ciclo del ZIP | instalar ZIP → activar → crear datos → desactivar → reactivar → desinstalar | Sin errores, sin pérdida ni duplicados; desinstalar conserva los datos |
 | Concurrencia (AC08) | dos procesos PHP compitiendo por el mismo horario | Solo uno reserva y el otro recibe `slot_unavailable`. Con el bloqueo desactivado la prueba **falla** (se comprobó que detecta el problema). |
 | Panel, todas las pantallas | `tests/e2e/admin-smoke.js` | 16 pantallas sin errores de PHP |
 | Configuración desde el panel | `tests/e2e/admin-config.js` | Servicio, horarios, carga masiva, tarifas, políticas y reserva manual. Rechaza datos ambiguos o inválidos con mensajes claros. |
-| Recorrido en celular, 360 px | `tests/e2e/flow.js` | Reserva → comprobante → aprobación → portal. Sin desplazamiento horizontal ni errores de JS. Token alterado rechazado. |
+| Recorrido en celular, 360 px | `tests/e2e/flow.js` | Cliente nueva: reserva → comprobante → aprobación → portal. Clienta frecuente: verificación → precio $1,200 → reserva. Clienta no encontrada: precios generales. Sin desplazamiento horizontal ni errores de JS. Token alterado rechazado. |
+| Tabla de precios en el panel | `tests/e2e/price-table.js` | Carga, guarda, rechaza rangos encimados conservando lo escrito. |
 
 ### Criterios de aceptación de la especificación
 
@@ -74,7 +82,7 @@ Entorno: contenedor Linux, MariaDB 10.11, WordPress 7.1.3, PHP 8.3.6 y PHP 7.4.3
 | AC10 | ✅ | `BookingFlowTest::test_idempotent_retry` |
 | AC11, AC12, AC13 | ✅ | `BookingFlowTest` |
 | AC14 | ✅ | `BookingFlowTest` (doble aprobación y abono parcial) |
-| AC15 | 🟡 | Coincidencia segura y ajuste manual probados; falta la validación por código |
+| AC15 | 🟡 | Verificación en línea por nombre y contacto (`FrequentClientTest`), sin exponer datos ni unir por nombre; falta el código de un solo uso |
 | AC16 | ⏳ | CSV pendiente |
 | AC17, AC18 | ✅ | `PolicyTest`, `BookingFlowTest::test_reschedule_and_cancel…` |
 | AC19 | ✅ | `admin-config.js` (editar política y simulador) |

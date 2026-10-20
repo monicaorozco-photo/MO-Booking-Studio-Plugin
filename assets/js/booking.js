@@ -8,6 +8,9 @@
 	var WEEKDAY_NAMES = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
 	var MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
+	var TAG_ICON = '<svg class="mo-booking__tag" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.6 12.6l-8 8a2 2 0 0 1-2.8 0l-6.4-6.4a2 2 0 0 1-.6-1.4V4.8C2.8 3.8 3.6 3 4.6 3h8c.5 0 1 .2 1.4.6l6.6 6.2a2 2 0 0 1 0 2.8z" fill="currentColor"/><circle cx="7.5" cy="7.5" r="1.6" fill="#fff"/><path d="M9.5 15.5l5-5" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="11" r="1" fill="#fff"/><circle cx="14" cy="15" r="1" fill="#fff"/></svg>';
+	var PRICE_TYPE = { presale: 'Preventa', regular: 'Precio regular' };
+
 	function pad(n) { return (n < 10 ? '0' : '') + n; }
 	function ymd(y, m, d) { return y + '-' + pad(m) + '-' + pad(d); }
 	function daysInMonth(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
@@ -44,7 +47,7 @@
 		this.config = config;
 		this.api = function (path, options) { return M.api(config.api, path, options); };
 		this.state = {
-			step: 1, service: null, year: null, month: null, days: {}, selectedDate: null, selectedSlot: null,
+			step: 0, welcome: 'choose', frequentToken: null, identifyMessage: '', service: null, year: null, month: null, days: {}, selectedDate: null, selectedSlot: null,
 			form: { participants: null, pets: 0, extras: {}, answers: {}, name: '', email: '', phone: '', phone_country: 'MX', whatsapp_consent: false, frequent_claim: false },
 			quote: null, idempotencyKey: null, result: null, csrf: null, message: '', busy: false
 		};
@@ -60,6 +63,7 @@
 			this.state.days = {};
 			p.days.forEach(function (d) { self.state.days[d.date] = d; });
 			this.state.form.participants = p.service.participants_included;
+			this.state.monthLoaded = true;
 			this.render();
 			return;
 		}
@@ -70,9 +74,20 @@
 			}
 			self.state.service = res.data;
 			self.state.form.participants = res.data.participants_included;
-			var now = new Date();
-			self.findFirstMonth(now.getFullYear(), now.getMonth() + 1, 0);
+			self.render();
 		});
+	};
+
+	/** Empieza el calendario con los precios del tipo de cliente elegido. */
+	App.prototype.openCalendar = function () {
+		var s = this.state;
+		s.step = 1;
+		s.days = {};
+		s.selectedDate = null;
+		s.selectedSlot = null;
+		if (this.config.preview) { this.render(); return; }
+		var now = new Date();
+		this.findFirstMonth(now.getFullYear(), now.getMonth() + 1, 0);
 	};
 
 	/** Busca el primer mes con fechas abiertas (hasta 12 meses). */
@@ -101,10 +116,10 @@
 		this.render();
 		var from = ymd(y, m, 1);
 		var to = ymd(y, m, daysInMonth(y, m));
-		return this.api('services/' + encodeURIComponent(this.config.service) + '/availability?from=' + from + '&to=' + to).then(function (res) {
+		return this.api('services/' + encodeURIComponent(this.config.service) + '/availability?from=' + from + '&to=' + to, { frequent: this.state.frequentToken }).then(function (res) {
 			self.state.busy = false;
 			if (!res.ok) {
-				self.state.message = M.errorMessage(res);
+				self.state.message = M.errorMessage(res); self.state.messageOk = false;
 				self.render();
 				return false;
 			}
@@ -114,6 +129,8 @@
 				if (d.open) { hasOpen = true; }
 			});
 			self.state.availabilityNote = res.data.note;
+			self.state.presaleText = res.data.presale_txt;
+			self.state.category = res.data.category;
 			self.render();
 			return hasOpen;
 		});
@@ -122,6 +139,7 @@
 	App.prototype.setStep = function (step) {
 		this.state.step = step;
 		this.state.message = '';
+		this.state.messageOk = false;
 		this.render();
 		var heading = this.root.querySelector('[data-step-heading]');
 		if (heading) {
@@ -140,8 +158,9 @@
 			html += '<p class="mo-booking__preview-badge">Vista previa de demostración: no crea reservas.</p>';
 		}
 		html += this.renderHeader();
-		html += this.renderSteps();
-		html += '<div class="mo-booking__live" aria-live="polite" role="status">' + (s.message ? '<p class="mo-booking__alert">' + esc(s.message) + '</p>' : '') + '</div>';
+		if (s.step > 0) { html += this.renderSteps(); }
+		html += '<div class="mo-booking__live" aria-live="polite" role="status">' + (s.message ? '<p class="' + (s.messageOk ? 'mo-booking__success' : 'mo-booking__alert') + '">' + esc(s.message) + '</p>' : '') + '</div>';
+		if (s.step === 0) { html += this.renderWelcome(); }
 		if (s.step === 1) { html += this.renderCalendar(); }
 		if (s.step === 2) { html += this.renderDetails(); }
 		if (s.step === 3) { html += this.renderSummary(); }
@@ -156,7 +175,7 @@
 		if (svc.brand) { html += '<p class="mo-booking__brand">' + esc(svc.brand) + '</p>'; }
 		html += '<h2 class="mo-booking__title">' + esc(svc.title) + '</h2>';
 		if (this.config.intro) { html += '<p class="mo-booking__intro">' + M.lines(this.config.intro) + '</p>'; }
-		if (this.state.step === 1 && this.config.showDescription) {
+		if (this.state.step <= 1 && this.config.showDescription) {
 			if (svc.image) { html += '<img class="mo-booking__image" src="' + esc(svc.image) + '" alt="" loading="lazy">'; }
 			if (svc.description) { html += '<div class="mo-booking__description">' + M.lines(svc.description) + '</div>'; }
 			html += '<ul class="mo-booking__facts">';
@@ -175,12 +194,87 @@
 
 	App.prototype.renderSteps = function () {
 		var labels = ['Fecha y hora', 'Tus datos', 'Resumen', 'Listo'];
-		var s = this.state.step;
+		var s = Math.max(1, this.state.step);
 		return '<ol class="mo-booking__steps">' + labels.map(function (l, i) {
 			var n = i + 1;
 			var state = n < s ? 'done' : (n === s ? 'current' : 'todo');
 			return '<li class="mo-booking__step mo-booking__step--' + state + '"' + (n === s ? ' aria-current="step"' : '') + '><span class="mo-booking__step-num">' + n + '</span> ' + esc(l) + '</li>';
 		}).join('') + '</ol>';
+	};
+
+	App.prototype.renderWelcome = function () {
+		var s = this.state;
+		var html = '<section class="mo-booking__panel mo-booking__welcome" aria-labelledby="mo-step-0">';
+		if (s.welcome === 'choose') {
+			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>Antes de ver las fechas</h3>';
+			html += '<p>¿Ya te has tomado fotos con nosotros?</p>';
+			html += '<div class="mo-booking__choices">';
+			html += '<button type="button" class="mo-booking__choice" data-action="new-client"><span class="mo-booking__choice-title">Soy cliente nuevo</span><span class="mo-booking__choice-text">Ver fechas y precios</span></button>';
+			html += '<button type="button" class="mo-booking__choice" data-action="returning"><span class="mo-booking__choice-title">Ya me he tomado fotos con ustedes</span><span class="mo-booking__choice-text">Revisamos si aplica tu precio de cliente frecuente</span></button>';
+			html += '</div>';
+		} else if (s.welcome === 'identify') {
+			html += '<form data-form="identify" novalidate>';
+			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>¡Qué gusto verte de nuevo!</h3>';
+			html += '<p>Escribe tu nombre y el correo o teléfono con el que reservaste antes.</p>';
+			html += this.field('name', 'Nombre', '<input class="mo-booking__input" type="text" id="mo-f-name" name="name" autocomplete="name" value="' + esc(s.form.name) + '" required>');
+			html += '<div class="mo-booking__field"><label class="mo-booking__label" for="mo-f-contact">Correo o teléfono</label><div class="mo-booking__phone">' +
+				'<select class="mo-booking__input mo-booking__country" name="phone_country" aria-label="País del teléfono"><option value="MX">México +52</option><option value="US"' + (s.form.phone_country === 'US' ? ' selected' : '') + '>EE. UU. +1</option></select>' +
+				'<input class="mo-booking__input" type="text" id="mo-f-contact" name="contact" autocomplete="email" value="' + esc(s.identifyContact || '') + '" required></div>' +
+				'<p class="mo-booking__help">El país solo se usa si escribes un teléfono.</p><p class="mo-booking__field-error" data-error-for="contact" role="alert"></p></div>';
+			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="welcome-back">Atrás</button><button type="submit" class="mo-booking__button mo-booking__button--primary">Revisar</button></div>';
+			html += '</form>';
+		} else if (s.welcome === 'not-found') {
+			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>No pudimos confirmarlo</h3>';
+			html += '<p>' + esc(s.identifyMessage) + '</p>';
+			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="returning">Intentar con otros datos</button><button type="button" class="mo-booking__button mo-booking__button--primary" data-action="continue-general">Continuar</button></div>';
+		}
+		html += '</section>';
+		return html;
+	};
+
+	App.prototype.submitIdentify = function (form) {
+		var self = this;
+		var s = this.state;
+		var data = new window.FormData(form);
+		s.form.name = String(data.get('name') || '');
+		s.identifyContact = String(data.get('contact') || '');
+		s.form.phone_country = String(data.get('phone_country') || 'MX');
+		if (s.form.name.trim().length < 2) { this.showFieldError('name', 'Escribe tu nombre.'); return; }
+		if (s.identifyContact.trim().length < 5) { this.showFieldError('contact', 'Escribe tu correo o teléfono.'); return; }
+		if (this.config.preview) { s.frequentToken = null; s.form.frequent_claim = true; this.openCalendar(); return; }
+		var button = form.querySelector('button[type=submit]');
+		button.disabled = true;
+		button.textContent = 'Revisando…';
+		this.api('services/' + encodeURIComponent(this.config.service) + '/identify', {
+			body: { name: s.form.name, contact: s.identifyContact, phone_country: s.form.phone_country }
+		}).then(function (res) {
+			button.disabled = false;
+			button.textContent = 'Revisar';
+			if (!res.ok) {
+				var field = M.errorField(res);
+				if (!field || !self.showFieldError(field, M.errorMessage(res))) {
+					s.message = M.errorMessage(res); s.messageOk = false;
+					self.render();
+				}
+				return;
+			}
+			s.form.frequent_claim = true;
+			if (res.data.frequent) {
+				s.frequentToken = res.data.token;
+				s.verifiedEmail = res.data.email || '';
+				s.verifiedPhone = res.data.phone || '';
+				if (s.verifiedEmail) { s.form.email = s.verifiedEmail; }
+				if (s.verifiedPhone) { s.form.phone = s.verifiedPhone; }
+				self.openCalendar();
+				s.message = res.data.message;
+				s.messageOk = true;
+				return;
+			}
+			s.frequentToken = null;
+			s.identifyMessage = res.data.message;
+			s.welcome = 'not-found';
+			self.render();
+		});
 	};
 
 	App.prototype.renderCalendar = function () {
@@ -191,9 +285,10 @@
 		var canPrev = (y > now.getFullYear()) || (y === now.getFullYear() && m > now.getMonth() + 1);
 		var html = '<section class="mo-booking__panel" aria-labelledby="mo-step-1">';
 		html += '<h3 class="mo-booking__panel-title" id="mo-step-1" tabindex="-1" data-step-heading>Elige fecha y hora</h3>';
-		html += '<label class="mo-booking__check"><input type="checkbox" data-field="frequent_claim"' + (s.form.frequent_claim ? ' checked' : '') + '> Ya he tenido una sesión con ustedes</label>';
-		if (s.form.frequent_claim) {
-			html += '<p class="mo-booking__note">Gracias. Revisaremos tu historial y, si aplica la tarifa para clientes frecuentes, ajustaremos el precio antes de confirmar. Por ahora verás el precio general.</p>';
+		html += '<p class="mo-booking__who">' + (s.frequentToken ? '<span class="mo-booking__who-badge">Precios de cliente frecuente</span>' : '<span class="mo-booking__who-badge mo-booking__who-badge--general">Precios para público general</span>') +
+			' <button type="button" class="mo-booking__link" data-action="welcome-back">Cambiar</button></p>';
+		if (s.presaleText) {
+			html += '<p class="mo-booking__presale">' + esc(s.presaleText) + '</p>';
 		}
 		html += '<div class="mo-booking__month">';
 		html += '<button type="button" class="mo-booking__nav" data-action="prev"' + (canPrev ? '' : ' disabled') + ' aria-label="Mes anterior">‹</button>';
@@ -218,14 +313,12 @@
 			var disabled = true;
 			if (info && info.status === 'available') {
 				disabled = false;
-				cls += ' mo-booking__day--available';
-				extra = '<span class="mo-booking__day-info">' + info.available + (info.available === 1 ? ' lugar' : ' lugares') + '</span>';
-				if (info.price_txt) { extra += '<span class="mo-booking__day-price">' + esc(info.price_txt.replace(' MXN', '')) + '</span>'; }
-				if (info.special) { extra += '<span class="mo-booking__badge">Precio especial</span>'; cls += ' mo-booking__day--special'; }
-				label += ', ' + info.available + ' disponibles' + (info.price_txt ? ', desde ' + info.price_txt : '') + (info.special ? ', precio especial por fecha, ahorras ' + info.saving_txt : '');
+				cls += ' mo-booking__day--available mo-booking__day--' + (info.price_type === 'presale' ? 'presale' : 'regular');
+				if (info.special) { extra = TAG_ICON; cls += ' mo-booking__day--special'; }
+				label += ', disponible' + (info.price_type ? ', ' + PRICE_TYPE[info.price_type] : '') + (info.price_txt ? ' ' + info.price_txt : '') + (info.special ? ', precio especial por fecha' : '');
 			} else if (info && info.status === 'sold_out') {
 				cls += ' mo-booking__day--soldout';
-				extra = '<span class="mo-booking__day-info">Agotado</span>';
+				extra = '<span class="mo-booking__soldout-mark" aria-hidden="true">✕</span>';
 				label += ', agotado';
 			} else {
 				cls += ' mo-booking__day--closed';
@@ -236,13 +329,17 @@
 				' aria-label="' + esc(label) + '" aria-pressed="' + (s.selectedDate === date ? 'true' : 'false') + '"><span class="mo-booking__day-num">' + d + '</span>' + extra + '</button>';
 		}
 		html += '</div></div>';
+		html += this.renderLegend();
 		if (s.availabilityNote) { html += '<p class="mo-booking__note">' + esc(s.availabilityNote) + '</p>'; }
 
 		if (s.selectedDate && s.days[s.selectedDate]) {
 			var day = s.days[s.selectedDate];
 			html += '<div class="mo-booking__slots-wrap"><h4 class="mo-booking__subtitle">Horarios del ' + esc(this.dateLabel(s.selectedDate)) + '</h4>';
 			html += '<p class="mo-booking__note">Horario de ' + esc(this.state.service.timezone) + '.</p>';
-			if (day.special) { html += '<p class="mo-booking__special">Precio especial por fecha: ahorras ' + esc(day.saving_txt) + ' frente a otras fechas.</p>'; }
+			if (day.price_txt) {
+				html += '<p class="mo-booking__day-detail">' + (day.special ? TAG_ICON + ' ' : '') + 'Precio para esta fecha: <strong>' + esc(day.price_txt) + '</strong>' +
+					(day.price_type ? ' · ' + esc(PRICE_TYPE[day.price_type]) : '') + (day.special ? ' · Precio especial por fecha' : '') + '</p>';
+			}
 			(day.notices || []).forEach(function (n) { html += '<p class="mo-booking__notice">' + esc(n) + '</p>'; });
 			html += '<div class="mo-booking__slots">';
 			day.slots.forEach(function (slot) {
@@ -255,6 +352,28 @@
 		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--primary" data-action="to-details"' + (s.selectedSlot ? '' : ' disabled') + '>Continuar</button></div>';
 		html += '</section>';
 		return html;
+	};
+
+	/** Leyenda: solo muestra los tipos presentes en el mes. */
+	App.prototype.renderLegend = function () {
+		var s = this.state;
+		var has = { presale: false, regular: false, special: false, soldout: false };
+		var prefix = ymd(s.year, s.month, 1).slice(0, 7);
+		Object.keys(s.days).forEach(function (date) {
+			var d = s.days[date];
+			if (date.slice(0, 7) !== prefix) { return; }
+			if (d.status === 'available') {
+				has[d.price_type === 'presale' ? 'presale' : 'regular'] = true;
+				if (d.special) { has.special = true; }
+			}
+			if (d.status === 'sold_out') { has.soldout = true; }
+		});
+		var items = [];
+		if (has.presale) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--presale" aria-hidden="true"></span> Precio de preventa</li>'); }
+		if (has.regular) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--regular" aria-hidden="true"></span> ' + (has.presale ? 'Precio regular' : 'Disponible') + '</li>'); }
+		if (has.special) { items.push('<li>' + TAG_ICON + ' Precio especial por fecha</li>'); }
+		if (has.soldout) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--soldout" aria-hidden="true">✕</span> Agotado</li>'); }
+		return items.length ? '<ul class="mo-booking__legend" aria-label="Significado de los colores">' + items.join('') + '</ul>' : '';
 	};
 
 	App.prototype.dateLabel = function (date) {
@@ -306,10 +425,10 @@
 			html += '<div class="mo-booking__field"><label class="mo-booking__label" for="' + id + '">' + label + '</label>' + input + '<p class="mo-booking__field-error" data-error-for="' + name + '" role="alert"></p></div>';
 		});
 		html += this.field('name', 'Nombre completo', '<input class="mo-booking__input" type="text" id="mo-f-name" name="name" autocomplete="name" value="' + esc(f.name) + '" required>');
-		html += this.field('email', 'Correo electrónico', '<input class="mo-booking__input" type="email" id="mo-f-email" name="email" autocomplete="email" value="' + esc(f.email) + '" required>', 'Aquí te enviaremos la confirmación y tu enlace privado.');
+		html += this.field('email', 'Correo electrónico', '<input class="mo-booking__input" type="email" id="mo-f-email" name="email" autocomplete="email" value="' + esc(f.email) + '" required' + (s.frequentToken && s.verifiedEmail ? ' readonly' : '') + '>', s.frequentToken && s.verifiedEmail ? 'Es el correo con el que verificamos tu historial; para usar otro, vuelve al inicio.' : 'Aquí te enviaremos la confirmación y tu enlace privado.');
 		html += '<div class="mo-booking__field"><label class="mo-booking__label" for="mo-f-phone">Teléfono (WhatsApp)</label><div class="mo-booking__phone">' +
 			'<select class="mo-booking__input mo-booking__country" name="phone_country" aria-label="País del teléfono"><option value="MX"' + (f.phone_country === 'MX' ? ' selected' : '') + '>México +52</option><option value="US"' + (f.phone_country === 'US' ? ' selected' : '') + '>EE. UU. +1</option></select>' +
-			'<input class="mo-booking__input" type="tel" id="mo-f-phone" name="phone" autocomplete="tel-national" inputmode="tel" value="' + esc(f.phone) + '" required></div>' +
+			'<input class="mo-booking__input" type="tel" id="mo-f-phone" name="phone" autocomplete="tel-national" inputmode="tel" value="' + esc(f.phone) + '" required' + (s.frequentToken && s.verifiedPhone ? ' readonly' : '') + '></div>' +
 			'<p class="mo-booking__help">10 dígitos. Si es de otro país, escribe el número completo con "+".</p><p class="mo-booking__field-error" data-error-for="phone" role="alert"></p></div>';
 		html += '<label class="mo-booking__check"><input type="checkbox" name="whatsapp_consent"' + (f.whatsapp_consent ? ' checked' : '') + '> Acepto recibir avisos sobre mi reserva por WhatsApp</label>';
 		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="to-calendar">Atrás</button><button type="submit" class="mo-booking__button mo-booking__button--primary">Ver resumen</button></div>';
@@ -336,7 +455,9 @@
 		html += '</tbody><tfoot><tr><th scope="row">Total</th><td>' + esc(q.total_txt) + '</td></tr>';
 		html += '<tr><th scope="row">Anticipo para apartar</th><td>' + esc(q.deposit_txt) + '</td></tr>';
 		html += '<tr><th scope="row">Saldo</th><td>' + esc(q.balance_txt) + '</td></tr></tfoot></table>';
-		if (s.form.frequent_claim) {
+		if (s.frequentToken) {
+			html += '<p class="mo-booking__note">Precio de cliente frecuente verificado con tus datos.</p>';
+		} else if (s.form.frequent_claim) {
 			html += '<p class="mo-booking__note">Indicaste que ya tuviste una sesión. Si se valida la tarifa de cliente frecuente, ajustaremos el precio antes de confirmar.</p>';
 		}
 		(q.notices || []).forEach(function (n) { html += '<p class="mo-booking__notice">' + esc(n) + '</p>'; });
@@ -403,9 +524,9 @@
 				if (cont) { cont.focus(); }
 			});
 		});
-		var freq = root.querySelector('[data-field=frequent_claim]');
-		if (freq) {
-			freq.addEventListener('change', function () { s.form.frequent_claim = freq.checked; self.render(); });
+		var identify = root.querySelector('[data-form=identify]');
+		if (identify) {
+			identify.addEventListener('submit', function (ev) { ev.preventDefault(); self.submitIdentify(identify); });
 		}
 		var details = root.querySelector('[data-form=details]');
 		if (details) {
@@ -486,7 +607,7 @@
 		var button = this.root.querySelector('[data-form=details] button[type=submit]');
 		if (button) { button.disabled = true; button.textContent = 'Calculando…'; }
 		this.api('services/' + encodeURIComponent(this.config.service) + '/quote', {
-			body: { start: s.selectedSlot.start, participants: parseInt(s.form.participants, 10), pets: parseInt(s.form.pets, 10) || 0, extras: s.form.extras }
+			body: { start: s.selectedSlot.start, participants: parseInt(s.form.participants, 10), pets: parseInt(s.form.pets, 10) || 0, extras: s.form.extras, frequent_token: s.frequentToken }
 		}).then(function (res) {
 			if (button) { button.disabled = false; button.textContent = 'Ver resumen'; }
 			if (!res.ok) {
@@ -496,7 +617,7 @@
 				}
 				var field = M.errorField(res);
 				if (!field || !self.showFieldError(field, M.errorMessage(res))) {
-					self.state.message = M.errorMessage(res);
+					self.state.message = M.errorMessage(res); self.state.messageOk = false;
 					self.render();
 				}
 				return;
@@ -514,7 +635,7 @@
 		s.step = 1;
 		var parts = s.selectedDate.split('-');
 		this.loadMonth(+parts[0], +parts[1]).then(function () { s.message = message; });
-		s.message = message;
+		s.message = message; s.messageOk = false;
 	};
 
 	App.prototype.submitBooking = function (form) {
@@ -534,7 +655,7 @@
 		this.api('services/' + encodeURIComponent(this.config.service) + '/bookings', {
 			body: {
 				quote_id: s.quote.quote_id, idempotency_key: s.idempotencyKey, name: f.name, email: f.email, phone: f.phone, phone_country: f.phone_country,
-				answers: f.answers, accept_terms: true, whatsapp_consent: f.whatsapp_consent, frequent_claim: f.frequent_claim
+				answers: f.answers, accept_terms: true, whatsapp_consent: f.whatsapp_consent, frequent_claim: f.frequent_claim, frequent_token: s.frequentToken
 			}
 		}).then(function (res) {
 			button.disabled = false;
@@ -568,7 +689,7 @@
 				self.showFieldError(field, M.errorMessage(res));
 				return;
 			}
-			s.message = M.errorMessage(res);
+			s.message = M.errorMessage(res); s.messageOk = false;
 			self.render();
 		});
 	};
@@ -584,6 +705,15 @@
 			this.loadMonth(y, m);
 			return;
 		}
+		if (name === 'new-client') {
+			s.frequentToken = null;
+			s.form.frequent_claim = false;
+			this.openCalendar();
+			return;
+		}
+		if (name === 'returning') { s.welcome = 'identify'; this.setStep(0); return; }
+		if (name === 'welcome-back') { s.welcome = 'choose'; s.frequentToken = null; this.setStep(0); return; }
+		if (name === 'continue-general') { s.frequentToken = null; s.form.frequent_claim = true; this.openCalendar(); return; }
 		if (name === 'to-details') { if (s.selectedSlot) { this.setStep(2); } return; }
 		if (name === 'to-calendar') { this.setStep(1); return; }
 		if (name === 'copy-link' && s.result) {

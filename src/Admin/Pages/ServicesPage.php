@@ -114,6 +114,32 @@ final class ServicesPage {
 		$pay         .= Ui::row( 'Confirmación', Ui::select( 'confirmation_mode', array( 'manual' => 'Manual: confirmo yo al revisar el pago', 'auto' => 'Automática al aprobar el pago' ), $v( 'confirmation_mode' ) ), '', 'confirmation_mode' );
 		echo Ui::card( 'Precio y pago', $pay ); // phpcs:ignore WordPress.Security.EscapeOutput
 
+		// Precios por temporada: un solo enlace; la preventa termina sola en su fecha límite.
+		$table = (array) $v( 'price_table', array() );
+		$rows  = '';
+		$money = static function ( $cents ) {
+			// Guardado: centavos (entero). Tras un error de validación: lo que se escribió (texto).
+			return ( null === $cents || '' === $cents ) ? '' : ( is_int( $cents ) ? Money::toInput( $cents ) : (string) $cents );
+		};
+		foreach ( array_merge( (array) ( $table['rows'] ?? array() ), array( array(), array() ) ) as $i => $r ) {
+			$rows .= '<tr>' .
+				'<td data-label="Desde">' . Ui::input( "price_table[rows][$i][from]", $r['from'] ?? '', 'date', array( 'aria-label' => 'Citas desde' ) ) . '</td>' .
+				'<td data-label="Hasta">' . Ui::input( "price_table[rows][$i][to]", $r['to'] ?? '', 'date', array( 'aria-label' => 'Citas hasta' ) ) . '</td>' .
+				'<td data-label="Público preventa">' . Ui::input( "price_table[rows][$i][presale_general]", $money( $r['presale_general'] ?? null ), 'text', array( 'class' => 'small-text', 'inputmode' => 'decimal', 'aria-label' => 'Público general, preventa' ) ) . '</td>' .
+				'<td data-label="Frecuente preventa">' . Ui::input( "price_table[rows][$i][presale_frequent]", $money( $r['presale_frequent'] ?? null ), 'text', array( 'class' => 'small-text', 'inputmode' => 'decimal', 'aria-label' => 'Cliente frecuente, preventa' ) ) . '</td>' .
+				'<td data-label="Público regular">' . Ui::input( "price_table[rows][$i][general]", $money( $r['general'] ?? null ), 'text', array( 'class' => 'small-text', 'inputmode' => 'decimal', 'aria-label' => 'Público general, regular' ) ) . '</td>' .
+				'<td data-label="Frecuente regular">' . Ui::input( "price_table[rows][$i][frequent]", $money( $r['frequent'] ?? null ), 'text', array( 'class' => 'small-text', 'inputmode' => 'decimal', 'aria-label' => 'Cliente frecuente, regular' ) ) . '</td>' .
+				'<td data-label="Especial">' . Ui::checkbox( "price_table[rows][$i][special]", ! empty( $r['special'] ), 'Ícono de precio especial' ) . '</td>' .
+				'<td data-label="Nota">' . Ui::input( "price_table[rows][$i][label]", $r['label'] ?? '', 'text', array( 'class' => 'regular-text', 'placeholder' => 'Ej.: 15 nov – 4 dic', 'aria-label' => 'Nota' ) ) . '</td>' .
+				'</tr>';
+		}
+		$body  = '<p class="description">Usa un solo enlace de reservas todo el tiempo. Mientras la preventa esté vigente se cobran los precios de preventa; al pasar la fecha límite el sistema cobra automáticamente los precios regulares. Las reservas hechas antes conservan su precio.</p>';
+		$body .= Ui::row( 'Preventa válida hasta', Ui::input( 'price_table[presale_until]', Ui::sqlToLocalInput( (string) ( $table['presale_until'] ?? '' ) ), 'datetime-local' ), 'Incluye todo ese minuto: 31/10/2026 23:59 termina a las 23:59:59 (hora del negocio). Vacío = sin preventa.', 'price_table[presale_until]' );
+		$body .= '<table class="widefat mo-repeat mo-price-table"><thead><tr><th>Citas desde</th><th>Citas hasta</th><th>Público · preventa ($)</th><th>Frecuente · preventa ($)</th><th>Público · regular ($)</th><th>Frecuente · regular ($)</th><th>Especial</th><th>Nota</th></tr></thead><tbody>' . $rows . '</tbody></table>';
+		$body .= '<p class="description">Deja las fechas vacías en una fila para dar el precio del resto de los días. Si una fila no tiene precio de preventa, se cobra el regular; si no tiene precio para frecuentes, pagan el de público general. Marca "Especial" para mostrar el ícono de precio especial en esas fechas del calendario. Los rangos de fechas no se pueden encimar. Sin filas, se usa el precio base.</p>';
+		$body .= '<p><button type="button" class="button" data-mo-add-row>Agregar fila</button></p>';
+		echo Ui::card( 'Precios por temporada (preventa, regular y cliente frecuente)', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
+
 		// Extras.
 		$extras = (array) $v( 'extras', array() );
 		$rows   = '';
@@ -246,8 +272,38 @@ final class ServicesPage {
 				'questions'                  => $questions,
 				'date_notices'               => $notices,
 				'terms_text'                 => sanitize_textarea_field( (string) ( $p['terms_text'] ?? '' ) ),
+				'price_table'                => self::parsePriceTable( (array) ( $p['price_table'] ?? array() ), $money ),
 			),
 			$id
+		);
+	}
+
+	/** Convierte la tabla del formulario (pesos) a centavos; vacío = sin precio. */
+	private static function parsePriceTable( array $raw, callable $money ): array {
+		$rows = array();
+		foreach ( (array) ( $raw['rows'] ?? array() ) as $r ) {
+			$prices = array( 'general', 'frequent', 'presale_general', 'presale_frequent' );
+			$empty  = '' === trim( (string) ( $r['from'] ?? '' ) ) && '' === trim( (string) ( $r['to'] ?? '' ) );
+			foreach ( $prices as $k ) {
+				$empty = $empty && '' === trim( (string) ( $r[ $k ] ?? '' ) );
+			}
+			if ( $empty ) {
+				continue;
+			}
+			$row = array(
+				'from'    => sanitize_text_field( (string) ( $r['from'] ?? '' ) ),
+				'to'      => sanitize_text_field( (string) ( $r['to'] ?? '' ) ),
+				'label'   => sanitize_text_field( (string) ( $r['label'] ?? '' ) ),
+				'special' => ! empty( $r['special'] ),
+			);
+			foreach ( $prices as $k ) {
+				$row[ $k ] = '' === trim( (string) ( $r[ $k ] ?? '' ) ) ? null : $money( $r[ $k ], 'Tabla de precios' );
+			}
+			$rows[] = $row;
+		}
+		return array(
+			'presale_until' => Ui::localInputToSql( (string) ( $raw['presale_until'] ?? '' ) ),
+			'rows'          => $rows,
 		);
 	}
 }

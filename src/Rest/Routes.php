@@ -3,6 +3,7 @@ namespace MOBookingStudio\Rest;
 
 use MOBookingStudio\Application\Bookings;
 use MOBookingStudio\Application\Catalog;
+use MOBookingStudio\Application\FrequentCheck;
 use MOBookingStudio\Application\Portal;
 use MOBookingStudio\Application\Proofs;
 use MOBookingStudio\Application\Services;
@@ -46,6 +47,7 @@ final class Routes {
 				),
 			)
 		);
+		register_rest_route( self::NS, '/services/' . $slug . '/identify', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'identify' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/services/' . $slug . '/quote', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'quote' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/services/' . $slug . '/bookings', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'book' ) ), 'permission_callback' => $public ) );
 
@@ -104,7 +106,15 @@ final class Routes {
 
 	public function availability( \WP_REST_Request $r ): array {
 		RateLimit::hit( 'availability', 120, 600 );
-		return Catalog::availability( Services::findPublished( (string) $r['slug'] ), (string) $r['from'], (string) $r['to'] );
+		// La verificación de cliente frecuente viaja en cabecera, no en la URL.
+		$category = FrequentCheck::category( (string) $r->get_header( 'x_mo_frequent' ) );
+		return Catalog::availability( Services::findPublished( (string) $r['slug'] ), (string) $r['from'], (string) $r['to'], $category );
+	}
+
+	public function identify( \WP_REST_Request $r ): array {
+		RateLimit::hit( 'identify', 10, 600 );
+		Services::findPublished( (string) $r['slug'] );
+		return FrequentCheck::identify( (array) $r->get_json_params() );
 	}
 
 	public function quote( \WP_REST_Request $r ): array {

@@ -38,12 +38,19 @@ async function noHScroll(page, label) {
   m.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
   m.on('pageerror', e => consoleErrors.push(e.message));
   await m.goto(url);
+  await m.waitForSelector('[data-action=new-client]', { timeout: 15000 });
+  await m.screenshot({ path: SHOTS + '/m0-inicio.png', fullPage: true });
+  await m.click('[data-action=new-client]');
   await m.waitForSelector('.mo-booking__day--available', { timeout: 15000 });
+  log('Insignia:', await m.locator('.mo-booking__who-badge').innerText(), '·', await m.locator('.mo-booking__presale').innerText());
+  log('Leyenda:', (await m.locator('.mo-booking__legend').innerText()).replace(/\n/g, ' | '));
+  log('Días con ícono de precio especial:', await m.locator('.mo-booking__day .mo-booking__tag').count());
   log('Mes mostrado:', await m.locator('.mo-booking__month-name').innerText());
   await m.screenshot({ path: SHOTS + '/m1-calendario.png', fullPage: true });
   await noHScroll(m, 'Calendario');
   await m.click('.mo-booking__day--available >> nth=0');
   await m.waitForSelector('.mo-booking__slot');
+  log('Detalle del día:', (await m.locator('.mo-booking__day-detail').innerText()).replace(/\s+/g, ' '));
   await m.screenshot({ path: SHOTS + '/m2-horarios.png', fullPage: true });
   const firstSlot = m.locator('.mo-booking__slot:not([disabled])').first();
   const slotTime = await firstSlot.innerText();
@@ -85,6 +92,7 @@ async function noHScroll(page, label) {
   // Otra persona intenta el mismo horario.
   const other = await (await browser.newContext({ viewport: { width: 360, height: 780 } })).newPage();
   await other.goto(url);
+  await other.click('[data-action=new-client]');
   await other.waitForSelector('.mo-booking__day--available');
   await other.click('.mo-booking__day--available >> nth=0');
   await other.waitForSelector('.mo-booking__slot');
@@ -118,6 +126,48 @@ async function noHScroll(page, label) {
   await p3.goto(portalUrl.slice(0, -3) + 'AAA');
   await p3.waitForSelector('.mo-booking__alert', { timeout: 15000 });
   log('Token alterado:', await p3.locator('.mo-booking__alert').innerText());
+
+  // Cliente frecuente.
+  const fq = await (await browser.newContext({ viewport: { width: 360, height: 780 }, isMobile: true })).newPage();
+  fq.on('pageerror', e => consoleErrors.push(e.message));
+  await fq.goto(url);
+  await fq.click('[data-action=returning]');
+  await fq.fill('#mo-f-name', 'Frecuente');
+  await fq.fill('#mo-f-contact', 'frecuente3@example.com');
+  await fq.screenshot({ path: SHOTS + '/f1-identificar.png', fullPage: true });
+  await fq.click('[data-form=identify] button[type=submit]');
+  await fq.waitForSelector('.mo-booking__day--available', { timeout: 15000 });
+  log('Frecuente · insignia:', await fq.locator('.mo-booking__who-badge').innerText());
+  await fq.click('.mo-booking__day--available >> nth=1');
+  await fq.waitForSelector('.mo-booking__day-detail');
+  log('Frecuente · detalle del día:', (await fq.locator('.mo-booking__day-detail').innerText()).replace(/\s+/g, ' '));
+  await fq.screenshot({ path: SHOTS + '/f2-calendario-frecuente.png', fullPage: true });
+  await fq.click('.mo-booking__slot:not([disabled]) >> nth=0');
+  await fq.click('[data-action=to-details]');
+  log('Frecuente · correo prellenado y bloqueado:', await fq.inputValue('#mo-f-email'), await fq.getAttribute('#mo-f-email', 'readonly') !== null);
+  await fq.fill('#mo-f-name', 'Cliente Frecuente Tres');
+  await fq.fill('#mo-f-phone', '6565550102');
+  await fq.click('[data-form=details] button[type=submit]');
+  await fq.waitForSelector('[data-form=summary]');
+  log('Frecuente · resumen:', (await fq.locator('.mo-booking__lines tbody tr >> nth=0').innerText()).replace(/\s+/g, ' '), '| total', (await fq.locator('.mo-booking__lines tfoot tr >> nth=0').innerText()).replace(/\s+/g, ' '));
+  await fq.check('[name=accept_terms]');
+  await fq.click('[data-form=summary] button[type=submit]');
+  await fq.waitForSelector('.mo-booking__ref', { timeout: 15000 });
+  log('Frecuente · reserva creada:', await fq.locator('.mo-booking__ref strong').innerText());
+
+  // No encontrado.
+  const nf = await (await browser.newContext({ viewport: { width: 360, height: 780 } })).newPage();
+  await nf.goto(url);
+  await nf.click('[data-action=returning]');
+  await nf.fill('#mo-f-name', 'Desconocida');
+  await nf.fill('#mo-f-contact', '6560000000');
+  await nf.click('[data-form=identify] button[type=submit]');
+  await nf.waitForSelector('[data-action=continue-general]', { timeout: 15000 });
+  log('No encontrada:', (await nf.locator('.mo-booking__welcome p').innerText()).slice(0, 90) + '…');
+  await nf.screenshot({ path: SHOTS + '/f3-no-encontrado.png', fullPage: true });
+  await nf.click('[data-action=continue-general]');
+  await nf.waitForSelector('.mo-booking__day--available');
+  log('No encontrada · insignia:', await nf.locator('.mo-booking__who-badge').innerText());
 
   log('Errores de consola JS:', consoleErrors.length ? consoleErrors : 'ninguno');
   await browser.close();

@@ -196,6 +196,13 @@ final class Bookings {
 			}
 			$start        = Catalog::parseStart( $quote['payload']['input']['start'] );
 			$pricingInput = $quote['payload']['input'];
+			// Tarifa de cliente frecuente solo con una verificación vigente y el mismo contacto.
+			$verification = FrequentCheck::get( isset( $input['frequent_token'] ) ? (string) $input['frequent_token'] : null );
+			if ( $verification ) {
+				FrequentCheck::assertContact( $verification, $contact );
+				$category                       = Pricing::CATEGORY_FREQUENT;
+				$pricingInput['frequent_token'] = (string) $input['frequent_token'];
+			}
 		}
 
 		// El servidor recalcula; si el precio cambió desde la cotización, se pide revisar.
@@ -217,10 +224,11 @@ final class Bookings {
 			? BookingStatus::PENDING_PAYMENT
 			: ( 'auto' === $service['confirmation_mode'] ? BookingStatus::CONFIRMED : BookingStatus::PENDING_APPROVAL );
 		$isTest      = ! empty( $options['is_test'] ) || ! empty( $service['is_test'] );
+		$verifiedId  = isset( $verification ) && $verification ? (int) $verification['client_id'] : 0;
 		$extrasInput = $context['extras'];
 
 		$created = Db::transaction(
-			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput ) {
+			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput, $verifiedId ) {
 				$resource = (int) $service['resource_id'];
 				self::lockDays( $resource, $occupy->utcDays() );
 
@@ -240,7 +248,9 @@ final class Bookings {
 					return array( $again, false );
 				}
 
-				$client = Clients::matchOrCreate( $contact['name'], $contact['email_norm'], $contact['phone_e164'], $contact['phone'], $contact['phone_country'], $isTest );
+				$client = $verifiedId
+					? array( 'id' => $verifiedId, 'matched' => true, 'review' => false )
+					: Clients::matchOrCreate( $contact['name'], $contact['email_norm'], $contact['phone_e164'], $contact['phone'], $contact['phone_country'], $isTest );
 				$wpdb   = Db::wpdb();
 				$nonce  = Tokens::newNonce();
 				$row    = array(
@@ -269,6 +279,7 @@ final class Bookings {
 								'service_version' => (int) $service['version'],
 								'pricing_hash'    => Services::pricingHash( $service, Services::rules( (int) $service['id'] ) ),
 								'extras_input'    => $extrasInput,
+								'frequent_check'  => $verifiedId ? 'verified_by_contact' : null,
 							)
 						)
 					),

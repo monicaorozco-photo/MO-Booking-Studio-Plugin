@@ -302,6 +302,14 @@ final class BookingFlowTest extends IntegrationTestCase {
 		Bookings::complete( $booking['id'] );
 	}
 
+	public function test_service_saves_with_minimal_data_as_draft(): void {
+		$id      = Services::save( array( 'title' => 'Sesión mínima', 'price_cents' => 100000, 'deposit_type' => 'none', 'questions' => array( array( 'label' => '¿Algo más?' ) ) ) );
+		$service = Services::get( $id );
+		$this->assertSame( 'draft', $service['status'] );
+		$this->assertSame( 'sesion-minima', $service['slug'] );
+		$this->assertSame( 'text', $service['questions'][0]['type'] );
+	}
+
 	public function test_client_match_never_by_name_only(): void {
 		$service = $this->christmasService();
 		$a       = $this->book( $service, self::NOV20_10AM )['booking'];

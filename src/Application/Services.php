@@ -122,7 +122,8 @@ final class Services {
 		if ( $existing && $existing['id'] !== $id ) {
 			throw new DomainException( 'invalid_service', sprintf( 'Ya existe otro servicio con el identificador "%s".', $slug ) );
 		}
-		$status = in_array( $data['status'] ?? 'draft', array( 'draft', 'published', 'inactive' ), true ) ? $data['status'] : 'draft';
+		$status = (string) ( $data['status'] ?? 'draft' );
+		$status = in_array( $status, array( 'draft', 'published', 'inactive' ), true ) ? $status : 'draft';
 
 		$config = array_intersect_key( array_merge( self::defaultConfig(), $data ), self::defaultConfig() );
 		$config = self::validateConfig( $config );
@@ -231,7 +232,8 @@ final class Services {
 			if ( '' === $label ) {
 				continue;
 			}
-			$type = in_array( $q['type'] ?? 'text', array( 'text', 'textarea', 'select', 'number', 'yesno' ), true ) ? $q['type'] : 'text';
+			$type = (string) ( $q['type'] ?? 'text' );
+			$type = in_array( $type, array( 'text', 'textarea', 'select', 'number', 'yesno' ), true ) ? $type : 'text';
 			$key  = sanitize_key( (string) ( $q['key'] ?? '' ) ?: 'q' . substr( md5( $label ), 0, 8 ) );
 			if ( isset( $qkeys[ $key ] ) ) {
 				$key .= '-' . ( count( $qkeys ) + 1 );

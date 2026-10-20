@@ -1,0 +1,1167 @@
+<?php
+namespace MOBookingStudio\Application;
+
+use MOBookingStudio\Domain\Availability;
+use MOBookingStudio\Domain\BookingStatus;
+use MOBookingStudio\Domain\Contact;
+use MOBookingStudio\Domain\DomainException;
+use MOBookingStudio\Domain\Interval;
+use MOBookingStudio\Domain\Ledger;
+use MOBookingStudio\Domain\Money;
+use MOBookingStudio\Domain\Policy;
+use MOBookingStudio\Domain\Pricing;
+use MOBookingStudio\Infrastructure\Audit;
+use MOBookingStudio\Infrastructure\Db;
+use MOBookingStudio\Infrastructure\Schema;
+use MOBookingStudio\Infrastructure\Settings;
+use MOBookingStudio\Infrastructure\Tokens;
+use MOBookingStudio\Plugin;
+
+/**
+ * Operaciones de reserva. Las reservas públicas y las que crea la administradora
+ * pasan por las mismas validaciones.
+ *
+ * Control de cupos: dentro de una transacción se bloquea una fila por recurso y día UTC
+ * (en orden estable) antes de buscar solapamientos e insertar la ocupación. Dos intervalos
+ * que se solapan siempre comparten al menos un día UTC, así que dos solicitudes que
+ * compiten por el mismo tiempo se serializan y la segunda ve la ocupación de la primera.
+ */
+final class Bookings {
+	private const REF_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+	// ----- Lectura -----
+
+	public static function find( int $id, bool $forUpdate = false ): ?array {
+		$wpdb = Db::wpdb();
+		$row  = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . Schema::table( 'bookings' ) . ' WHERE id = %d' . ( $forUpdate ? ' FOR UPDATE' : '' ), $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $row ? self::hydrate( $row ) : null;
+	}
+
+	public static function get( int $id, bool $forUpdate = false ): array {
+		$b = self::find( $id, $forUpdate );
+		if ( ! $b ) {
+			throw new DomainException( 'not_found', 'La reserva no existe.', 404 );
+		}
+		return $b;
+	}
+
+	public static function findByRef( string $ref ): ?array {
+		$wpdb = Db::wpdb();
+		$row  = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . Schema::table( 'bookings' ) . ' WHERE public_ref = %s', strtoupper( trim( $ref ) ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $row ? self::hydrate( $row ) : null;
+	}
+
+	public static function hydrate( array $row ): array {
+		foreach ( array( 'quote', 'policy', 'answers', 'contact', 'consent' ) as $key ) {
+			$row[ $key ] = (array) Db::decode( $row[ $key ] ?? '' );
+		}
+		foreach ( array( 'id', 'service_id', 'service_version', 'client_id', 'resource_id', 'participants', 'pets', 'total_cents', 'deposit_cents', 'version', 'frequent_claim', 'session_counted', 'is_test' ) as $key ) {
+			$row[ $key ] = (int) $row[ $key ];
+		}
+		$row['start']   = Db::fromSql( $row['start_utc'] );
+		$row['end']     = Db::fromSql( $row['end_utc'] );
+		$row['expires'] = Db::fromSql( $row['expires_at'] );
+		return $row;
+	}
+
+	/**
+	 * @param array $filters status, from, to (fechas locales), service_id, client_id, search, limit, offset
+	 */
+	public static function list( array $filters = array() ): array {
+		$wpdb   = Db::wpdb();
+		$where  = array( '1=1' );
+		$params = array();
+		if ( ! empty( $filters['status'] ) ) {
+			$statuses = (array) $filters['status'];
+			$where[]  = 'b.status IN (' . implode( ',', array_fill( 0, count( $statuses ), '%s' ) ) . ')';
+			$params   = array_merge( $params, $statuses );
+		}
+		$zone = Settings::timezone();
+		if ( ! empty( $filters['from'] ) ) {
+			$d = \DateTimeImmutable::createFromFormat( '!Y-m-d', $filters['from'], $zone );
+			if ( $d ) {
+				$where[]  = 'b.start_utc >= %s';
+				$params[] = Db::toSql( $d );
+			}
+		}
+		if ( ! empty( $filters['to'] ) ) {
+			$d = \DateTimeImmutable::createFromFormat( '!Y-m-d', $filters['to'], $zone );
+			if ( $d ) {
+				$where[]  = 'b.start_utc < %s';
+				$params[] = Db::toSql( $d->modify( '+1 day' ) );
+			}
+		}
+		foreach ( array( 'service_id', 'client_id' ) as $key ) {
+			if ( ! empty( $filters[ $key ] ) ) {
+				$where[]  = "b.$key = %d";
+				$params[] = (int) $filters[ $key ];
+			}
+		}
+		if ( ! empty( $filters['search'] ) ) {
+			$like     = '%' . $wpdb->esc_like( trim( $filters['search'] ) ) . '%';
+			$where[]  = '(b.public_ref LIKE %s OR c.name LIKE %s OR c.email LIKE %s OR c.phone LIKE %s)';
+			$params   = array_merge( $params, array( $like, $like, $like, $like ) );
+		}
+		if ( isset( $filters['is_test'] ) ) {
+			$where[]  = 'b.is_test = %d';
+			$params[] = (int) $filters['is_test'];
+		}
+		$order    = ( $filters['order'] ?? 'asc' ) === 'desc' ? 'DESC' : 'ASC';
+		$orderBy  = ( $filters['order_by'] ?? 'start' ) === 'created' ? 'b.created_at' : 'b.start_utc';
+		$limit    = max( 1, min( 500, (int) ( $filters['limit'] ?? 100 ) ) );
+		$offset   = max( 0, (int) ( $filters['offset'] ?? 0 ) );
+		$params[] = $limit;
+		$params[] = $offset;
+		$sql      = 'SELECT b.*, c.name AS client_name, c.email AS client_email, c.phone AS client_phone, s.title AS service_title FROM ' . Schema::table( 'bookings' ) . ' b LEFT JOIN ' . Schema::table( 'clients' ) . ' c ON c.id = b.client_id LEFT JOIN ' . Schema::table( 'services' ) . ' s ON s.id = b.service_id WHERE ' . implode( ' AND ', $where ) . " ORDER BY $orderBy $order LIMIT %d OFFSET %d";
+		$rows     = $wpdb->get_results( $wpdb->prepare( $sql, $params ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		return array_map( array( self::class, 'hydrate' ), $rows );
+	}
+
+	public static function movements( int $bookingId ): array {
+		$wpdb = Db::wpdb();
+		return $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . Schema::table( 'payments' ) . ' WHERE booking_id = %d ORDER BY id', $bookingId ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	public static function proofs( int $bookingId ): array {
+		$wpdb = Db::wpdb();
+		return $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . Schema::table( 'proofs' ) . ' WHERE booking_id = %d ORDER BY id', $bookingId ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	public static function summary( array $booking ): array {
+		$pending = false;
+		foreach ( self::proofs( $booking['id'] ) as $p ) {
+			if ( 'pending' === $p['status'] ) {
+				$pending = true;
+			}
+		}
+		return Ledger::summarize( self::movements( $booking['id'] ), $booking['total_cents'], $booking['deposit_cents'], $pending );
+	}
+
+	// ----- Creación -----
+
+	/**
+	 * Crea una reserva a partir de una cotización aceptada.
+	 *
+	 * @param array $input {quote_id, idempotency_key, name, email, phone, phone_country, answers, accept_terms, whatsapp_consent, frequent_claim}
+	 * @param array $options {source, is_test, requested_at, category, ip}
+	 * @return array{booking:array,token:string,replayed:bool}
+	 */
+	public static function create( array $service, array $input, array $options = array() ): array {
+		$now      = Plugin::clock()->now();
+		$source   = $options['source'] ?? 'public';
+		$isAdmin  = 'admin' === $source;
+		$key      = (string) ( $input['idempotency_key'] ?? '' );
+		if ( ! preg_match( '/^[A-Za-z0-9-]{16,64}$/', $key ) ) {
+			throw new DomainException( 'invalid_request', 'Falta la clave de la solicitud. Recarga la página e intenta de nuevo.', 400 );
+		}
+		$contact = self::validateContact( $input );
+		$answers = self::validateAnswers( $service, (array) ( $input['answers'] ?? array() ) );
+		if ( ! $isAdmin && empty( $input['accept_terms'] ) ) {
+			throw new DomainException( 'terms_required', 'Para reservar debes aceptar las condiciones y políticas.', 400, array( 'field' => 'accept_terms' ) );
+		}
+		$requestHash = hash( 'sha256', Db::json( array( $input['quote_id'] ?? ( $input['start'] ?? '' ), $contact, $answers ) ) );
+
+		// Reintento de la misma solicitud: devolver la reserva existente sin duplicar efectos.
+		$existing = self::findByIdempotency( $key );
+		if ( $existing ) {
+			if ( $existing['request_hash'] !== $requestHash ) {
+				throw new DomainException( 'idempotency_conflict', 'Esta solicitud ya se usó con otros datos. Recarga la página para empezar una nueva.', 409 );
+			}
+			return array(
+				'booking'  => $existing,
+				'token'    => Tokens::tokenFor( $existing['id'], $existing['token_nonce'] ),
+				'replayed' => true,
+			);
+		}
+
+		self::expireDue();
+
+		$category    = Pricing::CATEGORY_GENERAL;
+		$requestedAt = $now;
+		if ( $isAdmin ) {
+			$start       = Catalog::parseStart( (string) $input['start'] );
+			$category    = Pricing::CATEGORY_FREQUENT === ( $options['category'] ?? '' ) ? Pricing::CATEGORY_FREQUENT : Pricing::CATEGORY_GENERAL;
+			$requestedAt = $options['requested_at'] ?? $now;
+			if ( $requestedAt > $now ) {
+				throw new DomainException( 'invalid_request', 'La fecha de solicitud no puede estar en el futuro.' );
+			}
+			$pricingInput = $input;
+		} else {
+			$quote = Catalog::loadQuote( (string) ( $input['quote_id'] ?? '' ) );
+			if ( (int) $quote['service_id'] !== (int) $service['id'] ) {
+				throw new DomainException( 'invalid_quote', 'La cotización no corresponde a este servicio.', 400 );
+			}
+			if ( Db::fromSql( $quote['expires_at'] ) <= $now ) {
+				throw new DomainException( 'quote_expired', 'Tu resumen venció. Revisa de nuevo el precio y el horario.', 410 );
+			}
+			$start        = Catalog::parseStart( $quote['payload']['input']['start'] );
+			$pricingInput = $quote['payload']['input'];
+		}
+
+		// El servidor recalcula; si el precio cambió desde la cotización, se pide revisar.
+		$rules   = Services::rules( (int) $service['id'] );
+		$context = Catalog::pricingContext( $pricingInput, $start, $requestedAt, $category );
+		$result  = ( new Pricing( Settings::timezone() ) )->quote( $service, $rules, $context );
+		if ( ! $isAdmin ) {
+			$accepted = $quote['payload']['result'];
+			if ( $accepted['total_cents'] !== $result['total_cents'] || $accepted['deposit_cents'] !== $result['deposit_cents'] || $quote['pricing_hash'] !== Services::pricingHash( $service, $rules ) ) {
+				$fresh = Catalog::quote( $service, $pricingInput );
+				throw new DomainException( 'quote_changed', 'El precio cambió desde que viste el resumen. Revisa el nuevo resumen antes de confirmar.', 409, array( 'quote' => $fresh ) );
+			}
+		}
+
+		$params   = Services::availabilityParams( $service );
+		$occupy   = Availability::occupancyFor( $start, $params );
+		$holdUntil = $result['deposit_cents'] > 0 ? $now->modify( sprintf( '+%d minutes', (int) round( Services::holdHours( $service ) * 60 ) ) ) : null;
+		$status   = $result['deposit_cents'] > 0
+			? BookingStatus::PENDING_PAYMENT
+			: ( 'auto' === $service['confirmation_mode'] ? BookingStatus::CONFIRMED : BookingStatus::PENDING_APPROVAL );
+		$isTest      = ! empty( $options['is_test'] );
+		$extrasInput = $context['extras'];
+
+		$created = Db::transaction(
+			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput ) {
+				$resource = (int) $service['resource_id'];
+				self::lockDays( $resource, $occupy->utcDays() );
+
+				$slot = Catalog::findAvailableSlot( $service, $start, $now );
+				if ( ! $slot ) {
+					throw new DomainException( 'slot_unavailable', 'Lo sentimos, alguien acaba de apartar ese horario. Elige otro, por favor.', 409, array( 'field' => 'start' ) );
+				}
+				/**
+				 * Solo para pruebas de concurrencia: permite retrasar la transacción entre la
+				 * comprobación de disponibilidad y la inserción, donde ocurriría una carrera.
+				 */
+				do_action( 'mo_booking_before_insert', $service, $start );
+
+				// Una segunda solicitud con la misma clave pudo terminar mientras esperábamos.
+				$again = self::findByIdempotency( $key );
+				if ( $again ) {
+					return array( $again, false );
+				}
+
+				$client = Clients::matchOrCreate( $contact['name'], $contact['email_norm'], $contact['phone_e164'], $contact['phone'], $contact['phone_country'], $isTest );
+				$wpdb   = Db::wpdb();
+				$nonce  = Tokens::newNonce();
+				$row    = array(
+					'public_ref'       => self::newRef(),
+					'service_id'       => (int) $service['id'],
+					'service_version'  => (int) $service['version'],
+					'category_id'      => $service['category_id'],
+					'client_id'        => $client['id'],
+					'resource_id'      => $resource,
+					'status'           => $status,
+					'start_utc'        => Db::toSql( $start ),
+					'end_utc'          => Db::toSql( $slot['end'] ),
+					'timezone'         => Settings::timezoneInfo()['requested'],
+					'participants'     => $result['participants'],
+					'pets'             => $result['pets'],
+					'client_category'  => $category,
+					'frequent_claim'   => ! empty( $input['frequent_claim'] ) ? 1 : 0,
+					'total_cents'      => $result['total_cents'],
+					'deposit_cents'    => $result['deposit_cents'],
+					'quote'            => Db::json(
+						array_merge(
+							$result,
+							array(
+								'requested_at'    => $requestedAt->format( 'c' ),
+								'service_title'   => $service['title'],
+								'service_version' => (int) $service['version'],
+								'pricing_hash'    => Services::pricingHash( $service, Services::rules( (int) $service['id'] ) ),
+								'extras_input'    => $extrasInput,
+							)
+						)
+					),
+					'policy'           => Db::json( Services::policySnapshot( (int) $service['id'] ) ),
+					'answers'          => Db::json( $answers ),
+					'contact'          => Db::json( $contact ),
+					'consent'          => Db::json(
+						array(
+							'terms'          => ! empty( $input['accept_terms'] ) || 'admin' === $source,
+							'whatsapp'       => ! empty( $input['whatsapp_consent'] ),
+							'at'             => $now->format( 'c' ),
+							'terms_version'  => md5( (string) Settings::get( 'terms_text' ) . $service['terms_text'] ),
+						)
+					),
+					'expires_at'       => Db::toSql( $holdUntil ),
+					'idempotency_key'  => $key,
+					'request_hash'     => $requestHash,
+					'token_nonce'      => $nonce,
+					'version'          => 1,
+					'source'           => $source,
+					'is_test'          => $isTest ? 1 : 0,
+					'created_at'       => Db::toSql( $now ),
+					'updated_at'       => Db::toSql( $now ),
+				);
+				Db::check( $wpdb->insert( Schema::table( 'bookings' ), $row ), 'booking_insert' );
+				$id = (int) $wpdb->insert_id;
+				Db::check(
+					$wpdb->insert(
+						Schema::table( 'occupancies' ),
+						array(
+							'resource_id' => $resource,
+							'booking_id'  => $id,
+							'start_utc'   => Db::toSql( $occupy->start ),
+							'end_utc'     => Db::toSql( $occupy->end ),
+							'kind'        => 'booking',
+							'expires_at'  => Db::toSql( $holdUntil ),
+							'created_at'  => Db::toSql( $now ),
+						)
+					),
+					'occupancy_insert'
+				);
+				Tokens::register( $id, $nonce, self::tokenExpiry( $start ) );
+				Audit::log(
+					'booking',
+					$id,
+					'created',
+					array(
+						'status'       => $status,
+						'source'       => $source,
+						'total'        => $result['total_cents'],
+						'client_match' => $client['matched'],
+						'review'       => $client['review'],
+					),
+					'admin' === $source ? 'user' : 'client'
+				);
+				return array( self::get( $id ), true );
+			}
+		);
+
+		list( $booking, $isNew ) = $created;
+		if ( $isNew ) {
+			Notifications::bookingEvent( 'booking_created', $booking );
+			if ( BookingStatus::CONFIRMED === $booking['status'] ) {
+				Notifications::scheduleReminder( $booking );
+			}
+		}
+		return array(
+			'booking'  => $booking,
+			'token'    => Tokens::tokenFor( $booking['id'], $booking['token_nonce'] ),
+			'replayed' => ! $isNew,
+		);
+	}
+
+	public static function findByIdempotency( string $key ): ?array {
+		$wpdb = Db::wpdb();
+		$row  = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . Schema::table( 'bookings' ) . ' WHERE idempotency_key = %s', $key ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $row ? self::hydrate( $row ) : null;
+	}
+
+	public static function validateContact( array $input ): array {
+		$name = trim( sanitize_text_field( (string) ( $input['name'] ?? '' ) ) );
+		if ( mb_strlen( $name ) < 2 ) {
+			throw new DomainException( 'invalid_name', 'Escribe tu nombre completo.', 400, array( 'field' => 'name' ) );
+		}
+		$email = Contact::normalizeEmail( (string) ( $input['email'] ?? '' ) );
+		if ( ! $email ) {
+			throw new DomainException( 'invalid_email', 'Escribe un correo válido.', 400, array( 'field' => 'email' ) );
+		}
+		$country = strtoupper( (string) ( $input['phone_country'] ?? 'MX' ) );
+		if ( ! in_array( $country, array( 'MX', 'US' ), true ) ) {
+			$country = 'MX';
+		}
+		$phoneRaw = trim( sanitize_text_field( (string) ( $input['phone'] ?? '' ) ) );
+		$phone    = Contact::normalizePhone( $phoneRaw, $country );
+		if ( ! $phone ) {
+			throw new DomainException( 'invalid_phone', 'Revisa tu teléfono: escribe 10 dígitos o incluye el código de país con "+".', 400, array( 'field' => 'phone' ) );
+		}
+		return array(
+			'name'          => mb_substr( $name, 0, 190 ),
+			'email'         => $email,
+			'email_norm'    => $email,
+			'phone'         => mb_substr( $phoneRaw, 0, 40 ),
+			'phone_country' => $country,
+			'phone_e164'    => $phone,
+		);
+	}
+
+	public static function validateAnswers( array $service, array $answers ): array {
+		$out = array();
+		foreach ( (array) $service['questions'] as $q ) {
+			$value = $answers[ $q['key'] ] ?? '';
+			$value = is_scalar( $value ) ? trim( (string) $value ) : '';
+			if ( '' === $value ) {
+				if ( $q['required'] ) {
+					throw new DomainException( 'answer_required', sprintf( 'Responde: %s', $q['label'] ), 400, array( 'field' => 'answers.' . $q['key'] ) );
+				}
+				continue;
+			}
+			switch ( $q['type'] ) {
+				case 'number':
+					if ( ! is_numeric( $value ) ) {
+						throw new DomainException( 'invalid_answer', sprintf( '"%s" debe ser un número.', $q['label'] ), 400, array( 'field' => 'answers.' . $q['key'] ) );
+					}
+					break;
+				case 'select':
+					if ( ! in_array( $value, $q['options'], true ) ) {
+						throw new DomainException( 'invalid_answer', sprintf( 'Elige una opción válida en "%s".', $q['label'] ), 400, array( 'field' => 'answers.' . $q['key'] ) );
+					}
+					break;
+				case 'yesno':
+					if ( ! in_array( $value, array( 'si', 'no' ), true ) ) {
+						throw new DomainException( 'invalid_answer', sprintf( 'Responde sí o no en "%s".', $q['label'] ), 400, array( 'field' => 'answers.' . $q['key'] ) );
+					}
+					break;
+				case 'textarea':
+					$value = sanitize_textarea_field( $value );
+					break;
+				default:
+					$value = sanitize_text_field( $value );
+			}
+			$out[ $q['key'] ] = array(
+				'label' => $q['label'],
+				'value' => mb_substr( $value, 0, 2000 ),
+			);
+		}
+		return $out;
+	}
+
+	// ----- Vencimientos -----
+
+	/**
+	 * Marca como vencidas las retenciones cuyo plazo terminó y libera su ocupación.
+	 * A la hora exacta de vencimiento la reserva ya venció. Se llama al consultar,
+	 * cotizar, reservar y desde la tarea programada; la disponibilidad no depende de que
+	 * esto se ejecute, porque las ocupaciones vencidas ya no cuentan.
+	 *
+	 * @return int Reservas vencidas.
+	 */
+	public static function expireDue( int $limit = 50 ): int {
+		$wpdb  = Db::wpdb();
+		$now   = Plugin::clock()->now();
+		$table = Schema::table( 'bookings' );
+		$rows  = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT id, status, version FROM $table WHERE (status = %s AND expires_at IS NOT NULL AND expires_at <= %s) OR (status = %s AND correction_until IS NOT NULL AND correction_until <= %s) LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				BookingStatus::PENDING_PAYMENT,
+				Db::toSql( $now ),
+				BookingStatus::CORRECTION_REQUESTED,
+				Db::toSql( $now ),
+				$limit
+			),
+			ARRAY_A
+		) ?: array();
+		$count = 0;
+		foreach ( $rows as $r ) {
+			$updated = $wpdb->query(
+				$wpdb->prepare(
+					"UPDATE $table SET status = %s, version = version + 1, updated_at = %s WHERE id = %d AND status = %s AND version = %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					BookingStatus::EXPIRED,
+					Db::toSql( $now ),
+					(int) $r['id'],
+					$r['status'],
+					(int) $r['version']
+				)
+			);
+			if ( $updated ) {
+				self::releaseOccupancy( (int) $r['id'], $now );
+				Audit::log( 'booking', (int) $r['id'], 'status:' . BookingStatus::EXPIRED, array( 'from' => $r['status'], 'reason' => 'Terminó el plazo de retención.' ), 'system', 0 );
+				Notifications::cancelPending( (int) $r['id'] );
+				Notifications::bookingEvent( 'booking_expired', self::get( (int) $r['id'] ) );
+				++$count;
+			}
+		}
+		return $count;
+	}
+
+	// ----- Pagos -----
+
+	/**
+	 * Registra un pago verificado por la administradora. Un comprobante no puede aprobarse dos veces.
+	 *
+	 * @param array $data {proof_id?, amount_cents, received_date (Y-m-d local), reference, method, confirm (bool), note, form_key}
+	 */
+	public static function approvePayment( int $bookingId, array $data ): array {
+		$amount = (int) ( $data['amount_cents'] ?? 0 );
+		if ( $amount <= 0 ) {
+			throw new DomainException( 'invalid_amount', 'Indica el importe recibido.' );
+		}
+		$proofId = ! empty( $data['proof_id'] ) ? (int) $data['proof_id'] : null;
+		$key     = $proofId ? 'proof:' . $proofId : 'manual:' . preg_replace( '/[^A-Za-z0-9-]/', '', (string) ( $data['form_key'] ?? '' ) );
+		if ( ! $proofId && strlen( $key ) < 20 ) {
+			throw new DomainException( 'invalid_request', 'Recarga la página e intenta de nuevo.' );
+		}
+		$receivedAt = self::localDateToUtc( (string) ( $data['received_date'] ?? '' ) );
+		$now        = Plugin::clock()->now();
+
+		$result = Db::transaction(
+			static function () use ( $bookingId, $amount, $proofId, $key, $receivedAt, $data, $now ) {
+				$booking = self::get( $bookingId, true );
+				$wpdb    = Db::wpdb();
+				if ( $wpdb->get_var( $wpdb->prepare( 'SELECT id FROM ' . Schema::table( 'payments' ) . ' WHERE idempotency_key = %s', $key ) ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					throw new DomainException( 'already_recorded', 'Este pago ya se registró. No se duplicó.', 409 );
+				}
+				if ( $proofId ) {
+					$proof = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . Schema::table( 'proofs' ) . ' WHERE id = %d AND booking_id = %d FOR UPDATE', $proofId, $bookingId ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					if ( ! $proof ) {
+						throw new DomainException( 'not_found', 'El comprobante no pertenece a esta reserva.', 404 );
+					}
+					if ( 'approved' === $proof['status'] ) {
+						throw new DomainException( 'already_recorded', 'Este comprobante ya se aprobó.', 409 );
+					}
+					$wpdb->update(
+						Schema::table( 'proofs' ),
+						array(
+							'status'      => 'approved',
+							'reviewed_by' => get_current_user_id(),
+							'reviewed_at' => Db::toSql( $now ),
+							'review_note' => sanitize_text_field( (string) ( $data['note'] ?? '' ) ),
+						),
+						array( 'id' => $proofId )
+					);
+				}
+				Db::check(
+					$wpdb->insert(
+						Schema::table( 'payments' ),
+						array(
+							'booking_id'      => $bookingId,
+							'proof_id'        => $proofId,
+							'type'            => 'payment',
+							'amount_cents'    => $amount,
+							'method'          => in_array( $data['method'] ?? '', array( 'transfer', 'cash', 'other' ), true ) ? $data['method'] : 'transfer',
+							'reference'       => sanitize_text_field( (string) ( $data['reference'] ?? '' ) ),
+							'received_at'     => Db::toSql( $receivedAt ),
+							'category_id'     => $booking['category_id'],
+							'note'            => sanitize_text_field( (string) ( $data['note'] ?? '' ) ),
+							'actor_id'        => get_current_user_id(),
+							'idempotency_key' => $key,
+							'created_at'      => Db::toSql( $now ),
+						)
+					),
+					'payment_insert'
+				);
+				$paymentId = (int) $wpdb->insert_id;
+				Audit::log( 'booking', $bookingId, 'payment_approved', array( 'payment_id' => $paymentId, 'amount' => $amount, 'proof_id' => $proofId ) );
+
+				$summary = self::summary( $booking );
+				$event   = 'payment_approved';
+				$service = Services::find( $booking['service_id'] );
+				$waiting = array( BookingStatus::PENDING_PAYMENT, BookingStatus::PAYMENT_REVIEW, BookingStatus::CORRECTION_REQUESTED );
+				if ( in_array( $booking['status'], $waiting, true ) ) {
+					if ( $summary['deposit_covered'] ) {
+						$confirm = ! empty( $data['confirm'] ) || ( $service && 'auto' === $service['confirmation_mode'] );
+						$to      = $confirm ? BookingStatus::CONFIRMED : BookingStatus::PENDING_APPROVAL;
+						self::transition( $booking, $to, 'Pago verificado.', array( 'expires_at' => null, 'correction_until' => null ) );
+						self::holdIndefinitely( $bookingId );
+						$event = $confirm ? 'booking_confirmed' : 'payment_approved';
+					} else {
+						$until = $now->modify( sprintf( '+%d minutes', (int) round( (float) Settings::get( 'correction_hours' ) * 60 ) ) );
+						$reason = sprintf( 'Recibimos %s. Para apartar tu horario faltan %s del anticipo.', Money::format( $amount ), Money::format( $summary['deposit_missing'] ) );
+						if ( BookingStatus::CORRECTION_REQUESTED === $booking['status'] ) {
+							self::update( $booking, array( 'correction_until' => Db::toSql( $until ) ) );
+						} else {
+							self::transition( $booking, BookingStatus::CORRECTION_REQUESTED, $reason, array( 'correction_until' => Db::toSql( $until ), 'expires_at' => null ) );
+						}
+						self::setOccupancyExpiry( $bookingId, $until );
+						$event = 'correction_requested';
+						Audit::log( 'booking', $bookingId, 'correction_reason', array( 'reason' => $reason ) );
+					}
+				} elseif ( ! BookingStatus::isOpen( $booking['status'] ) ) {
+					Audit::log( 'booking', $bookingId, 'reconciliation_needed', array( 'reason' => 'Pago registrado en una reserva que ya no está activa. El horario no se recupera.' ) );
+					$event = null;
+				}
+				return array( 'payment_id' => $paymentId, 'event' => $event );
+			}
+		);
+		$booking = self::get( $bookingId );
+		if ( $result['event'] ) {
+			Notifications::bookingEvent( $result['event'], $booking, array( 'amount_cents' => $amount, 'payment_id' => $result['payment_id'] ) );
+		}
+		return $booking;
+	}
+
+	/**
+	 * Pide al cliente corregir el comprobante o completar el pago. Mantiene el horario
+	 * apartado hasta el plazo de corrección.
+	 */
+	public static function requestCorrection( int $bookingId, ?int $proofId, string $reason ): array {
+		$reason = trim( sanitize_textarea_field( $reason ) );
+		if ( '' === $reason ) {
+			throw new DomainException( 'reason_required', 'Explica qué debe corregir la persona.' );
+		}
+		$now   = Plugin::clock()->now();
+		$until = $now->modify( sprintf( '+%d minutes', (int) round( (float) Settings::get( 'correction_hours' ) * 60 ) ) );
+		Db::transaction(
+			static function () use ( $bookingId, $proofId, $reason, $now, $until ) {
+				$booking = self::get( $bookingId, true );
+				if ( $proofId ) {
+					self::reviewProof( $bookingId, $proofId, 'correction', $reason, $now );
+				}
+				self::transition( $booking, BookingStatus::CORRECTION_REQUESTED, $reason, array( 'correction_until' => Db::toSql( $until ), 'expires_at' => null ) );
+				self::setOccupancyExpiry( $bookingId, $until );
+			}
+		);
+		$booking = self::get( $bookingId );
+		Notifications::bookingEvent( 'correction_requested', $booking, array( 'reason' => $reason ) );
+		return $booking;
+	}
+
+	public static function rejectProof( int $bookingId, int $proofId, string $reason ): void {
+		Db::transaction(
+			static function () use ( $bookingId, $proofId, $reason ) {
+				self::get( $bookingId, true );
+				self::reviewProof( $bookingId, $proofId, 'rejected', $reason, Plugin::clock()->now() );
+			}
+		);
+	}
+
+	private static function reviewProof( int $bookingId, int $proofId, string $status, string $note, \DateTimeImmutable $now ): void {
+		$wpdb  = Db::wpdb();
+		$proof = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . Schema::table( 'proofs' ) . ' WHERE id = %d AND booking_id = %d FOR UPDATE', $proofId, $bookingId ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( ! $proof ) {
+			throw new DomainException( 'not_found', 'El comprobante no pertenece a esta reserva.', 404 );
+		}
+		if ( 'approved' === $proof['status'] ) {
+			throw new DomainException( 'invalid_transition', 'Ese comprobante ya fue aprobado; para corregir el dinero registra un ajuste.', 409 );
+		}
+		$wpdb->update(
+			Schema::table( 'proofs' ),
+			array(
+				'status'      => $status,
+				'review_note' => mb_substr( sanitize_text_field( $note ), 0, 255 ),
+				'reviewed_by' => get_current_user_id(),
+				'reviewed_at' => Db::toSql( $now ),
+			),
+			array( 'id' => $proofId )
+		);
+		Audit::log( 'booking', $bookingId, 'proof_' . $status, array( 'proof_id' => $proofId, 'note' => $note ) );
+	}
+
+	/**
+	 * Registra un movimiento manual: devolución realizada, devolución pendiente, crédito o reverso.
+	 */
+	public static function addMovement( int $bookingId, string $type, int $amount, string $note, string $formKey, ?int $reversesId = null, string $reference = '' ): void {
+		if ( ! in_array( $type, array( 'refund_due', 'refund_done', 'credit', 'reversal', 'retention', 'penalty' ), true ) ) {
+			throw new DomainException( 'invalid_movement', 'Tipo de movimiento no válido.' );
+		}
+		if ( $amount <= 0 ) {
+			throw new DomainException( 'invalid_amount', 'El importe debe ser mayor que cero.' );
+		}
+		if ( '' === trim( $note ) ) {
+			throw new DomainException( 'reason_required', 'Indica el motivo del movimiento.' );
+		}
+		$key = 'mov:' . preg_replace( '/[^A-Za-z0-9-]/', '', $formKey );
+		if ( strlen( $key ) < 20 ) {
+			throw new DomainException( 'invalid_request', 'Recarga la página e intenta de nuevo.' );
+		}
+		Db::transaction(
+			static function () use ( $bookingId, $type, $amount, $note, $key, $reversesId, $reference ) {
+				$booking = self::get( $bookingId, true );
+				if ( 'reversal' === $type ) {
+					$target = null;
+					foreach ( self::movements( $bookingId ) as $m ) {
+						if ( (int) $m['id'] === (int) $reversesId ) {
+							$target = $m;
+						}
+						if ( 'reversal' === $m['type'] && (int) $m['reverses_id'] === (int) $reversesId ) {
+							throw new DomainException( 'already_recorded', 'Ese movimiento ya fue revertido.', 409 );
+						}
+					}
+					if ( ! $target || 'reversal' === $target['type'] ) {
+						throw new DomainException( 'not_found', 'El movimiento a revertir no existe.', 404 );
+					}
+					$amount = (int) $target['amount_cents'];
+				}
+				if ( 'refund_done' === $type ) {
+					$summary = self::summary( $booking );
+					if ( $amount > $summary['refund_due_cents'] ) {
+						throw new DomainException( 'invalid_amount', 'Primero registra la devolución pendiente; el importe supera lo que se debe devolver.' );
+					}
+				}
+				self::insertMovement( $booking, $type, $amount, $key, $note, $reversesId, $reference );
+			}
+		);
+	}
+
+	private static function insertMovement( array $booking, string $type, int $amount, string $key, string $note, ?int $reversesId = null, string $reference = '' ): void {
+		$wpdb = Db::wpdb();
+		if ( $wpdb->get_var( $wpdb->prepare( 'SELECT id FROM ' . Schema::table( 'payments' ) . ' WHERE idempotency_key = %s', $key ) ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			throw new DomainException( 'already_recorded', 'Este movimiento ya se registró.', 409 );
+		}
+		$now = Plugin::clock()->now();
+		Db::check(
+			$wpdb->insert(
+				Schema::table( 'payments' ),
+				array(
+					'booking_id'      => $booking['id'],
+					'type'            => $type,
+					'amount_cents'    => $amount,
+					'method'          => 'transfer',
+					'reference'       => sanitize_text_field( $reference ),
+					'received_at'     => in_array( $type, array( 'refund_done' ), true ) ? Db::toSql( $now ) : null,
+					'reverses_id'     => $reversesId,
+					'category_id'     => $booking['category_id'],
+					'note'            => mb_substr( sanitize_text_field( $note ), 0, 255 ),
+					'actor_id'        => get_current_user_id(),
+					'idempotency_key' => $key,
+					'created_at'      => Db::toSql( $now ),
+				)
+			),
+			'movement_insert'
+		);
+		Audit::log( 'booking', $booking['id'], 'movement:' . $type, array( 'amount' => $amount, 'note' => $note ) );
+	}
+
+	// ----- Transiciones administrativas -----
+
+	public static function confirm( int $bookingId, string $override = '' ): array {
+		Db::transaction(
+			static function () use ( $bookingId, $override ) {
+				$booking = self::get( $bookingId, true );
+				$summary = self::summary( $booking );
+				if ( ! $summary['deposit_covered'] && '' === trim( $override ) ) {
+					throw new DomainException( 'deposit_missing', sprintf( 'Falta %s del anticipo. Para confirmar sin cubrirlo escribe el motivo de la excepción.', Money::format( $summary['deposit_missing'] ) ) );
+				}
+				self::transition( $booking, BookingStatus::CONFIRMED, '' !== trim( $override ) ? 'Excepción: ' . $override : 'Cita aprobada.', array( 'expires_at' => null, 'correction_until' => null ) );
+				self::holdIndefinitely( $bookingId );
+			}
+		);
+		$booking = self::get( $bookingId );
+		Notifications::bookingEvent( 'booking_confirmed', $booking );
+		return $booking;
+	}
+
+	public static function reject( int $bookingId, string $reason ): array {
+		Db::transaction(
+			static function () use ( $bookingId, $reason ) {
+				$booking = self::get( $bookingId, true );
+				self::transition( $booking, BookingStatus::REJECTED, $reason ?: 'Solicitud no aprobada.' );
+				self::releaseOccupancy( $bookingId, Plugin::clock()->now() );
+			}
+		);
+		Notifications::cancelPending( $bookingId );
+		$booking = self::get( $bookingId );
+		Notifications::bookingEvent( 'booking_rejected', $booking, array( 'reason' => $reason ) );
+		return $booking;
+	}
+
+	/**
+	 * Vista previa económica de cancelar, marcar inasistencia o reprogramar según la política
+	 * que aceptó la persona. Cancelación del negocio: sin penalización y devolución completa.
+	 */
+	public static function previewPolicy( array $booking, string $action, bool $byBusiness = false, ?array $newQuote = null ): array {
+		$now     = Plugin::clock()->now();
+		$summary = self::summary( $booking );
+		$paid    = $summary['applied_cents'];
+		$data    = array(
+			'total_cents'   => $booking['total_cents'],
+			'base_cents'    => (int) ( $booking['quote']['base_cents'] ?? $booking['total_cents'] ),
+			'deposit_cents' => $booking['deposit_cents'],
+			'paid_cents'    => max( 0, $paid ),
+		);
+		if ( $byBusiness ) {
+			$range = array(
+				'min_hours'         => 0,
+				'max_hours'         => null,
+				'charge_type'       => 'none',
+				'charge_value'      => 0,
+				'charge_base'       => 'total',
+				'deposit'           => 'refund',
+				'new_deposit_cents' => 0,
+				'allowed'           => true,
+			);
+			$policy = null;
+		} else {
+			$policy = $booking['policy'][ $action ] ?? null;
+			if ( ! $policy ) {
+				$range = array(
+					'min_hours'         => 0,
+					'max_hours'         => null,
+					'charge_type'       => 'none',
+					'charge_value'      => 0,
+					'charge_base'       => 'total',
+					'deposit'           => 'credit',
+					'new_deposit_cents' => 0,
+					'allowed'           => true,
+				);
+			} else {
+				$range = Policy::rangeFor( $policy['ranges'], $booking['start']->getTimestamp() - $now->getTimestamp() );
+			}
+		}
+		$outcome                   = Policy::outcome( $action, $range, $data, $newQuote );
+		$outcome['seconds_before'] = $booking['start']->getTimestamp() - $now->getTimestamp();
+		$outcome['policy_version'] = $policy['version'] ?? null;
+		$outcome['has_policy']     = (bool) $policy || $byBusiness;
+		$outcome['by_business']    = $byBusiness;
+		$outcome['range_text']     = $byBusiness ? 'Cancelación por parte del negocio: sin penalización.' : ( $policy ? Policy::describeRange( $range ) : 'La reserva no tiene política aceptada para esta acción; no se aplica cargo automático.' );
+		return $outcome;
+	}
+
+	public static function cancel( int $bookingId, bool $byBusiness, string $reason, int $expectedVersion ): array {
+		$reason = trim( sanitize_textarea_field( $reason ) );
+		if ( '' === $reason ) {
+			throw new DomainException( 'reason_required', 'Indica el motivo de la cancelación.' );
+		}
+		Db::transaction(
+			static function () use ( $bookingId, $byBusiness, $reason, $expectedVersion ) {
+				$booking = self::get( $bookingId, true );
+				self::assertVersion( $booking, $expectedVersion );
+				$outcome = self::previewPolicy( $booking, 'cancel', $byBusiness );
+				self::transition( $booking, BookingStatus::CANCELLED, ( $byBusiness ? 'Cancelada por el negocio: ' : 'Cancelada: ' ) . $reason, array( 'expires_at' => null, 'correction_until' => null ) );
+				self::applyOutcomeMovements( $booking, $outcome, 'cancel' );
+				self::releaseOccupancy( $bookingId, Plugin::clock()->now() );
+				Audit::log( 'booking', $bookingId, 'cancel_outcome', self::outcomeForAudit( $outcome ) );
+			}
+		);
+		Notifications::cancelPending( $bookingId );
+		$booking = self::get( $bookingId );
+		Notifications::bookingEvent( 'booking_cancelled', $booking, array( 'reason' => $reason ) );
+		return $booking;
+	}
+
+	public static function markNoShow( int $bookingId, int $expectedVersion ): array {
+		Db::transaction(
+			static function () use ( $bookingId, $expectedVersion ) {
+				$booking = self::get( $bookingId, true );
+				self::assertVersion( $booking, $expectedVersion );
+				$outcome = self::previewPolicy( $booking, 'no_show' );
+				self::transition( $booking, BookingStatus::NO_SHOW, 'La persona no asistió.' );
+				self::applyOutcomeMovements( $booking, $outcome, 'no_show' );
+				Audit::log( 'booking', $bookingId, 'no_show_outcome', self::outcomeForAudit( $outcome ) );
+			}
+		);
+		Notifications::cancelPending( $bookingId );
+		return self::get( $bookingId );
+	}
+
+	public static function complete( int $bookingId ): array {
+		Db::transaction(
+			static function () use ( $bookingId ) {
+				$booking = self::get( $bookingId, true );
+				self::transition( $booking, BookingStatus::COMPLETED, 'Sesión realizada.' );
+				if ( ! $booking['session_counted'] ) {
+					Clients::adjustCompleted( $booking['client_id'], 1, 'Reserva ' . $booking['public_ref'] . ' completada.' );
+					Db::wpdb()->update( Schema::table( 'bookings' ), array( 'session_counted' => 1 ), array( 'id' => $bookingId ) );
+				}
+			}
+		);
+		Notifications::cancelPending( $bookingId );
+		return self::get( $bookingId );
+	}
+
+	/** Revierte "completada" o "inasistencia" a confirmada, con historial. */
+	public static function reopen( int $bookingId, string $reason ): array {
+		if ( '' === trim( $reason ) ) {
+			throw new DomainException( 'reason_required', 'Indica el motivo.' );
+		}
+		Db::transaction(
+			static function () use ( $bookingId, $reason ) {
+				$booking = self::get( $bookingId, true );
+				self::transition( $booking, BookingStatus::CONFIRMED, 'Reabierta: ' . $reason );
+				if ( $booking['session_counted'] ) {
+					Clients::adjustCompleted( $booking['client_id'], -1, 'Reserva ' . $booking['public_ref'] . ' reabierta: ' . $reason );
+					Db::wpdb()->update( Schema::table( 'bookings' ), array( 'session_counted' => 0 ), array( 'id' => $bookingId ) );
+				}
+			}
+		);
+		return self::get( $bookingId );
+	}
+
+	/**
+	 * Vista previa de reprogramar a un nuevo horario. Conserva la categoría y la fecha de
+	 * solicitud original para que la campaña siga aplicando si es elegible.
+	 */
+	public static function previewReschedule( array $booking, \DateTimeImmutable $newStart ): array {
+		$service = Services::find( $booking['service_id'] );
+		if ( ! $service ) {
+			throw new DomainException( 'not_found', 'El servicio de la reserva ya no existe.', 404 );
+		}
+		$now  = Plugin::clock()->now();
+		$slot = Catalog::findAvailableSlot( $service, $newStart, $now, $booking['id'] );
+		if ( ! $slot ) {
+			throw new DomainException( 'slot_unavailable', 'Ese horario no está disponible.', 409 );
+		}
+		$requestedAt = new \DateTimeImmutable( (string) ( $booking['quote']['requested_at'] ?? $booking['created_at'] ) );
+		$newQuote    = ( new Pricing( Settings::timezone() ) )->quote(
+			$service,
+			Services::rules( (int) $service['id'] ),
+			array(
+				'start'        => $newStart,
+				'requested_at' => $requestedAt,
+				'category'     => $booking['client_category'],
+				'participants' => $booking['participants'],
+				'pets'         => $booking['pets'],
+				'extras'       => (array) ( $booking['quote']['extras_input'] ?? array() ),
+			)
+		);
+		$outcome           = self::previewPolicy( $booking, 'reschedule', false, $newQuote );
+		$outcome['quote']  = $newQuote;
+		$outcome['slot']   = $slot;
+		return $outcome;
+	}
+
+	public static function reschedule( int $bookingId, \DateTimeImmutable $newStart, string $reason, int $expectedVersion ): array {
+		$reason = trim( sanitize_textarea_field( $reason ) );
+		if ( '' === $reason ) {
+			throw new DomainException( 'reason_required', 'Indica el motivo del cambio.' );
+		}
+		$now = Plugin::clock()->now();
+		Db::transaction(
+			static function () use ( $bookingId, $newStart, $reason, $expectedVersion, $now ) {
+				$booking = self::get( $bookingId, true );
+				self::assertVersion( $booking, $expectedVersion );
+				if ( ! BookingStatus::isOpen( $booking['status'] ) ) {
+					throw new DomainException( 'invalid_transition', 'Solo se pueden reprogramar reservas activas.', 409 );
+				}
+				$service  = Services::get( $booking['service_id'] );
+				$params   = Services::availabilityParams( $service );
+				$occupy   = Availability::occupancyFor( $newStart, $params );
+				$oldOcc   = new Interval( $booking['start']->modify( sprintf( '-%d minutes', (int) $service['buffer_before'] ) ), $booking['end']->modify( sprintf( '+%d minutes', (int) $service['buffer_after'] ) ) );
+				self::lockDays( $booking['resource_id'], array_merge( $occupy->utcDays(), $oldOcc->utcDays() ) );
+
+				$outcome = self::previewReschedule( $booking, $newStart );
+				if ( empty( $outcome['allowed'] ) ) {
+					throw new DomainException( 'not_allowed', 'La política no permite reprogramar con esta anticipación.', 409 );
+				}
+				$quote = $outcome['quote'];
+				self::applyOutcomeMovements( $booking, $outcome, 'reschedule' );
+
+				$needsPayment = $outcome['amount_due_now'] > 0;
+				$holdUntil    = $needsPayment ? $now->modify( sprintf( '+%d minutes', (int) round( Services::holdHours( $service ) * 60 ) ) ) : null;
+				$old          = array( 'start' => $booking['start_utc'], 'total' => $booking['total_cents'] );
+				$fields       = array(
+					'start_utc'     => Db::toSql( $newStart ),
+					'end_utc'       => Db::toSql( $outcome['slot']['end'] ),
+					'total_cents'   => $quote['total_cents'],
+					'deposit_cents' => (int) $outcome['new_deposit'],
+					'quote'         => Db::json( array_merge( $booking['quote'], $quote, array( 'previous' => $old ) ) ),
+				);
+				if ( $needsPayment ) {
+					$fields['expires_at']       = Db::toSql( $holdUntil );
+					$fields['correction_until'] = null;
+					if ( BookingStatus::PENDING_PAYMENT === $booking['status'] ) {
+						self::update( $booking, $fields );
+					} else {
+						self::transition( $booking, BookingStatus::PENDING_PAYMENT, 'Reprogramada; requiere nuevo anticipo. ' . $reason, $fields );
+					}
+				} else {
+					self::update( $booking, $fields );
+				}
+				self::releaseOccupancy( $bookingId, $now );
+				Db::check(
+					Db::wpdb()->insert(
+						Schema::table( 'occupancies' ),
+						array(
+							'resource_id' => $booking['resource_id'],
+							'booking_id'  => $bookingId,
+							'start_utc'   => Db::toSql( $occupy->start ),
+							'end_utc'     => Db::toSql( $occupy->end ),
+							'kind'        => 'booking',
+							'expires_at'  => Db::toSql( $holdUntil ),
+							'created_at'  => Db::toSql( $now ),
+						)
+					),
+					'occupancy_insert'
+				);
+				Tokens::updateExpiry( $bookingId, self::tokenExpiry( $newStart ) );
+				Audit::log( 'booking', $bookingId, 'rescheduled', array_merge( self::outcomeForAudit( $outcome ), array( 'from' => $old['start'], 'to' => Db::toSql( $newStart ), 'reason' => $reason ) ) );
+			}
+		);
+		Notifications::cancelPending( $bookingId );
+		$booking = self::get( $bookingId );
+		Notifications::bookingEvent( 'booking_rescheduled', $booking );
+		Notifications::scheduleReminder( $booking );
+		return $booking;
+	}
+
+	/**
+	 * Recalcula el precio con otra categoría (por ejemplo, frecuente validado). Conserva la
+	 * fecha de solicitud original. No mueve dinero: si ya pagó de más, se muestra el excedente.
+	 */
+	public static function previewRecalculate( array $booking, string $category ): array {
+		$service = Services::get( $booking['service_id'] );
+		$requestedAt = new \DateTimeImmutable( (string) ( $booking['quote']['requested_at'] ?? $booking['created_at'] ) );
+		return ( new Pricing( Settings::timezone() ) )->quote(
+			$service,
+			Services::rules( (int) $service['id'] ),
+			array(
+				'start'        => $booking['start'],
+				'requested_at' => $requestedAt,
+				'category'     => $category,
+				'participants' => $booking['participants'],
+				'pets'         => $booking['pets'],
+				'extras'       => (array) ( $booking['quote']['extras_input'] ?? array() ),
+			)
+		);
+	}
+
+	public static function recalculate( int $bookingId, string $category, string $reason, int $expectedVersion ): array {
+		if ( '' === trim( $reason ) ) {
+			throw new DomainException( 'reason_required', 'Indica el motivo del ajuste.' );
+		}
+		Db::transaction(
+			static function () use ( $bookingId, $category, $reason, $expectedVersion ) {
+				$booking = self::get( $bookingId, true );
+				self::assertVersion( $booking, $expectedVersion );
+				$quote = self::previewRecalculate( $booking, $category );
+				self::update(
+					$booking,
+					array(
+						'client_category' => $quote['category'],
+						'total_cents'     => $quote['total_cents'],
+						'deposit_cents'   => $quote['deposit_cents'],
+						'quote'           => Db::json( array_merge( $booking['quote'], $quote, array( 'previous' => array( 'total' => $booking['total_cents'], 'category' => $booking['client_category'] ) ) ) ),
+					)
+				);
+				Audit::log( 'booking', $bookingId, 'recalculated', array( 'from' => $booking['total_cents'], 'to' => $quote['total_cents'], 'category' => $quote['category'], 'reason' => $reason ) );
+			}
+		);
+		return self::get( $bookingId );
+	}
+
+	public static function addNote( int $bookingId, string $note ): void {
+		$note = trim( sanitize_textarea_field( $note ) );
+		if ( '' === $note ) {
+			return;
+		}
+		$booking = self::get( $bookingId );
+		$stamp   = Plugin::clock()->now()->setTimezone( Settings::timezone() )->format( 'Y-m-d H:i' );
+		$user    = wp_get_current_user();
+		$text    = trim( (string) $booking['internal_notes'] . "\n[" . $stamp . ' ' . ( $user ? $user->display_name : '' ) . '] ' . $note );
+		Db::wpdb()->update( Schema::table( 'bookings' ), array( 'internal_notes' => $text ), array( 'id' => $bookingId ) );
+	}
+
+	/** Genera un enlace nuevo y anula el anterior. */
+	public static function rotateToken( int $bookingId ): string {
+		$booking = self::get( $bookingId );
+		Tokens::revokeAll( $bookingId );
+		$nonce = Tokens::newNonce();
+		Db::wpdb()->update( Schema::table( 'bookings' ), array( 'token_nonce' => $nonce ), array( 'id' => $bookingId ) );
+		Audit::log( 'booking', $bookingId, 'token_rotated' );
+		return Tokens::register( $bookingId, $nonce, self::tokenExpiry( $booking['start'] ) );
+	}
+
+	public static function portalUrl( array $booking ): string {
+		return self::portalBase() . '#acceso=' . Tokens::tokenFor( $booking['id'], $booking['token_nonce'] );
+	}
+
+	public static function portalBase(): string {
+		$page = (int) Settings::get( 'portal_page_id' );
+		$url  = $page ? get_permalink( $page ) : '';
+		return $url ?: add_query_arg( 'mo_portal', '1', home_url( '/' ) );
+	}
+
+	// ----- Utilidades internas -----
+
+	/**
+	 * Cambia el estado verificando la transición y la versión (bloqueo optimista).
+	 */
+	public static function transition( array $booking, string $to, string $reason, array $fields = array() ): void {
+		BookingStatus::assertTransition( $booking['status'], $to );
+		self::update( $booking, array_merge( $fields, array( 'status' => $to ) ) );
+		Audit::log( 'booking', $booking['id'], 'status:' . $to, array( 'from' => $booking['status'], 'reason' => $reason, 'version' => $booking['version'] + 1 ) );
+	}
+
+	private static function update( array $booking, array $fields ): void {
+		$wpdb  = Db::wpdb();
+		$sets  = array();
+		$vals  = array();
+		foreach ( $fields as $col => $value ) {
+			if ( null === $value ) {
+				$sets[] = "`$col` = NULL";
+			} else {
+				$sets[] = "`$col` = %s";
+				$vals[] = $value;
+			}
+		}
+		$sets[] = 'version = version + 1';
+		$sets[] = 'updated_at = %s';
+		$vals[] = Db::toSql( Plugin::clock()->now() );
+		$vals[] = $booking['id'];
+		$vals[] = $booking['version'];
+		$sql    = 'UPDATE ' . Schema::table( 'bookings' ) . ' SET ' . implode( ', ', $sets ) . ' WHERE id = %d AND version = %d';
+		$done   = $wpdb->query( $wpdb->prepare( $sql, $vals ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ( 1 !== $done ) {
+			throw new DomainException( 'version_conflict', 'La reserva cambió mientras trabajabas. Recarga la página para ver la versión actual.', 409 );
+		}
+	}
+
+	private static function assertVersion( array $booking, int $expected ): void {
+		if ( $expected > 0 && $booking['version'] !== $expected ) {
+			throw new DomainException( 'version_conflict', 'La reserva cambió mientras trabajabas. Recarga la página para ver la versión actual.', 409 );
+		}
+	}
+
+	private static function applyOutcomeMovements( array $booking, array $outcome, string $action ): void {
+		$base = $action . ':' . $booking['id'] . ':' . $booking['version'];
+		if ( $outcome['retained'] > 0 ) {
+			self::insertMovement( $booking, 'retention', $outcome['retained'], $base . ':retention', 'Anticipo retenido por política (' . Policy::ACTION_LABELS[ $action ] . ').' );
+		}
+		if ( $outcome['penalty_from_paid'] > 0 ) {
+			self::insertMovement( $booking, 'penalty', $outcome['penalty_from_paid'], $base . ':penalty', 'Penalización cubierta con dinero pagado.' );
+		}
+		if ( 'reschedule' !== $action ) {
+			if ( $outcome['refund_due'] > 0 ) {
+				self::insertMovement( $booking, 'refund_due', $outcome['refund_due'], $base . ':refund', 'Devolución pendiente por ' . strtolower( Policy::ACTION_LABELS[ $action ] ) . '.' );
+			}
+			if ( $outcome['credit'] > 0 ) {
+				self::insertMovement( $booking, 'credit', $outcome['credit'], $base . ':credit', 'Saldo a favor por ' . strtolower( Policy::ACTION_LABELS[ $action ] ) . '.' );
+			}
+		} elseif ( $outcome['refund_due'] > 0 ) {
+			self::insertMovement( $booking, 'refund_due', $outcome['refund_due'], $base . ':refund', 'Excedente tras reprogramar.' );
+		}
+	}
+
+	private static function outcomeForAudit( array $o ): array {
+		return array_intersect_key( $o, array_flip( array( 'retained', 'penalty', 'penalty_from_paid', 'penalty_due', 'credit', 'refund_due', 'amount_due_now', 'new_total', 'new_deposit', 'policy_version', 'by_business', 'seconds_before' ) ) );
+	}
+
+	/**
+	 * Toma los bloqueos de calendario de los días indicados, en orden estable.
+	 */
+	public static function lockDays( int $resourceId, array $days ): void {
+		$days = array_values( array_unique( $days ) );
+		sort( $days );
+		$wpdb  = Db::wpdb();
+		$table = Schema::table( 'calendar_locks' );
+		foreach ( $days as $day ) {
+			$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO $table (resource_id, day) VALUES (%d, %s)", $resourceId, $day ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		}
+		foreach ( $days as $day ) {
+			$wpdb->get_var( $wpdb->prepare( "SELECT day FROM $table WHERE resource_id = %d AND day = %s FOR UPDATE", $resourceId, $day ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		}
+	}
+
+	public static function releaseOccupancy( int $bookingId, \DateTimeImmutable $now ): void {
+		$wpdb = Db::wpdb();
+		$wpdb->query( $wpdb->prepare( 'UPDATE ' . Schema::table( 'occupancies' ) . ' SET released_at = %s WHERE booking_id = %d AND released_at IS NULL', Db::toSql( $now ), $bookingId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	public static function holdIndefinitely( int $bookingId ): void {
+		$wpdb = Db::wpdb();
+		$wpdb->query( $wpdb->prepare( 'UPDATE ' . Schema::table( 'occupancies' ) . ' SET expires_at = NULL WHERE booking_id = %d AND released_at IS NULL', $bookingId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	public static function setOccupancyExpiry( int $bookingId, \DateTimeImmutable $until ): void {
+		$wpdb = Db::wpdb();
+		$wpdb->query( $wpdb->prepare( 'UPDATE ' . Schema::table( 'occupancies' ) . ' SET expires_at = %s WHERE booking_id = %d AND released_at IS NULL', Db::toSql( $until ), $bookingId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	private static function tokenExpiry( \DateTimeImmutable $start ): \DateTimeImmutable {
+		return $start->modify( sprintf( '+%d days', max( 1, (int) Settings::get( 'token_days_after' ) ) ) );
+	}
+
+	private static function newRef(): string {
+		$wpdb = Db::wpdb();
+		for ( $i = 0; $i < 10; $i++ ) {
+			$ref = 'MO-';
+			for ( $j = 0; $j < 6; $j++ ) {
+				$ref .= self::REF_ALPHABET[ random_int( 0, strlen( self::REF_ALPHABET ) - 1 ) ];
+			}
+			if ( ! $wpdb->get_var( $wpdb->prepare( 'SELECT id FROM ' . Schema::table( 'bookings' ) . ' WHERE public_ref = %s', $ref ) ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				return $ref;
+			}
+		}
+		throw new DomainException( 'ref_error', 'No pudimos generar el número de reserva. Intenta de nuevo.', 500 );
+	}
+
+	public static function localDateToUtc( string $date ): \DateTimeImmutable {
+		$zone = Settings::timezone();
+		$d    = \DateTimeImmutable::createFromFormat( '!Y-m-d', $date, $zone );
+		if ( ! $d || $d->format( 'Y-m-d' ) !== $date ) {
+			return Plugin::clock()->now();
+		}
+		return $d->setTime( 12, 0 )->setTimezone( new \DateTimeZone( 'UTC' ) );
+	}
+}

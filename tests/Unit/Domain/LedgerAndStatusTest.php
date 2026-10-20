@@ -39,6 +39,17 @@ final class LedgerAndStatusTest extends TestCase {
 		$this->assertSame( 160000, $s['net_cents'] );
 	}
 
+	public function test_retention_does_not_count_toward_new_deposit(): void {
+		$s = Ledger::summarize( array(
+			array( 'id' => 1, 'type' => 'payment', 'amount_cents' => 50000 ),
+			array( 'id' => 2, 'type' => 'retention', 'amount_cents' => 50000 ),
+		), 160000, 50000 );
+		$this->assertSame( 50000, $s['received_cents'] );
+		$this->assertSame( 0, $s['applied_cents'] );
+		$this->assertSame( 50000, $s['deposit_missing'] );
+		$this->assertSame( 160000, $s['balance_cents'] );
+	}
+
 	public function test_transitions(): void {
 		$this->assertTrue( BookingStatus::canTransition( BookingStatus::PENDING_PAYMENT, BookingStatus::PAYMENT_REVIEW ) );
 		$this->assertFalse( BookingStatus::canTransition( BookingStatus::EXPIRED, BookingStatus::CONFIRMED ) );

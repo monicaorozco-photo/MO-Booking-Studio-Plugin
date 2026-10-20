@@ -33,9 +33,9 @@ final class BookingStatus {
 	private const TRANSITIONS = array(
 		self::PENDING_PAYMENT      => array( self::PAYMENT_REVIEW, self::PENDING_APPROVAL, self::CONFIRMED, self::EXPIRED, self::REJECTED, self::CANCELLED ),
 		self::PAYMENT_REVIEW       => array( self::CORRECTION_REQUESTED, self::PENDING_PAYMENT, self::PENDING_APPROVAL, self::CONFIRMED, self::REJECTED, self::CANCELLED ),
-		self::CORRECTION_REQUESTED => array( self::PAYMENT_REVIEW, self::PENDING_APPROVAL, self::CONFIRMED, self::EXPIRED, self::REJECTED, self::CANCELLED ),
-		self::PENDING_APPROVAL     => array( self::CONFIRMED, self::REJECTED, self::CANCELLED, self::PAYMENT_REVIEW ),
-		self::CONFIRMED            => array( self::COMPLETED, self::NO_SHOW, self::CANCELLED, self::PAYMENT_REVIEW ),
+		self::CORRECTION_REQUESTED => array( self::PAYMENT_REVIEW, self::PENDING_PAYMENT, self::PENDING_APPROVAL, self::CONFIRMED, self::EXPIRED, self::REJECTED, self::CANCELLED ),
+		self::PENDING_APPROVAL     => array( self::CONFIRMED, self::REJECTED, self::CANCELLED, self::PAYMENT_REVIEW, self::PENDING_PAYMENT ),
+		self::CONFIRMED            => array( self::COMPLETED, self::NO_SHOW, self::CANCELLED, self::PAYMENT_REVIEW, self::PENDING_PAYMENT ),
 		self::COMPLETED            => array( self::CONFIRMED ),
 		self::NO_SHOW              => array( self::CONFIRMED ),
 		self::EXPIRED              => array(),

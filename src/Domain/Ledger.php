@@ -71,26 +71,28 @@ final class Ledger {
 		$received   = $sum['payment'];
 		$net        = $received - $sum['refund_done'];
 		$refundOpen = max( 0, $sum['refund_due'] - $sum['refund_done'] );
-		$balance    = max( 0, $totalCents - $received );
-		$excess     = max( 0, $received - $totalCents );
+		// Dinero que cuenta para esta cita: lo recibido menos devoluciones, anticipos
+		// retenidos por política y penalizaciones. Así una retención no se suma dos veces.
+		$applied = $net - $sum['retention'] - $sum['penalty'];
+		$balance = max( 0, $totalCents - $applied );
+		$excess  = max( 0, $applied - $totalCents );
 
 		if ( $refundOpen > 0 ) {
 			$status = self::REFUND_PENDING;
 		} elseif ( $sum['refund_done'] > 0 ) {
 			$status = self::REFUND_RECORDED;
-		} elseif ( $received >= $totalCents && $totalCents > 0 ) {
+		} elseif ( $totalCents > 0 && $applied >= $totalCents ) {
 			$status = self::PAID;
-		} elseif ( $received > 0 && $received >= $depositCents ) {
+		} elseif ( $applied > 0 && $applied >= $depositCents ) {
 			$status = self::DEPOSIT_COVERED;
-		} elseif ( $received > 0 ) {
+		} elseif ( $applied > 0 ) {
 			$status = self::DEPOSIT_PARTIAL;
 		} elseif ( $proofPending ) {
 			$status = self::IN_REVIEW;
+		} elseif ( 0 === $totalCents ) {
+			$status = self::PAID;
 		} else {
 			$status = self::NONE;
-		}
-		if ( $totalCents === 0 && $received === 0 && ! $proofPending ) {
-			$status = $depositCents > 0 ? self::NONE : self::PAID;
 		}
 
 		return array(
@@ -102,10 +104,11 @@ final class Ledger {
 			'credit_cents'     => $sum['credit'],
 			'refund_due_cents' => $refundOpen,
 			'refunded_cents'   => $sum['refund_done'],
+			'applied_cents'    => $applied,
 			'balance_cents'    => $balance,
 			'excess_cents'     => $excess,
-			'deposit_covered'  => $received >= $depositCents,
-			'deposit_missing'  => max( 0, $depositCents - $received ),
+			'deposit_covered'  => $applied >= $depositCents,
+			'deposit_missing'  => max( 0, $depositCents - $applied ),
 		);
 	}
 }

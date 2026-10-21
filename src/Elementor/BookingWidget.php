@@ -56,6 +56,23 @@ class BookingWidget extends \Elementor\Widget_Base {
 		$this->add_control( 'layout', array( 'label' => 'Disposición', 'type' => \Elementor\Controls_Manager::SELECT, 'options' => array( 'stacked' => 'Apilada', 'columns' => 'Columnas en escritorio' ), 'default' => 'stacked' ) );
 		$this->end_controls_section();
 
+		// DEC-10: textos de la bienvenida. Deja un subtítulo vacío para ocultarlo.
+		$labels = array(
+			'welcome_title'           => 'Título',
+			'welcome_question'        => 'Pregunta',
+			'welcome_new_title'       => 'Botón cliente nuevo',
+			'welcome_new_text'        => 'Subtítulo cliente nuevo (vacío = ocultar)',
+			'welcome_returning_title' => 'Botón cliente frecuente',
+			'welcome_returning_text'  => 'Subtítulo cliente frecuente (vacío = ocultar)',
+			'welcome_identify_title'  => 'Título al identificarse',
+			'welcome_identify_text'   => 'Instrucción al identificarse',
+		);
+		$this->start_controls_section( 'welcome', array( 'label' => 'Bienvenida' ) );
+		foreach ( Frontend::WELCOME_TEXTS as $key => $default ) {
+			$this->add_control( $key, array( 'label' => $labels[ $key ], 'type' => \Elementor\Controls_Manager::TEXT, 'default' => $default, 'label_block' => true ) );
+		}
+		$this->end_controls_section();
+
 		$this->start_controls_section( 'style_colors', array( 'label' => 'Colores', 'tab' => \Elementor\Controls_Manager::TAB_STYLE ) );
 		$vars = array(
 			'primary'          => array( 'Color principal (botones)', '--mo-primary' ),
@@ -102,6 +119,7 @@ class BookingWidget extends \Elementor\Widget_Base {
 				'show_description' => 'yes' === ( $s['show_description'] ?? 'yes' ),
 				'show_policies'    => 'yes' === ( $s['show_policies'] ?? 'yes' ),
 				'layout'           => (string) ( $s['layout'] ?? 'stacked' ),
+				'texts'            => array_intersect_key( $s, Frontend::WELCOME_TEXTS ),
 			)
 		);
 	}

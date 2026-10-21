@@ -78,6 +78,17 @@ final class Dashboard {
 			echo Ui::card( 'Dinero', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 
+		// Google Calendar.
+		if ( \MOBookingStudio\Integrations\Google\Connection::isConfigured() ) {
+			$g      = \MOBookingStudio\Integrations\Google\Connection::data();
+			$jobs   = \MOBookingStudio\Integrations\Google\SyncWorker::jobsSummary();
+			$open   = count( \MOBookingStudio\Integrations\Google\Conflicts::open() );
+			$ext    = count( \MOBookingStudio\Integrations\Google\Conflicts::externalChanges() );
+			$body   = 'revoked' === $g['status'] ? '<p class="mo-error">Google dejó de aceptar la conexión. Vuelve a conectar.</p>' : '';
+			$body  .= '<ul class="mo-list"><li>Empalmes abiertos: <strong>' . $open . '</strong></li><li>Cambios hechos en Google: <strong>' . $ext . '</strong></li><li>Pendientes de enviar: ' . (int) $jobs['pending'] . ' · fallidos: <strong>' . count( $jobs['failed'] ) . '</strong></li></ul><p><a href="' . esc_url( Ui::url( 'mo-booking-google' ) ) . '">Abrir Google Calendar</a></p>';
+			echo Ui::card( 'Google Calendar', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
+		}
+
 		// Salud del sistema.
 		$wpdb    = Db::wpdb();
 		$failed  = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Schema::table( 'notifications' ) . " WHERE status = 'failed'" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared

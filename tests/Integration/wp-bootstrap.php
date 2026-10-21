@@ -7,6 +7,18 @@ $wpDir = rtrim( (string) getenv( 'MO_WP_DIR' ), '/' );
 if ( ! defined( 'WP_USE_THEMES' ) ) {
 	define( 'WP_USE_THEMES', false );
 }
+// Pruebas: sin sincronización al final de la solicitud y credenciales de Google ficticias
+// (las solicitudes a Google las atiende tests/Fixtures/FakeGoogle.php).
+foreach ( array(
+	'MO_BOOKING_TESTING'              => true,
+	'MO_BOOKING_SECRET'               => 'pruebas-mo-booking-studio-secreto-de-32-caracteres-o-mas',
+	'MO_BOOKING_GOOGLE_CLIENT_ID'     => 'fake-client.apps.googleusercontent.com',
+	'MO_BOOKING_GOOGLE_CLIENT_SECRET' => 'fake-secret',
+) as $name => $value ) {
+	if ( ! defined( $name ) ) {
+		define( $name, $value );
+	}
+}
 $_SERVER['HTTP_HOST']   = 'localhost';
 $_SERVER['SERVER_NAME'] = 'localhost';
 $_SERVER['REMOTE_ADDR'] = '127.0.0.1';

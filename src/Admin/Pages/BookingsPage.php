@@ -169,6 +169,10 @@ final class BookingsPage {
 		// Mensajes.
 		echo Ui::card( 'Mensajes y enlace privado', self::messagesBlock( $b, $hidden ) ); // phpcs:ignore WordPress.Security.EscapeOutput
 
+		if ( \MOBookingStudio\Integrations\Google\Connection::isConfigured() ) {
+			echo Ui::card( 'Google Calendar', self::googleBlock( $b ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+		}
+
 		// Notas e historial.
 		$body  = $b['internal_notes'] ? '<div class="mo-notes">' . nl2br( esc_html( $b['internal_notes'] ) ) . '</div>' : '<p>Sin notas.</p>';
 		$body .= Ui::formOpen( 'add_note', $hidden ) . Ui::textarea( 'note', '', 2, array( 'placeholder' => 'Nota interna (no la ve el cliente)' ) ) . Ui::button( 'Agregar nota', 'button-secondary' ) . '</form>';
@@ -371,6 +375,31 @@ final class BookingsPage {
 		return $html . '</div>';
 	}
 
+	private static function googleBlock( array $b ): string {
+		$states = array( 'none' => 'Sin sincronizar', 'pending' => 'Pendiente de enviar', 'synced' => 'Sincronizada', 'retrying' => 'Reintentando (Google falló temporalmente)', 'error' => 'Error: revisa la página Google Calendar' );
+		$html   = '<p>Estado: <strong>' . esc_html( $states[ $b['sync_state'] ] ?? $b['sync_state'] ) . '</strong></p>';
+		$events = \MOBookingStudio\Integrations\Google\SyncWorker::eventsFor( $b['id'] );
+		if ( $events ) {
+			$html .= '<ul class="mo-list">';
+			foreach ( $events as $e ) {
+				$html .= '<li>' . ( 'client' === $e['kind'] ? 'Evento del cliente' : 'Evento interno' ) . ': ' . ( 'active' === $e['state'] ? 'en Google' : 'eliminado' ) .
+					( 'client' === $e['kind'] && $e['invited_at'] ? ' · invitación enviada ' . esc_html( Ui::localDateTime( $e['invited_at'], 'd/m H:i' ) ) : ( 'client' === $e['kind'] ? ' · sin invitación (correo de ejemplo o sin correo)' : '' ) ) .
+					( $e['external_change'] && 'dismissed' !== $e['external_change'] ? ' · <span class="mo-pill mo-pill--review">Editado en Google</span>' : '' ) . '</li>';
+			}
+			$html .= '</ul>';
+		}
+		$open = array_filter(
+			\MOBookingStudio\Integrations\Google\Conflicts::forBooking( $b['id'] ),
+			static function ( $c ) {
+				return in_array( $c['status'], array( 'open', 'ignored', 'kept' ), true );
+			}
+		);
+		if ( $open ) {
+			$html .= '<div class="notice notice-warning inline"><p><strong>Empalme en Google:</strong> otro evento ocupa parte de este horario. No se canceló ni se movió nada. <a href="' . esc_url( Ui::url( 'mo-booking-google' ) ) . '">Revisar empalmes</a></p></div>';
+		}
+		return $html;
+	}
+
 	private static function messagesBlock( array $b, array $hidden ): string {
 		$html  = '<p>Enlace privado del cliente (no lo publiques):</p><p><input type="text" readonly class="large-text mo-copy" value="' . esc_attr( Bookings::portalUrl( $b ) ) . '" onclick="this.select()"></p>';
 		$html .= Ui::formOpen( 'rotate_link', $hidden, 'mo-inline-form' ) . Ui::button( 'Generar enlace nuevo (anula el anterior)', 'button-link', '¿Anular el enlace actual y crear uno nuevo?' ) . '</form>';
@@ -457,6 +486,9 @@ final class BookingsPage {
 			$body .= Ui::row( 'Fecha y hora en que lo solicitó', Ui::input( 'requested_at', $old['requested_at'] ?? Ui::sqlToLocalInput( Plugin::clock()->now()->setTimezone( Settings::timezone() )->format( 'Y-m-d H:i' ) ), 'datetime-local' ), 'Determina si aplica una preventa. No puede ser futura.', 'requested_at' );
 			$body .= Ui::row( 'Anticipo ya recibido ($)', Ui::input( 'paid', $old['paid'] ?? '', 'text', array( 'inputmode' => 'decimal', 'class' => 'small-text' ) ), 'Opcional. Si ya verificaste el depósito, se registra como pago y la cita se confirma si cubre el anticipo.', 'paid' );
 			$body .= Ui::row( 'Fecha de recepción del pago', Ui::input( 'paid_date', $old['paid_date'] ?? Ui::localToday(), 'date' ), '', 'paid_date' );
+			if ( \MOBookingStudio\Integrations\Google\Connection::isActive() ) {
+				$body .= Ui::row( 'Si Google no responde', Ui::checkbox( 'google_override', false, 'Crear la reserva sin verificar Google (queda registrado como excepción)' ), 'Úsalo solo si Google está caído y confirmaste tu agenda por otro medio.' );
+			}
 			$body .= Ui::button( 'Crear reserva' ) . '</form>';
 			echo Ui::card( 'Datos de la reserva', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
 		}
@@ -483,7 +515,8 @@ final class BookingsPage {
 				'answers'         => array_map( 'sanitize_text_field', (array) ( $p['answers'] ?? array() ) ),
 			),
 			array(
-				'source'       => 'admin',
+				'source'          => 'admin',
+				'google_override' => ! empty( $p['google_override'] ),
 				'category'     => (string) ( $p['category'] ?? 'general' ),
 				'requested_at' => $req ? $req->setTimezone( new \DateTimeZone( 'UTC' ) ) : null,
 			)

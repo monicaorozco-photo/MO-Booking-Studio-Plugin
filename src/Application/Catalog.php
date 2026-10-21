@@ -2,6 +2,7 @@
 namespace MOBookingStudio\Application;
 
 use MOBookingStudio\Domain\Availability;
+use MOBookingStudio\Integrations\Google\Busy as GoogleBusy;
 use MOBookingStudio\Domain\DomainException;
 use MOBookingStudio\Domain\Money;
 use MOBookingStudio\Domain\Policy;
@@ -111,6 +112,13 @@ final class Catalog {
 
 		$resource = (int) $service['resource_id'];
 		$busy     = Schedules::busy( $resource, $rangeFrom, $rangeTo, $now );
+		// Ocupación de Google: vista previa con caché (SYNC-07); cotizar y reservar consultan de nuevo.
+		$google   = GoogleBusy::between( $rangeFrom, $rangeTo, false );
+		foreach ( $google['blocks'] as $b ) {
+			if ( $b['end'] > $b['start'] ) {
+				$busy[] = new \MOBookingStudio\Domain\Interval( $b['start'], $b['end'] );
+			}
+		}
 		$blocks   = Schedules::blocks( $resource, $rangeFrom, $rangeTo );
 		$counts   = Schedules::dayCounts( (int) $service['id'], $rangeFrom, $rangeTo, $now );
 		$days     = $engine->days( Schedules::schedule( $resource ), $params, $from, $to, $now, $busy, $blocks, $counts );
@@ -175,7 +183,8 @@ final class Catalog {
 			'presale'      => $anyPresale,
 			'presale_txt'  => $until && ! empty( $table['presale_until'] ) ? 'Preventa hasta el ' . self::dateTimeText( \DateTimeImmutable::createFromFormat( strlen( $table['presale_until'] ) === 16 ? '!Y-m-d H:i' : '!Y-m-d H:i:s', $table['presale_until'], $zone )->setTimezone( new \DateTimeZone( 'UTC' ) ) ) : '',
 			'days'         => array_values( $out ),
-			'note'         => ( Pricing::CATEGORY_FREQUENT === $category ? 'Precios para clientes frecuentes' : 'Precios para público general' ) . ', para el número de personas incluido. El precio final se confirma en el resumen.',
+			'stale'        => $google['stale'],
+			'note'         => ( $google['stale'] ? 'Vista preliminar: confirmaremos el horario al enviar tu solicitud. ' : '' ) . ( Pricing::CATEGORY_FREQUENT === $category ? 'Precios para clientes frecuentes' : 'Precios para público general' ) . ', para el número de personas incluido. El precio final se confirma en el resumen.',
 		);
 	}
 
@@ -202,7 +211,7 @@ final class Catalog {
 		$start = self::parseStart( (string) ( $input['start'] ?? '' ) );
 		Bookings::expireDue();
 
-		$slot = self::findAvailableSlot( $service, $start, $now );
+		$slot = self::findAvailableSlot( $service, $start, $now, null, false, self::freshGoogleBusy( $service, $start ) );
 		if ( ! $slot ) {
 			throw new DomainException( 'slot_unavailable', 'Ese horario ya no está disponible. Elige otro, por favor.', 409, array( 'field' => 'start' ) );
 		}
@@ -291,7 +300,24 @@ final class Catalog {
 	 * @param bool $relaxed Para la administradora: ignora anticipación mínima, horizonte y
 	 *                      fechas de venta, pero nunca solapamientos, cierres ni bloqueos.
 	 */
-	public static function findAvailableSlot( array $service, \DateTimeImmutable $start, \DateTimeImmutable $now, ?int $excludeBookingId = null, bool $relaxed = false ): ?array {
+	/**
+	 * Consulta fresca a Google para el horario pedido (DEC-06). Si nunca se conectó
+	 * devuelve una lista vacía; si Google no responde lanza un error 503.
+	 *
+	 * @return \MOBookingStudio\Domain\Interval[]
+	 */
+	public static function freshGoogleBusy( array $service, \DateTimeImmutable $start ): array {
+		if ( ! \MOBookingStudio\Integrations\Google\Connection::isConfigured() ) {
+			return array();
+		}
+		$occupy = Availability::occupancyFor( $start, Services::availabilityParams( $service ) );
+		return GoogleBusy::intervals( $occupy->start, $occupy->end, true );
+	}
+
+	/**
+	 * @param \MOBookingStudio\Domain\Interval[] $externalBusy Ocupación de Google ya consultada.
+	 */
+	public static function findAvailableSlot( array $service, \DateTimeImmutable $start, \DateTimeImmutable $now, ?int $excludeBookingId = null, bool $relaxed = false, array $externalBusy = array() ): ?array {
 		$zone     = Settings::timezone();
 		$engine   = new Availability( $zone );
 		$params   = Services::availabilityParams( $service );
@@ -312,7 +338,7 @@ final class Catalog {
 			$params,
 			$start,
 			$now,
-			Schedules::busy( $resource, $from, $to, $now, $excludeBookingId ),
+			array_merge( Schedules::busy( $resource, $from, $to, $now, $excludeBookingId ), $externalBusy ),
 			Schedules::blocks( $resource, $from, $to ),
 			Schedules::dayCounts( (int) $service['id'], $from, $to, $now, $excludeBookingId )
 		);

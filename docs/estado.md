@@ -1,3 +1,33 @@
+# Estado de la versión 0.2.0-beta.1
+
+## Entrega 1 de la v0.2 (21 de octubre de 2026)
+
+**Google Calendar**
+- Conexión OAuth con la cuenta del negocio: tres permisos exactos, `state` validado, tokens cifrados con `MO_BOOKING_SECRET`. Guía: `docs/guia-google-cloud.md`.
+- Varios calendarios de lectura bloquean horarios (FreeBusy) y un calendario destino; los eventos propios del plugin no se bloquean a sí mismos. Los eventos de día completo ocupan el día local.
+- Consulta fresca a Google al cotizar, reservar y reprogramar; la vista del calendario usa una caché de 3 minutos. Si Google no responde, la reserva en línea se detiene y la administradora puede crear manualmente con excepción registrada. Si nunca se conectó Google, todo funciona con la agenda interna.
+- Dos eventos vinculados: interno (privado, sin invitados, con datos administrativos) y del cliente (solo al confirmar, con una invitación de Google). Correos de dominios de ejemplo no se invitan.
+- Cola persistente con reintentos y espera exponencial; identificadores deterministas (sin duplicados); revocación pausa sin perder trabajos.
+- Conciliación cada 10 minutos (o con el botón): empalmes posteriores (se marcan y avisan, nunca se cancela nada) y ediciones hechas en Google (movido, borrado, invitados) con restaurar o ignorar.
+- Pantalla "Google Calendar", tarjeta en Inicio y bloque en cada reserva.
+
+**Pagos y comprobantes (decisiones 1 a 5 y P1, P2, P4, P5)**
+- Aprobar el anticipo confirma. "Pendiente de aprobación" migra a "Confirmada".
+- Pago parcial: queda pendiente hasta las 12 h originales; si se revisa después, la reserva vence y el dinero queda "por resolver".
+- Una sola corrección de 2 h con motivo de una lista editable; nota interna separada. Comprobantes versionados.
+- Comprobante tardío rechazado con "Pasaste el tiempo límite para enviar tu anticipo. Realiza de nuevo tu reserva." (no se guarda).
+- Imágenes se ven como copia re-codificada; PDF solo se descarga.
+
+**Actualización segura**: la migración espera a que confirmes un respaldo; mientras, la reserva en línea queda en pausa. Guía: `docs/respaldo-y-reversion.md`.
+
+**Otros**: aviso si la zona de WordPress no da la misma hora que la del plugin; textos de bienvenida editables en Elementor y en el shortcode (un subtítulo vacío se oculta).
+
+**Pruebas**: 142 automáticas en PHP 7.4 y 8.3 (23 de Google con un Google simulado), recorrido en navegador con Google simulado y las 17 pantallas del panel sin errores. Pendiente: tus pruebas con Google real (`docs/pruebas-google.md`).
+
+**Entrega 2 (pendiente)**: contrato por servicio, contactos secundarios y duplicados, importación/exportación CSV, limpieza de comprobantes de más de 90 días.
+
+---
+
 # Estado de la versión 0.1.1
 
 ## Cambios en 0.1.1 (pedidos por Mónica)

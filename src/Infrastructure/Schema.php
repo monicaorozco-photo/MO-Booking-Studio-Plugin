@@ -360,6 +360,8 @@ final class Schema {
   dedupe_key varchar(120) DEFAULT NULL,
   status varchar(20) NOT NULL DEFAULT 'pending',
   attempts smallint(5) unsigned NOT NULL DEFAULT 0,
+  revision int(10) unsigned NOT NULL DEFAULT 1,
+  force_sync tinyint(1) NOT NULL DEFAULT 0,
   next_run_at datetime NOT NULL,
   locked_until datetime DEFAULT NULL,
   last_http smallint(5) unsigned DEFAULT NULL,

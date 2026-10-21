@@ -204,18 +204,24 @@
 
 	App.prototype.renderWelcome = function () {
 		var s = this.state;
+		var w = this.config.welcome || {};
+		// Textos de Elementor o del shortcode. Títulos y botones nunca quedan vacíos; los subtítulos sí pueden ocultarse.
+		var t = function (key, fallback, optional) { var v = typeof w[key] === 'string' ? w[key] : fallback; return v || optional ? v : fallback; };
+		var sub = function (text) { return text ? '<span class="mo-booking__choice-text">' + esc(text) + '</span>' : ''; };
 		var html = '<section class="mo-booking__panel mo-booking__welcome" aria-labelledby="mo-step-0">';
 		if (s.welcome === 'choose') {
-			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>Antes de ver las fechas</h3>';
-			html += '<p>¿Ya te has tomado fotos con nosotros?</p>';
+			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>' + esc(t('title', 'Antes de ver las fechas')) + '</h3>';
+			var question = t('question', '¿Ya te has tomado fotos con nosotros?', true);
+			if (question) { html += '<p>' + esc(question) + '</p>'; }
 			html += '<div class="mo-booking__choices">';
-			html += '<button type="button" class="mo-booking__choice" data-action="new-client"><span class="mo-booking__choice-title">Soy cliente nuevo</span><span class="mo-booking__choice-text">Ver fechas y precios</span></button>';
-			html += '<button type="button" class="mo-booking__choice" data-action="returning"><span class="mo-booking__choice-title">Ya me he tomado fotos con ustedes</span><span class="mo-booking__choice-text">Revisamos si aplica tu precio de cliente frecuente</span></button>';
+			html += '<button type="button" class="mo-booking__choice" data-action="new-client"><span class="mo-booking__choice-title">' + esc(t('new_title', 'Soy cliente nuevo')) + '</span>' + sub(t('new_text', 'Ver fechas y precios', true)) + '</button>';
+			html += '<button type="button" class="mo-booking__choice" data-action="returning"><span class="mo-booking__choice-title">' + esc(t('returning_title', 'Ya me he tomado fotos con ustedes')) + '</span>' + sub(t('returning_text', 'Revisamos si aplica tu precio de cliente frecuente', true)) + '</button>';
 			html += '</div>';
 		} else if (s.welcome === 'identify') {
 			html += '<form data-form="identify" novalidate>';
-			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>¡Qué gusto verte de nuevo!</h3>';
-			html += '<p>Escribe tu nombre y el correo o teléfono con el que reservaste antes.</p>';
+			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>' + esc(t('identify_title', '¡Qué gusto verte de nuevo!')) + '</h3>';
+			var identifyText = t('identify_text', 'Escribe tu nombre y el correo o teléfono con el que reservaste antes.', true);
+			if (identifyText) { html += '<p>' + esc(identifyText) + '</p>'; }
 			html += this.field('name', 'Nombre', '<input class="mo-booking__input" type="text" id="mo-f-name" name="name" autocomplete="name" value="' + esc(s.form.name) + '" required>');
 			html += '<div class="mo-booking__field"><label class="mo-booking__label" for="mo-f-contact">Correo o teléfono</label><div class="mo-booking__phone">' +
 				'<select class="mo-booking__input mo-booking__country" name="phone_country" aria-label="País del teléfono"><option value="MX">México +52</option><option value="US"' + (s.form.phone_country === 'US' ? ' selected' : '') + '>EE. UU. +1</option></select>' +

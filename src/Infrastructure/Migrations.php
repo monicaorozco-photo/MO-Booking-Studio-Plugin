@@ -24,6 +24,8 @@ final class Migrations {
 			'2_deadline_at'                   => array( self::class, 'fillDeadlines' ),
 			'2_proof_versions'                => array( self::class, 'numberProofVersions' ),
 			'2_correction_hours'              => array( self::class, 'correctionHours' ),
+			// Antes de que la administradora agregue MO_BOOKING_SECRET para Google: los enlaces ya enviados siguen igual.
+			'2_token_key_source'              => array( self::class, 'pinTokenKey' ),
 		);
 	}
 
@@ -59,6 +61,11 @@ final class Migrations {
 		}
 		update_option( Schema::OPTION, Schema::VERSION, false );
 		return $ran;
+	}
+
+	public static function pinTokenKey(): int {
+		Tokens::pinKeySource();
+		return 1;
 	}
 
 	/**

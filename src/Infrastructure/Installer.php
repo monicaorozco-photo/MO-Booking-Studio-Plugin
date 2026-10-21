@@ -27,6 +27,7 @@ final class Installer {
 			return;
 		}
 		Migrations::run();
+		Capabilities::install();
 		self::ensureDefaultResource();
 		if ( false === get_option( Settings::OPTION ) ) {
 			add_option( Settings::OPTION, Settings::defaults(), '', false );

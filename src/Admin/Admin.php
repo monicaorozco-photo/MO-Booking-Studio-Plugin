@@ -62,6 +62,14 @@ final class Admin {
 		'create_booking'      => Cap::BOOKINGS,
 		'retry_notification'  => Cap::BOOKINGS,
 		'process_queue'       => Cap::BOOKINGS,
+		'google_connect'      => Cap::GOOGLE,
+		'google_disconnect'   => Cap::GOOGLE,
+		'google_calendars'    => Cap::GOOGLE,
+		'google_reconcile'    => Cap::GOOGLE,
+		'google_retry'        => Cap::GOOGLE,
+		'google_restore'      => Cap::GOOGLE,
+		'google_dismiss'      => Cap::GOOGLE,
+		'google_conflict'     => Cap::BOOKINGS,
 	);
 
 	public function register(): void {
@@ -71,6 +79,17 @@ final class Admin {
 		add_action( 'admin_notices', array( $this, 'globalNotices' ) );
 		add_action( 'admin_notices', array( $this, 'upgradeNotice' ) );
 		add_action( 'admin_post_mo_booking_confirm_backup', array( $this, 'confirmBackup' ) );
+		add_action( 'admin_post_mo_booking_google_callback', array( $this, 'googleCallback' ) );
+		add_action( 'admin_page_access_denied', array( $this, 'redirectDuringUpgrade' ) );
+	}
+
+	/** Mientras se espera el respaldo, cualquier pantalla del plugin lleva al aviso de actualización. */
+	public function redirectDuringUpgrade(): void {
+		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
+		if ( 0 === strpos( $page, 'mo-booking-' ) && \MOBookingStudio\Plugin::maintenance() ) {
+			wp_safe_redirect( admin_url( 'admin.php?page=mo-booking' ) );
+			exit;
+		}
 	}
 
 	public function menu(): void {
@@ -90,6 +109,7 @@ final class Admin {
 		add_submenu_page( 'mo-booking', 'Tarifas y descuentos', 'Tarifas y descuentos', Cap::SETTINGS, 'mo-booking-rates', array( Pages\RatesPage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Políticas', 'Políticas', Cap::SETTINGS, 'mo-booking-policies', array( Pages\PoliciesPage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Notificaciones', 'Notificaciones', Cap::SETTINGS, 'mo-booking-notifications', array( Pages\NotificationsPage::class, 'render' ) );
+		add_submenu_page( 'mo-booking', 'Google Calendar', 'Google Calendar', Cap::GOOGLE, 'mo-booking-google', array( Pages\GooglePage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Finanzas (próximamente)', 'Finanzas · próx.', Cap::FINANCE, 'mo-booking-finance', array( Pages\UpcomingPage::class, 'finance' ) );
 		add_submenu_page( 'mo-booking', 'Galerías (próximamente)', 'Galerías · próx.', Cap::GALLERIES, 'mo-booking-galleries', array( Pages\UpcomingPage::class, 'galleries' ) );
 		add_submenu_page( 'mo-booking', 'Ajustes', 'Ajustes', Cap::SETTINGS, 'mo-booking-settings', array( Pages\SettingsPage::class, 'render' ) );
@@ -122,6 +142,10 @@ final class Admin {
 		$tz = Settings::timezoneInfo();
 		if ( $tz['fallback'] ) {
 			$notices[] = sprintf( 'Este servidor no conoce la zona %1$s; se usa %2$s, que tiene las mismas reglas de horario. Las horas son correctas.', esc_html( $tz['requested'] ), esc_html( $tz['effective'] ) );
+		}
+		$wpZone = Settings::wordpressZoneMismatch( \MOBookingStudio\Plugin::clock()->now() );
+		if ( '' !== $wpZone ) {
+			$notices[] = sprintf( 'La zona horaria de WordPress (<strong>%1$s</strong>) no da la misma hora que la del plugin (<strong>%2$s</strong>). Las reservas usan la del plugin y son correctas; para que el resto del sitio coincida, cambia <em>Ajustes → Generales → Zona horaria</em> a una ciudad con la misma hora que %2$s (por ejemplo, Ciudad Juárez o Denver).', esc_html( $wpZone ), esc_html( $tz['requested'] ) );
 		}
 		foreach ( $notices as $n ) {
 			echo '<div class="notice notice-warning"><p>' . wp_kses( $n, array( 'strong' => array() ) ) . '</p></div>';
@@ -168,6 +192,27 @@ final class Admin {
 		exit;
 	}
 
+	/** Retorno de Google después de autorizar (CAL-01). */
+	public function googleCallback(): void {
+		if ( ! current_user_can( Cap::GOOGLE ) ) {
+			wp_die( 'No tienes permiso para conectar Google.', '', array( 'response' => 403 ) );
+		}
+		$g = wp_unslash( $_GET ); // phpcs:ignore WordPress.Security.NonceVerification -- Se valida con el parámetro state.
+		try {
+			if ( ! empty( $g['error'] ) ) {
+				throw new DomainException( 'google_denied', 'access_denied' === $g['error'] ? 'Cancelaste la autorización en Google. No se conectó nada.' : 'Google no autorizó la conexión.' );
+			}
+			\MOBookingStudio\Integrations\Google\Connection::handleCallback( (string) ( $g['code'] ?? '' ), (string) ( $g['state'] ?? '' ) );
+			Ui::flash( 'success', 'Google conectado. Ahora elige los calendarios.' );
+		} catch ( DomainException $e ) {
+			Ui::flash( 'error', $e->getMessage() );
+		} catch ( \MOBookingStudio\Integrations\Google\GoogleException $e ) {
+			Ui::flash( 'error', $e->getMessage() );
+		}
+		wp_safe_redirect( Ui::url( 'mo-booking-google' ) );
+		exit;
+	}
+
 	public function dispatch(): void {
 		$do = isset( $_REQUEST['do'] ) ? sanitize_key( wp_unslash( $_REQUEST['do'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
 		if ( ! isset( self::ACTIONS[ $do ] ) ) {
@@ -184,6 +229,8 @@ final class Admin {
 		} catch ( DomainException $e ) {
 			Ui::flash( 'error', $e->getMessage() );
 			Ui::rememberInput( $p );
+		} catch ( \MOBookingStudio\Integrations\Google\GoogleException $e ) {
+			Ui::flash( 'error', 'Google: ' . $e->getMessage() );
 		}
 		wp_safe_redirect( $redirect );
 		exit;
@@ -427,6 +474,48 @@ final class Admin {
 			case 'retry_notification':
 				Notifications::retry( (int) $p['notification_id'] );
 				Ui::flash( 'success', 'Se reintentó el envío.' );
+				return $redirect;
+
+			case 'google_connect':
+				wp_redirect( \MOBookingStudio\Integrations\Google\Connection::authUrl() ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Google es externo a propósito.
+				exit;
+
+			case 'google_disconnect':
+				\MOBookingStudio\Integrations\Google\Connection::disconnect();
+				Ui::flash( 'success', 'Google desconectado. Las reservas y los eventos existentes se conservan.' );
+				return $redirect;
+
+			case 'google_calendars':
+				Pages\GooglePage::saveCalendars( $p );
+				Ui::flash( 'success', 'Calendarios guardados.' );
+				return $redirect;
+
+			case 'google_reconcile':
+				$sent = \MOBookingStudio\Integrations\Google\SyncWorker::processQueue( 100 );
+				$scan = \MOBookingStudio\Integrations\Google\Conflicts::scan();
+				Ui::flash( 'success', sprintf( 'Sincronización: %d trabajos procesados. Empalmes abiertos: %d (nuevos: %d). Cambios externos: %d.', $sent, $scan['open'], $scan['new'], $scan['external'] ) );
+				return $redirect;
+
+			case 'google_retry':
+				\MOBookingStudio\Integrations\Google\SyncWorker::retry( (int) $p['job_id'] );
+				\MOBookingStudio\Integrations\Google\SyncWorker::processQueue( 10 );
+				Ui::flash( 'success', 'Se reintentó la sincronización.' );
+				return $redirect;
+
+			case 'google_restore':
+				\MOBookingStudio\Application\CalendarSync::enqueue( $bookingId, 'sync_booking', true );
+				\MOBookingStudio\Integrations\Google\SyncWorker::processQueue( 10 );
+				Ui::flash( 'success', 'El evento se restauró con los datos de la reserva.' );
+				return $redirect;
+
+			case 'google_dismiss':
+				\MOBookingStudio\Integrations\Google\Conflicts::dismissExternal( (int) $p['row_id'] );
+				Ui::flash( 'success', 'Aviso ignorado.' );
+				return $redirect;
+
+			case 'google_conflict':
+				\MOBookingStudio\Integrations\Google\Conflicts::act( (int) $p['conflict_id'], (string) $p['conflict_action'], (string) ( $p['note'] ?? '' ), (string) ( $p['until'] ?? '' ) );
+				Ui::flash( 'success', 'Empalme actualizado.' );
 				return $redirect;
 
 			case 'process_queue':

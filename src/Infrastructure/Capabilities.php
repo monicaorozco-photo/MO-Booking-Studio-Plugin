@@ -16,11 +16,12 @@ final class Capabilities {
 	public const FINANCE   = 'mo_view_finance';
 	public const EXPENSES  = 'mo_manage_expenses';
 	public const GALLERIES = 'mo_manage_galleries';
+	public const GOOGLE    = 'mo_manage_google'; // Conectar, reconectar o revocar Google (CAL-02).
 
 	public const COLLABORATOR_ROLE = 'mo_collaborator';
 
 	public static function all(): array {
-		return array( self::SETTINGS, self::BOOKINGS, self::PAYMENTS, self::CLIENTS, self::EXPORT, self::AGENDA, self::RECEIPTS, self::FINANCE, self::EXPENSES, self::GALLERIES );
+		return array( self::SETTINGS, self::BOOKINGS, self::PAYMENTS, self::CLIENTS, self::EXPORT, self::AGENDA, self::RECEIPTS, self::FINANCE, self::EXPENSES, self::GALLERIES, self::GOOGLE );
 	}
 
 	public static function install(): void {

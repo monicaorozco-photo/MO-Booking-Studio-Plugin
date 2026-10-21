@@ -3,7 +3,7 @@
 # Incluye solo lo necesario para ejecutar el plugin (sin pruebas, Composer ni Node).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="$(grep -m1 "define( 'MO_BOOKING_VERSION'" "$ROOT/mo-booking-studio.php" | sed -E "s/.*'([0-9.]+)'.*/\1/")"
+VERSION="$(grep -m1 "define( 'MO_BOOKING_VERSION'" "$ROOT/mo-booking-studio.php" | sed -E "s/.*'([0-9A-Za-z.-]+)'.*/\1/")"
 BUILD="$ROOT/build/mo-booking-studio"
 rm -rf "$ROOT/build" && mkdir -p "$BUILD" "$ROOT/dist"
 cp -r "$ROOT/mo-booking-studio.php" "$ROOT/uninstall.php" "$ROOT/src" "$ROOT/assets" "$ROOT/README.md" "$BUILD/"

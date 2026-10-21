@@ -25,6 +25,9 @@ abstract class IntegrationTestCase extends TestCase {
 		}
 		delete_option( Settings::OPTION );
 		delete_option( 'mo_booking_templates' );
+		delete_option( \MOBookingStudio\Integrations\Google\Connection::OPTION );
+		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_mo_gbusy_%' OR option_name LIKE '_transient_timeout_mo_gbusy_%' OR option_name LIKE '_transient_mo_booking_scan_lock%'" );
+		wp_cache_flush(); // Las opciones borradas con SQL siguen en la caché de la solicitud.
 		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_mo_rl_%' OR option_name LIKE '_transient_timeout_mo_rl_%'" );
 		update_option( \MOBookingStudio\Infrastructure\Migrations::BACKUP_OPTION, Schema::VERSION );
 		Installer::upgrade();

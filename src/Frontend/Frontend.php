@@ -34,16 +34,47 @@ final class Frontend {
 		wp_register_script( 'mo-booking-portal', MO_BOOKING_URL . 'assets/js/portal.js', array( 'mo-booking-common' ), $v, true );
 	}
 
+	/**
+	 * Textos editables de la pantalla de bienvenida (DEC-10). Clave => texto por omisión.
+	 * Un subtítulo vacío no se muestra.
+	 */
+	public const WELCOME_TEXTS = array(
+		'welcome_title'          => 'Antes de ver las fechas',
+		'welcome_question'       => '¿Ya te has tomado fotos con nosotros?',
+		'welcome_new_title'      => 'Soy cliente nuevo',
+		'welcome_new_text'       => 'Ver fechas y precios',
+		'welcome_returning_title' => 'Ya me he tomado fotos con ustedes',
+		'welcome_returning_text' => 'Revisamos si aplica tu precio de cliente frecuente',
+		'welcome_identify_title' => '¡Qué gusto verte de nuevo!',
+		'welcome_identify_text'  => 'Escribe tu nombre y el correo o teléfono con el que reservaste antes.',
+	);
+
 	public function bookingShortcode( $atts ): string {
 		$atts = shortcode_atts(
-			array(
-				'service' => '',
-				'intro'   => '',
+			array_merge(
+				array(
+					'service' => '',
+					'intro'   => '',
+				),
+				self::WELCOME_TEXTS
 			),
 			(array) $atts,
 			'mo_booking'
 		);
-		return self::renderBooking( (string) $atts['service'], array( 'intro' => (string) $atts['intro'] ) );
+		$texts = array();
+		foreach ( self::WELCOME_TEXTS as $key => $default ) {
+			$texts[ $key ] = (string) $atts[ $key ];
+		}
+		return self::renderBooking( (string) $atts['service'], array( 'intro' => (string) $atts['intro'], 'texts' => $texts ) );
+	}
+
+	/** Solo texto plano; lo que no venga usa el texto por omisión. */
+	public static function welcomeTexts( array $given ): array {
+		$out = array();
+		foreach ( self::WELCOME_TEXTS as $key => $default ) {
+			$out[ substr( $key, 8 ) ] = array_key_exists( $key, $given ) ? sanitize_text_field( (string) $given[ $key ] ) : $default;
+		}
+		return $out;
 	}
 
 	public function portalShortcode(): string {
@@ -53,7 +84,7 @@ final class Frontend {
 	/**
 	 * Renderizado único para shortcode y widget.
 	 *
-	 * @param array $options intro, preview (bool), show_description, show_policies, layout
+	 * @param array $options intro, texts (WELCOME_TEXTS), preview (bool), show_description, show_policies, layout
 	 */
 	public static function renderBooking( string $slug, array $options = array() ): string {
 		self::registerAssetHandles();
@@ -74,6 +105,7 @@ final class Frontend {
 			'service'         => $slug,
 			'preview'         => $preview,
 			'intro'           => (string) ( $options['intro'] ?? '' ),
+			'welcome'         => self::welcomeTexts( (array) ( $options['texts'] ?? array() ) ),
 			'showDescription' => ! isset( $options['show_description'] ) || $options['show_description'],
 			'showPolicies'    => ! isset( $options['show_policies'] ) || $options['show_policies'],
 			'portalUrl'       => esc_url_raw( \MOBookingStudio\Application\Bookings::portalBase() ),

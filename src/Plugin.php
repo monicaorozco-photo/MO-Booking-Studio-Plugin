@@ -47,6 +47,7 @@ final class Plugin {
 		add_action( 'init', array( $this, 'loadTextdomain' ) );
 		add_filter( 'cron_schedules', array( $this, 'cronSchedules' ) );
 		add_action( Installer::CRON_HOOK, array( $this, 'runQueue' ) );
+		add_action( 'shutdown', array( Application\CalendarSync::class, 'processAfterResponse' ) );
 
 		( new Routes() )->register();
 		( new Frontend() )->register();
@@ -98,6 +99,12 @@ final class Plugin {
 		try {
 			Bookings::expireDue( 200 );
 			Notifications::processQueue( 50 );
+			Integrations\Google\SyncWorker::processQueue( 50 );
+			// Conciliación de empalmes y ediciones externas, como máximo cada 10 minutos.
+			if ( ! get_transient( 'mo_booking_scan_lock' ) ) {
+				set_transient( 'mo_booking_scan_lock', 1, 10 * MINUTE_IN_SECONDS );
+				Integrations\Google\Conflicts::scan();
+			}
 		} finally {
 			delete_transient( 'mo_booking_queue_lock' );
 		}

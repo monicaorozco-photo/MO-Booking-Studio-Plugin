@@ -17,7 +17,8 @@ Base: `/wp-json/mo-booking/v1/` (o `?rest_route=/mo-booking/v1/` con enlaces per
 | 413 | Archivo demasiado grande |
 | 415 | Tipo de archivo no permitido |
 | 429 | Límite de solicitudes por IP |
-| 503 | Carga de comprobantes deshabilitada |
+| 410 (`upload_late`) | Comprobante después de la hora límite: no se guarda |
+| 503 | Carga de comprobantes deshabilitada; `mo_maintenance` (actualización esperando respaldo); `calendar_unavailable` (Google conectado pero sin respuesta: no se promete el horario) |
 
 ## Públicas (sin datos personales)
 
@@ -36,9 +37,15 @@ Base: `/wp-json/mo-booking/v1/` (o `?rest_route=/mo-booking/v1/` con enlaces per
 |---|---|---|
 | `POST /portal/session` | `{token}` del enlace | Crea una sesión de 2 h (cookie HttpOnly, SameSite=Strict) y devuelve `{csrf, booking}`. |
 | `GET /portal/booking` | Cookie | `{csrf (nuevo), booking}`. La vista no incluye notas internas ni datos de otras reservas. |
-| `POST /portal/proofs` | Cookie + cabecera `X-MO-CSRF`; multipart `file` | Guarda el comprobante. Si llega antes del vencimiento, la reserva pasa a "Pago en revisión" y el horario sigue retenido. Si llega tarde, se guarda para conciliación manual sin recuperar el horario. |
+| `POST /portal/proofs` | Cookie + cabecera `X-MO-CSRF`; multipart `file` | Guarda el comprobante (versionado). Si llega antes de la hora límite (o dentro de la corrección de 2 h), la reserva pasa a "Comprobante recibido" y el horario sigue retenido. Si llega tarde responde 410 y no se guarda. Límite: 6 por reserva cada hora. |
 | `POST /portal/logout` | Cookie + `X-MO-CSRF` | Cierra la sesión. |
 
 ## Administración
 
 Las acciones del panel van por `admin-post.php?action=mo_booking&do=<acción>`. Cada una exige su capacidad (ver `src/Admin/Admin.php::ACTIONS`) y un nonce propio. Las operaciones de negocio están en `src/Application/*`; las reservas manuales y las públicas usan las mismas validaciones.
+
+## Google Calendar
+
+- OAuth: `admin-post.php?action=mo_booking_google_callback` (exige iniciar sesión y la capacidad `mo_manage_google`).
+- Acciones del panel: `google_connect`, `google_disconnect`, `google_calendars`, `google_reconcile`, `google_retry`, `google_restore`, `google_dismiss`, `google_conflict`.
+- Llamadas a Google: `calendarList`, `freeBusy`, `events` (list, insert, patch, delete) con `wp_remote_*`, sin librerías. Se registra operación, código HTTP e identificador de solicitud; nunca datos personales ni tokens.

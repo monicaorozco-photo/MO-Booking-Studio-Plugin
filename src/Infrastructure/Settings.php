@@ -85,6 +85,25 @@ final class Settings {
 		return self::timezoneInfo()['zone'];
 	}
 
+	/**
+	 * DEC-07: el plugin usa su propia zona. Si la zona general de WordPress da otra hora
+	 * (en cualquier momento del año, por el horario de verano), se avisa en el panel: las
+	 * fechas de entradas, correos de otros plugins o tareas de WordPress no coincidirían.
+	 *
+	 * @return string Zona de WordPress cuando difiere; vacío si coinciden.
+	 */
+	public static function wordpressZoneMismatch( \DateTimeImmutable $now ): string {
+		$wp   = function_exists( 'wp_timezone' ) ? wp_timezone() : new \DateTimeZone( 'UTC' );
+		$mine = self::timezone();
+		foreach ( array( 0, 3, 6, 9 ) as $months ) {
+			$at = $now->modify( '+' . $months . ' months' );
+			if ( $wp->getOffset( $at ) !== $mine->getOffset( $at ) ) {
+				return function_exists( 'wp_timezone_string' ) ? wp_timezone_string() : $wp->getName();
+			}
+		}
+		return '';
+	}
+
 	public static function timezoneInfo(): array {
 		try {
 			return TimeZoneResolver::resolve( (string) self::get( 'timezone' ) );

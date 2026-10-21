@@ -8,7 +8,7 @@ use MOBookingStudio\Domain\DomainException;
  *
  * El token del enlace es un HMAC-SHA256 (256 bits) de la reserva y un valor aleatorio
  * guardado en la reserva, firmado con una clave que vive fuera de la base de datos
- * (constante MO_BOOKING_SECRET o, si no existe, las sales de wp-config.php). En la
+ * (constante MO_BOOKING_SECRET o, si no existía al instalar, las sales de wp-config.php). En la
  * base de datos solo se guarda el hash SHA-256 del token, así que una copia de la base
  * de datos no basta para entrar al portal. Gracias al HMAC el servidor puede volver a
  * escribir el enlace en un correo sin haberlo guardado. Rotar = cambiar el valor aleatorio.
@@ -176,10 +176,31 @@ final class Tokens {
 		$wpdb->query( $wpdb->prepare( 'DELETE FROM ' . Schema::table( 'portal_sessions' ) . ' WHERE session_hash = %s', self::hash( $session ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
+	public const KEY_SOURCE_OPTION = 'mo_booking_token_key';
+
+	/**
+	 * La fuente de la clave se fija la primera vez que se usa. Así, agregar
+	 * MO_BOOKING_SECRET después (por ejemplo, para conectar Google) no cambia los enlaces
+	 * que los correos vuelven a escribir para reservas ya existentes.
+	 */
 	private static function key(): string {
-		if ( defined( 'MO_BOOKING_SECRET' ) && strlen( (string) MO_BOOKING_SECRET ) >= 32 ) {
+		if ( 'secret' === self::pinKeySource() && self::hasSecret() ) {
 			return (string) MO_BOOKING_SECRET;
 		}
 		return wp_salt( 'secure_auth' ) . '|mo-booking-studio';
+	}
+
+	/** Fija (una sola vez) la fuente de la clave según lo que hay ahora en wp-config.php. */
+	public static function pinKeySource(): string {
+		$source = (string) get_option( self::KEY_SOURCE_OPTION, '' );
+		if ( '' === $source ) {
+			$source = self::hasSecret() ? 'secret' : 'salt';
+			add_option( self::KEY_SOURCE_OPTION, $source, '', false );
+		}
+		return $source;
+	}
+
+	private static function hasSecret(): bool {
+		return defined( 'MO_BOOKING_SECRET' ) && strlen( (string) MO_BOOKING_SECRET ) >= 32;
 	}
 }

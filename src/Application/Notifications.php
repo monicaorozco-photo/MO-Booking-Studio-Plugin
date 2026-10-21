@@ -258,6 +258,21 @@ final class Notifications {
 		}
 	}
 
+	/**
+	 * Aviso directo a la administradora (por ejemplo, empalmes agrupados). La clave evita
+	 * duplicados si la tarea se repite.
+	 */
+	public static function adminMessage( string $dedupe, string $subject, string $body ): void {
+		$to = (string) Settings::get( 'admin_email' );
+		if ( ! is_email( $to ) ) {
+			return;
+		}
+		$id = self::enqueue( 'admin_message', 'email', 0, $to, 'admin', Plugin::clock()->now(), null, $dedupe, array( 'subject' => $subject, 'body' => $body ) );
+		if ( $id ) {
+			self::processOne( $id );
+		}
+	}
+
 	/** Programa el recordatorio; si la fecha cambia, la clave cambia y el anterior se anula. */
 	public static function scheduleReminder( array $booking ): void {
 		$hours = (float) Settings::get( 'reminder_hours' );
@@ -336,6 +351,10 @@ final class Notifications {
 			$set( array( 'status' => 'skipped', 'last_error' => 'El aviso ya no era vigente cuando se procesó la cola.' ) );
 			return false;
 		}
+		if ( 'admin_message' === $row['event'] ) {
+			$extra = (array) ( ( (array) Db::decode( $row['payload'] ) )['extra'] ?? array() );
+			return self::deliver( $row, '[Reservas] ' . (string) ( $extra['subject'] ?? '' ), (string) ( $extra['body'] ?? '' ), false, 'admin', $set );
+		}
 		$booking = $row['booking_id'] ? Bookings::find( (int) $row['booking_id'] ) : null;
 		if ( ! $booking ) {
 			$set( array( 'status' => 'skipped', 'last_error' => 'La reserva no existe.' ) );
@@ -365,11 +384,17 @@ final class Notifications {
 			$subject = '[Reservas] ' . $subject;
 		}
 
-		if ( $booking['is_test'] || 'live' !== Settings::get( 'email_mode' ) ) {
+		return self::deliver( $row, $subject, $body, (bool) $booking['is_test'], $audience, $set, $payload );
+	}
+
+	/** Envía (o simula) un correo de la cola y actualiza su estado. */
+	private static function deliver( array $row, string $subject, string $body, bool $isTest, string $audience, callable $set, array $payload = array() ): bool {
+		$id  = (int) $row['id'];
+		$now = Plugin::clock()->now();
+		if ( $isTest || 'live' !== Settings::get( 'email_mode' ) ) {
 			$set( array( 'status' => 'simulated', 'payload' => Db::json( array_merge( $payload, array( 'subject' => $subject, 'preview' => mb_substr( $body, 0, 400 ) ) ) ) ) );
 			return true;
 		}
-
 		$error   = '';
 		$capture = static function ( $wpError ) use ( &$error ) {
 			$error = is_wp_error( $wpError ) ? $wpError->get_error_message() : 'Error de correo.';
@@ -394,7 +419,7 @@ final class Notifications {
 		$attempts = (int) $row['attempts'];
 		if ( $attempts >= self::MAX_ATTEMPTS ) {
 			$set( array( 'status' => 'failed', 'last_error' => mb_substr( $error ?: 'El transporte de correo rechazó el mensaje.', 0, 250 ) ) );
-			Logger::error( 'Notificación fallida', array( 'notification' => $id, 'booking' => $booking['public_ref'] ) );
+			Logger::error( 'Notificación fallida', array( 'notification' => $id ) );
 		} else {
 			// Espera progresiva: 2, 4, 8, 16 minutos.
 			$set( array( 'status' => 'pending', 'send_after' => Db::toSql( $now->modify( sprintf( '+%d minutes', 2 ** $attempts ) ) ), 'last_error' => mb_substr( $error ?: 'Reintento programado.', 0, 250 ) ) );

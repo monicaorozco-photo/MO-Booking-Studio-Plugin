@@ -221,16 +221,28 @@ final class Bookings {
 		$occupy   = Availability::occupancyFor( $start, $params );
 		$holdUntil = $result['deposit_cents'] > 0 ? $now->modify( sprintf( '+%d minutes', (int) round( Services::holdHours( $service ) * 60 ) ) ) : null;
 		$status   = $result['deposit_cents'] > 0 ? BookingStatus::PENDING_PAYMENT : BookingStatus::CONFIRMED;
+		// DEC-06: comprobación fresca en Google antes de tomar el bloqueo local. Si Google no
+		// responde, la reserva en línea se detiene; la administradora puede forzarla con registro.
+		$googleOverride = false;
+		try {
+			$externalBusy = Catalog::freshGoogleBusy( $service, $start );
+		} catch ( DomainException $e ) {
+			if ( ! $isAdmin || empty( $options['google_override'] ) ) {
+				throw $e;
+			}
+			$externalBusy   = array();
+			$googleOverride = true;
+		}
 		$isTest      = ! empty( $options['is_test'] ) || ! empty( $service['is_test'] );
 		$verifiedId  = isset( $verification ) && $verification ? (int) $verification['client_id'] : 0;
 		$extrasInput = $context['extras'];
 
 		$created = Db::transaction(
-			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput, $verifiedId ) {
+			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput, $verifiedId, $externalBusy, $googleOverride ) {
 				$resource = (int) $service['resource_id'];
 				self::lockDays( $resource, $occupy->utcDays() );
 
-				$slot = Catalog::findAvailableSlot( $service, $start, $now, null, 'admin' === $source );
+				$slot = Catalog::findAvailableSlot( $service, $start, $now, null, 'admin' === $source, $externalBusy );
 				if ( ! $slot ) {
 					throw new DomainException( 'slot_unavailable', 'Lo sentimos, alguien acaba de apartar ese horario. Elige otro, por favor.', 409, array( 'field' => 'start' ) );
 				}
@@ -322,6 +334,9 @@ final class Bookings {
 				);
 				Tokens::register( $id, $nonce, self::tokenExpiry( $start ) );
 				CalendarSync::enqueue( $id );
+				if ( $googleOverride ) {
+					Audit::log( 'booking', $id, 'google_override', array( 'reason' => 'Creada sin verificar Google (no respondió). Excepción manual de la administradora.' ) );
+				}
 				Audit::log(
 					'booking',
 					$id,
@@ -467,6 +482,7 @@ final class Bookings {
 			);
 			if ( $updated ) {
 				self::releaseOccupancy( (int) $r['id'], $now );
+				CalendarSync::enqueue( (int) $r['id'] );
 				Audit::log( 'booking', (int) $r['id'], 'status:' . BookingStatus::EXPIRED, array( 'from' => $r['status'], 'reason' => 'Terminó el plazo de retención.' ), 'system', 0 );
 				Notifications::cancelPending( (int) $r['id'] );
 				Notifications::bookingEvent( 'booking_expired', self::get( (int) $r['id'] ) );
@@ -914,13 +930,15 @@ final class Bookings {
 	 * Vista previa de reprogramar a un nuevo horario. Conserva la categoría y la fecha de
 	 * solicitud original para que la campaña siga aplicando si es elegible.
 	 */
-	public static function previewReschedule( array $booking, \DateTimeImmutable $newStart ): array {
+	public static function previewReschedule( array $booking, \DateTimeImmutable $newStart, ?array $externalBusy = null ): array {
 		$service = Services::find( $booking['service_id'] );
 		if ( ! $service ) {
 			throw new DomainException( 'not_found', 'El servicio de la reserva ya no existe.', 404 );
 		}
 		$now  = Plugin::clock()->now();
-		$slot = Catalog::findAvailableSlot( $service, $newStart, $now, $booking['id'], true );
+		// CAL-10: antes de una nueva fecha se repite la comprobación completa.
+		$externalBusy = $externalBusy ?? Catalog::freshGoogleBusy( $service, $newStart );
+		$slot         = Catalog::findAvailableSlot( $service, $newStart, $now, $booking['id'], true, $externalBusy );
 		if ( ! $slot ) {
 			throw new DomainException( 'slot_unavailable', 'Ese horario no está disponible.', 409 );
 		}
@@ -948,9 +966,10 @@ final class Bookings {
 		if ( '' === $reason ) {
 			throw new DomainException( 'reason_required', 'Indica el motivo del cambio.' );
 		}
-		$now = Plugin::clock()->now();
+		$now          = Plugin::clock()->now();
+		$externalBusy = Catalog::freshGoogleBusy( Services::get( self::get( $bookingId )['service_id'] ), $newStart );
 		Db::transaction(
-			static function () use ( $bookingId, $newStart, $reason, $expectedVersion, $now ) {
+			static function () use ( $bookingId, $newStart, $reason, $expectedVersion, $now, $externalBusy ) {
 				$booking = self::get( $bookingId, true );
 				self::assertVersion( $booking, $expectedVersion );
 				if ( ! BookingStatus::isOpen( $booking['status'] ) ) {
@@ -962,7 +981,7 @@ final class Bookings {
 				$oldOcc   = new Interval( $booking['start']->modify( sprintf( '-%d minutes', (int) $service['buffer_before'] ) ), $booking['end']->modify( sprintf( '+%d minutes', (int) $service['buffer_after'] ) ) );
 				self::lockDays( $booking['resource_id'], array_merge( $occupy->utcDays(), $oldOcc->utcDays() ) );
 
-				$outcome = self::previewReschedule( $booking, $newStart );
+				$outcome = self::previewReschedule( $booking, $newStart, $externalBusy );
 				if ( empty( $outcome['allowed'] ) ) {
 					throw new DomainException( 'not_allowed', 'La política no permite reprogramar con esta anticipación.', 409 );
 				}

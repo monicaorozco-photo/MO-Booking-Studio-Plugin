@@ -20,6 +20,11 @@ Tablas con el prefijo de WordPress más `mo_`. La versión del esquema se guarda
 | `mo_access_tokens` | Hash del token de enlace, alcance, vencimiento y revocación. |
 | `mo_portal_sessions` | Hash de la sesión y del CSRF, reserva y vencimiento. |
 | `mo_notifications` | Cola: evento, canal, destinatario, estado, intentos, `send_after`, `valid_until`, `dedupe_key` única, bloqueo de tarea. |
+| `mo_sync_jobs` | Cola de Google: una fila pendiente por reserva (`dedupe_key`), `revision`, `force_sync`, intentos, próxima ejecución, último error HTTP e identificador de solicitud. |
+| `mo_calendar_events` | Eventos vinculados por reserva y tipo (`internal`/`client`): calendario, id determinista, etag, estado, huella del contenido, cambio externo detectado e `invited_at`. |
+| `mo_conflicts` | Empalmes con Google: reserva, calendario, bloque ocupado, estado (abierto, mantener, ignorado hasta, resuelto, desaparecido), nota y quién lo resolvió. |
 | `mo_audit` | Bitácora: actor, entidad, acción, datos (sin secretos) y fecha. |
+
+Esquema 2 (v0.2) agrega a `mo_bookings`: `deadline_at` (hora límite original de pago), `corrections_used`, `sync_state` y `conflict_state`; a `mo_proofs`: `version` y `client_reason`. Pasos de datos registrados en `mo_booking_migrations`. Opciones: `mo_booking_google` (conexión; tokens cifrados), `mo_booking_site_key` (marca de propiedad de eventos), `mo_booking_token_key` (fuente fija de la clave de enlaces).
 
 Desactivar el plugin no borra nada. Desinstalarlo solo borra los datos si la opción está marcada en Ajustes.

@@ -6,7 +6,7 @@ namespace MOBookingStudio\Infrastructure;
  * duplica ni borra datos. Todas las fechas se guardan en UTC (DATETIME).
  */
 final class Schema {
-	public const VERSION = '1';
+	public const VERSION = '2';
 	public const OPTION  = 'mo_booking_schema_version';
 
 	public static function tables(): array {
@@ -28,6 +28,9 @@ final class Schema {
 			'portal_sessions',
 			'notifications',
 			'audit',
+			'sync_jobs',
+			'calendar_events',
+			'conflicts',
 		);
 	}
 
@@ -143,6 +146,10 @@ final class Schema {
   client_category varchar(20) NOT NULL DEFAULT 'general',
   frequent_claim tinyint(1) NOT NULL DEFAULT 0,
   session_counted tinyint(1) NOT NULL DEFAULT 0,
+  deadline_at datetime DEFAULT NULL,
+  corrections_used tinyint(3) unsigned NOT NULL DEFAULT 0,
+  sync_state varchar(20) NOT NULL DEFAULT 'none',
+  conflict_state varchar(20) NOT NULL DEFAULT 'none',
   total_cents bigint(20) NOT NULL DEFAULT 0,
   deposit_cents bigint(20) NOT NULL DEFAULT 0,
   quote longtext NOT NULL,
@@ -273,6 +280,8 @@ final class Schema {
   reviewed_by bigint(20) unsigned DEFAULT NULL,
   reviewed_at datetime DEFAULT NULL,
   received_late tinyint(1) NOT NULL DEFAULT 0,
+  version smallint(5) unsigned NOT NULL DEFAULT 1,
+  client_reason varchar(190) NOT NULL DEFAULT '',
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
   KEY booking_id (booking_id),
@@ -343,14 +352,77 @@ final class Schema {
   KEY created_at (created_at)
 ) ENGINE=InnoDB $c;";
 
+		// Cola persistente de sincronización con Google (un trabajo pendiente por reserva).
+		$sql[] = "CREATE TABLE {$t('sync_jobs')} (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  booking_id bigint(20) unsigned NOT NULL DEFAULT 0,
+  operation varchar(30) NOT NULL,
+  dedupe_key varchar(120) DEFAULT NULL,
+  status varchar(20) NOT NULL DEFAULT 'pending',
+  attempts smallint(5) unsigned NOT NULL DEFAULT 0,
+  next_run_at datetime NOT NULL,
+  locked_until datetime DEFAULT NULL,
+  last_http smallint(5) unsigned DEFAULT NULL,
+  last_error varchar(255) NOT NULL DEFAULT '',
+  request_id varchar(40) NOT NULL DEFAULT '',
+  created_at datetime NOT NULL,
+  updated_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY dedupe_key (dedupe_key),
+  KEY status_next (status,next_run_at),
+  KEY booking_id (booking_id)
+) ENGINE=InnoDB $c;";
+
+		// Eventos de Google que pertenecen al plugin (interno y del cliente).
+		$sql[] = "CREATE TABLE {$t('calendar_events')} (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  booking_id bigint(20) unsigned NOT NULL,
+  kind varchar(10) NOT NULL,
+  calendar_id varchar(255) NOT NULL,
+  event_id varchar(255) NOT NULL,
+  etag varchar(100) NOT NULL DEFAULT '',
+  state varchar(20) NOT NULL DEFAULT 'active',
+  fingerprint char(40) NOT NULL DEFAULT '',
+  external_change varchar(30) NOT NULL DEFAULT '',
+  invited_at datetime DEFAULT NULL,
+  synced_at datetime DEFAULT NULL,
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY booking_kind (booking_id,kind),
+  KEY event_id (event_id(100))
+) ENGINE=InnoDB $c;";
+
+		// Empalmes detectados después de reservar. Nunca cancelan ni mueven la reserva.
+		$sql[] = "CREATE TABLE {$t('conflicts')} (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  booking_id bigint(20) unsigned NOT NULL,
+  calendar_id varchar(255) NOT NULL,
+  busy_start datetime NOT NULL,
+  busy_end datetime NOT NULL,
+  status varchar(20) NOT NULL DEFAULT 'open',
+  ignore_until datetime DEFAULT NULL,
+  note varchar(255) NOT NULL DEFAULT '',
+  notified_at datetime DEFAULT NULL,
+  first_seen datetime NOT NULL,
+  last_seen datetime NOT NULL,
+  resolved_by bigint(20) unsigned DEFAULT NULL,
+  resolved_at datetime DEFAULT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY booking_busy (booking_id,calendar_id(100),busy_start,busy_end),
+  KEY status (status)
+) ENGINE=InnoDB $c;";
+
 		foreach ( $sql as $statement ) {
 			dbDelta( $statement );
 		}
-		update_option( self::OPTION, self::VERSION, false );
 	}
 
 	public static function isCurrent(): bool {
 		return get_option( self::OPTION ) === self::VERSION;
+	}
+
+	public static function installedVersion(): string {
+		return (string) get_option( self::OPTION, '' );
 	}
 
 	public static function drop(): void {

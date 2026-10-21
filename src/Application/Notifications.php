@@ -261,7 +261,7 @@ final class Notifications {
 	/** Programa el recordatorio; si la fecha cambia, la clave cambia y el anterior se anula. */
 	public static function scheduleReminder( array $booking ): void {
 		$hours = (float) Settings::get( 'reminder_hours' );
-		if ( $hours <= 0 || ! in_array( $booking['status'], array( BookingStatus::CONFIRMED, BookingStatus::PENDING_APPROVAL ), true ) ) {
+		if ( $hours <= 0 || ! in_array( $booking['status'], array( BookingStatus::CONFIRMED ), true ) ) {
 			return;
 		}
 		$tpl = self::templates()['reminder'];
@@ -341,7 +341,7 @@ final class Notifications {
 			$set( array( 'status' => 'skipped', 'last_error' => 'La reserva no existe.' ) );
 			return false;
 		}
-		if ( 'reminder' === $row['event'] && ! in_array( $booking['status'], array( BookingStatus::CONFIRMED, BookingStatus::PENDING_APPROVAL ), true ) ) {
+		if ( 'reminder' === $row['event'] && ! in_array( $booking['status'], array( BookingStatus::CONFIRMED ), true ) ) {
 			$set( array( 'status' => 'cancelled', 'last_error' => 'La cita ya no está activa.' ) );
 			return false;
 		}

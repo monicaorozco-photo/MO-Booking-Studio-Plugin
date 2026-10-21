@@ -84,6 +84,9 @@ final class Routes {
 
 	private function wrap( callable $handler ): callable {
 		return static function ( \WP_REST_Request $request ) use ( $handler ) {
+			if ( \MOBookingStudio\Plugin::maintenance() ) {
+				return new \WP_Error( 'mo_maintenance', 'Estamos actualizando el sistema de reservas. Intenta de nuevo en unos minutos.', array( 'status' => 503 ) );
+			}
 			try {
 				return rest_ensure_response( $handler( $request ) );
 			} catch ( DomainException $e ) {
@@ -169,11 +172,11 @@ final class Routes {
 		if ( empty( $files['file'] ) ) {
 			throw new DomainException( 'no_file', 'Elige un archivo para subir.', 400 );
 		}
-		$result = Proofs::upload( $id, $files['file'] );
+		// PAY-04: además del límite por IP, un límite por reserva.
+		RateLimit::hit( 'proof_booking_' . $id, 6, 3600 );
+		Proofs::upload( $id, $files['file'] );
 		return array(
-			'message' => $result['late']
-				? 'Recibimos tu archivo, pero el plazo de tu reserva ya había terminado. Lo revisaremos y te contactaremos; el horario no se apartó de nuevo.'
-				: 'Recibimos tu comprobante. Tu horario sigue apartado mientras verificamos tu depósito.',
+			'message' => 'Recibimos tu comprobante. Tu horario sigue apartado mientras verificamos tu depósito.',
 			'booking' => Portal::view( Bookings::get( $id ) ),
 		);
 	}

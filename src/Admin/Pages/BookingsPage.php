@@ -55,7 +55,7 @@ final class BookingsPage {
 			'limit'      => 200,
 		);
 		if ( 'active' === $status ) {
-			$filters['status'] = array( BookingStatus::PENDING_PAYMENT, BookingStatus::PAYMENT_REVIEW, BookingStatus::CORRECTION_REQUESTED, BookingStatus::PENDING_APPROVAL, BookingStatus::CONFIRMED );
+			$filters['status'] = BookingStatus::active();
 		} elseif ( $status ) {
 			$filters['status'] = array( $status );
 		}
@@ -192,25 +192,35 @@ final class BookingsPage {
 		$today  = Ui::localToday();
 		$suggest = $summary['deposit_missing'] > 0 ? $summary['deposit_missing'] : $summary['balance_cents'];
 		$html   = '';
-		$labels = array( 'pending' => 'Por revisar', 'approved' => 'Aprobado', 'rejected' => 'No válido', 'correction' => 'Corrección pedida' );
+		$labels  = array( 'pending' => 'Por revisar', 'approved' => 'Aprobado', 'rejected' => 'Rechazado', 'correction' => 'Corrección pedida' );
+		$reasons = array( '' => 'Elige el motivo que verá la persona' ) + Settings::reviewReasons();
+		$canFix  = (int) $b['corrections_used'] < 1;
 		if ( $proofs ) {
 			foreach ( $proofs as $p ) {
-				$html .= '<div class="mo-proof"><p><strong>' . esc_html( $labels[ $p['status'] ] ?? $p['status'] ) . '</strong> · subido ' . esc_html( Ui::localDateTime( $p['created_at'], 'd/m/Y H:i' ) ) . ' · ' . esc_html( strtoupper( pathinfo( $p['stored_name'], PATHINFO_EXTENSION ) ) ) . ' ' . esc_html( size_format( (int) $p['size_bytes'] ) ) .
+				$html .= '<div class="mo-proof"><p><strong>Versión ' . (int) $p['version'] . ' · ' . esc_html( $labels[ $p['status'] ] ?? $p['status'] ) . '</strong> · subido ' . esc_html( Ui::localDateTime( $p['created_at'], 'd/m/Y H:i' ) ) . ' · ' . esc_html( strtoupper( pathinfo( $p['stored_name'], PATHINFO_EXTENSION ) ) ) . ' ' . esc_html( size_format( (int) $p['size_bytes'] ) ) .
 					( $p['received_late'] ? ' · <span class="mo-pill mo-pill--expired">Llegó tarde: conciliación manual</span>' : '' ) . '</p>';
-				if ( $p['review_note'] ) {
-					$html .= '<p class="description">' . esc_html( $p['review_note'] ) . '</p>';
+				if ( $p['client_reason'] ) {
+					$html .= '<p class="description">Motivo enviado: ' . esc_html( $p['client_reason'] ) . '</p>';
 				}
-				$html .= '<p><a class="button" href="' . esc_url( Admin::proofUrl( (int) $p['id'] ) ) . '" target="_blank" rel="noopener noreferrer">Ver archivo</a> <a class="button-link" href="' . esc_url( Admin::proofUrl( (int) $p['id'], true ) ) . '">Descargar</a></p>';
+				if ( $p['review_note'] ) {
+					$html .= '<p class="description">Nota interna: ' . esc_html( $p['review_note'] ) . '</p>';
+				}
+				$isPdf = 'application/pdf' === $p['mime'];
+				$html .= '<p>' . ( $isPdf ? '' : '<a class="button" href="' . esc_url( Admin::proofUrl( (int) $p['id'] ) ) . '" target="_blank" rel="noopener noreferrer">Ver copia segura</a> ' ) .
+					'<a class="button-link" href="' . esc_url( Admin::proofUrl( (int) $p['id'], true ) ) . '">Descargar original</a>' .
+					( $isPdf ? ' <span class="description">Los PDF solo se descargan por seguridad.</span>' : '' ) . '</p>';
 				if ( 'pending' === $p['status'] ) {
 					$html .= '<p class="description">El comprobante es una evidencia: verifica en tu banca que el dinero llegó antes de aprobar.</p>';
 					$html .= Ui::formOpen( 'approve_payment', array_merge( $hidden, array( 'proof_id' => $p['id'] ) ), 'mo-inline-form' ) .
 						'<label>Importe recibido ' . Ui::input( 'amount', Money::toInput( max( 0, $suggest ) ), 'text', array( 'class' => 'small-text', 'inputmode' => 'decimal', 'required' => 'required' ) ) . '</label> ' .
 						'<label>Fecha de recepción ' . Ui::input( 'received_date', $today, 'date', array( 'required' => 'required' ) ) . '</label> ' .
-						'<label>Referencia ' . Ui::input( 'reference', '', 'text' ) . '</label> ' .
-						Ui::checkbox( 'confirm', true, 'Confirmar la cita si cubre el anticipo' ) . ' ' . Ui::button( 'Aprobar pago' ) . '</form>';
-					$html .= '<details class="mo-details"><summary>Pedir corrección o rechazar</summary>' .
-						Ui::formOpen( 'request_correction', array_merge( $hidden, array( 'proof_id' => $p['id'] ) ) ) . Ui::textarea( 'reason', '', 2, array( 'placeholder' => 'Qué debe corregir (lo verá la persona)', 'required' => 'required' ) ) . Ui::button( 'Pedir corrección', 'button-secondary' ) . '</form>' .
-						Ui::formOpen( 'reject_proof', array_merge( $hidden, array( 'proof_id' => $p['id'] ) ) ) . Ui::input( 'reason', '', 'text', array( 'placeholder' => 'Motivo' ) ) . ' ' . Ui::button( 'Marcar como no válido', 'button-link-delete' ) . '</form></details>';
+						'<label>Referencia ' . Ui::input( 'reference', '', 'text' ) . '</label> ' . Ui::button( 'Aprobar pago' ) . '</form>';
+					$html .= '<p class="description">Si el importe cubre el anticipo, la cita se confirma. Si es menor, la reserva queda pendiente con su hora límite original' . ( $b['deadline_at'] ? ' (' . esc_html( Ui::localDateTime( $b['deadline_at'], 'd/m H:i' ) ) . ')' : '' ) . ' y tú avisas a la persona.</p>';
+					$html .= '<details class="mo-details"><summary>' . ( $canFix ? 'Pedir corrección o rechazar' : 'Rechazar (la corrección ya se usó)' ) . '</summary>';
+					if ( $canFix ) {
+						$html .= Ui::formOpen( 'request_correction', array_merge( $hidden, array( 'proof_id' => $p['id'] ) ) ) . '<p><strong>Pedir corrección</strong> (una sola vez; plazo de ' . esc_html( (string) Settings::get( 'correction_hours' ) ) . ' h)</p>' . Ui::select( 'reason_key', $reasons, '', array( 'required' => 'required', 'aria-label' => 'Motivo de corrección' ) ) . ' ' . Ui::input( 'internal_note', '', 'text', array( 'placeholder' => 'Nota interna (opcional, no se envía)', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Pedir corrección', 'button-secondary' ) . '</form>';
+					}
+					$html .= Ui::formOpen( 'reject', $hidden ) . '<p><strong>Rechazo final</strong>: libera el horario de inmediato.</p>' . Ui::select( 'reason_key', $reasons, '', array( 'required' => 'required', 'aria-label' => 'Motivo de rechazo' ) ) . ' ' . Ui::input( 'internal_note', '', 'text', array( 'placeholder' => 'Nota interna (opcional, no se envía)', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Rechazar y liberar horario', 'button-link-delete', '¿Rechazar de forma definitiva y liberar el horario?' ) . '</form></details>';
 				}
 				$html .= '</div>';
 			}
@@ -224,7 +234,7 @@ final class BookingsPage {
 			Ui::row( 'Fecha de recepción', Ui::input( 'received_date', $today, 'date', array( 'required' => 'required' ) ) ) .
 			Ui::row( 'Medio', Ui::select( 'method', array( 'transfer' => 'Transferencia', 'cash' => 'Efectivo', 'other' => 'Otro' ), 'cash' ) ) .
 			Ui::row( 'Referencia o nota', Ui::input( 'reference', '', 'text' ) ) .
-			Ui::checkbox( 'confirm', true, 'Confirmar la cita si cubre el anticipo' ) . '<br>' . Ui::button( 'Registrar pago' ) . '</form></details>';
+			Ui::button( 'Registrar pago' ) . '</form></details>';
 
 		$movements = Bookings::movements( $b['id'] );
 		if ( $movements ) {
@@ -262,9 +272,10 @@ final class BookingsPage {
 		$hiddenV = array_merge( $hidden, array( 'version' => $b['version'] ) );
 		$base   = Ui::url( 'mo-booking-bookings', array( 'booking' => $b['id'] ) );
 
-		if ( in_array( $s, array( BookingStatus::PENDING_PAYMENT, BookingStatus::PAYMENT_REVIEW, BookingStatus::CORRECTION_REQUESTED, BookingStatus::PENDING_APPROVAL ), true ) ) {
+		if ( in_array( $s, BookingStatus::awaitingPayment(), true ) ) {
 			$html .= Ui::formOpen( 'confirm', $hidden, 'mo-action' ) . ( $summary['deposit_covered'] ? '' : Ui::input( 'override', '', 'text', array( 'placeholder' => 'Motivo de la excepción (falta ' . Money::format( $summary['deposit_missing'] ) . ')', 'class' => 'regular-text' ) ) . ' ' ) . Ui::button( 'Confirmar cita' ) . '</form>';
-			$html .= '<details class="mo-details"><summary>Rechazar solicitud</summary>' . Ui::formOpen( 'reject', $hidden ) . Ui::textarea( 'reason', '', 2, array( 'placeholder' => 'Motivo (se enviará a la persona)' ) ) . Ui::button( 'Rechazar y liberar horario', 'button-link-delete', '¿Rechazar la solicitud?' ) . '</form></details>';
+			$reasons = array( '' => 'Elige el motivo que verá la persona' ) + Settings::reviewReasons();
+			$html   .= '<details class="mo-details"><summary>Rechazar solicitud</summary>' . Ui::formOpen( 'reject', $hidden ) . Ui::select( 'reason_key', $reasons, '', array( 'required' => 'required', 'aria-label' => 'Motivo' ) ) . ' ' . Ui::input( 'internal_note', '', 'text', array( 'placeholder' => 'Nota interna (opcional)', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Rechazar y liberar horario', 'button-link-delete', '¿Rechazar la solicitud?' ) . '</form></details>';
 		}
 		if ( BookingStatus::CONFIRMED === $s ) {
 			$html .= Ui::formOpen( 'complete', $hidden, 'mo-action mo-inline-form' ) . Ui::button( 'Marcar sesión completada' ) . '</form> ';
@@ -486,7 +497,6 @@ final class BookingsPage {
 					'amount_cents'  => $paid,
 					'received_date' => (string) ( $p['paid_date'] ?? '' ),
 					'reference'     => 'Registrado al crear la reserva',
-					'confirm'       => true,
 					'form_key'      => 'create-' . (string) $p['form_key'],
 				)
 			);

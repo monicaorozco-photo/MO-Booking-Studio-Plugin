@@ -171,7 +171,7 @@ final class AvailabilityPage {
 
 		// Citas activas fuera del horario actual (por cambios de horario): se muestran, no se mueven.
 		$conflicts = array();
-		foreach ( Bookings::list( array( 'status' => array( BookingStatus::PENDING_PAYMENT, BookingStatus::PAYMENT_REVIEW, BookingStatus::CORRECTION_REQUESTED, BookingStatus::PENDING_APPROVAL, BookingStatus::CONFIRMED ), 'from' => $today, 'limit' => 500 ) ) as $b ) {
+		foreach ( Bookings::list( array( 'status' => BookingStatus::active(), 'from' => $today, 'limit' => 500 ) ) as $b ) {
 			if ( $b['resource_id'] !== $resourceId ) {
 				continue;
 			}

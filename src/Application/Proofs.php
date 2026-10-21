@@ -72,6 +72,10 @@ final class Proofs {
 				);
 				Bookings::lockDays( $booking['resource_id'], $occupy->utcDays() );
 
+				$window = self::uploadWindow( $booking, $now );
+				if ( ! $window['open'] ) {
+					throw new DomainException( 'late' === $window['reason'] ? 'upload_late' : 'upload_closed', $window['message'], 'late' === $window['reason'] ? 410 : 409 );
+				}
 				$wpdb   = Db::wpdb();
 				$table  = Schema::table( 'proofs' );
 				$count  = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $table WHERE booking_id = %d", $bookingId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -84,28 +88,7 @@ final class Proofs {
 				}
 
 				$status  = $booking['status'];
-				$late    = false;
-				$advance = false;
-				if ( BookingStatus::PENDING_PAYMENT === $status ) {
-					if ( $booking['expires'] && $booking['expires'] <= $now ) {
-						$late = true;
-					} else {
-						$advance = true;
-					}
-				} elseif ( BookingStatus::CORRECTION_REQUESTED === $status ) {
-					$until = Db::fromSql( $booking['correction_until'] );
-					if ( $until && $until <= $now ) {
-						$late = true;
-					} else {
-						$advance = true;
-					}
-				} elseif ( in_array( $status, array( BookingStatus::PAYMENT_REVIEW, BookingStatus::PENDING_APPROVAL, BookingStatus::CONFIRMED ), true ) ) {
-					$advance = false; // Comprobante adicional o de saldo.
-				} elseif ( in_array( $status, array( BookingStatus::EXPIRED, BookingStatus::REJECTED ), true ) ) {
-					$late = true;
-				} else {
-					throw new DomainException( 'not_allowed', 'Esta reserva ya no recibe comprobantes. Escríbenos si necesitas ayuda.', 409 );
-				}
+				$version = 1 + (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $table WHERE booking_id = %d", $bookingId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 				$duplicate = $wpdb->get_var( $wpdb->prepare( "SELECT booking_id FROM $table WHERE sha256 = %s AND booking_id <> %d LIMIT 1", $hash, $bookingId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				$stored    = PrivateStorage::store( $tmp, $ext );
@@ -121,7 +104,8 @@ final class Proofs {
 							'sha256'        => $hash,
 							'status'        => 'pending',
 							'review_note'   => $duplicate ? 'Revisar: el mismo archivo se subió en otra reserva.' : '',
-							'received_late' => $late ? 1 : 0,
+							'received_late' => 0,
+							'version'       => $version,
 							'created_at'    => Db::toSql( $now ),
 						)
 					),
@@ -129,31 +113,69 @@ final class Proofs {
 				);
 				$proofId = (int) $wpdb->insert_id;
 
-				if ( $advance ) {
-					Bookings::transition( $booking, BookingStatus::PAYMENT_REVIEW, 'Comprobante recibido a tiempo.', array( 'expires_at' => null, 'correction_until' => null ) );
-					// Mientras se revisa, el horario sigue apartado aunque pase el plazo original.
-					Bookings::holdIndefinitely( $bookingId );
-				}
+				// DEC-02: recibido a tiempo, la reserva no vence mientras está en revisión.
+				Bookings::transition( $booking, BookingStatus::PAYMENT_REVIEW, 1 === $version ? 'Comprobante recibido a tiempo.' : 'Comprobante sustituto recibido a tiempo.', array( 'expires_at' => null, 'correction_until' => null ) );
+				Bookings::holdIndefinitely( $bookingId );
 				Audit::log(
 					'booking',
 					$bookingId,
 					'proof_uploaded',
 					array(
 						'proof_id'  => $proofId,
-						'late'      => $late,
+						'version'   => $version,
+						'from'      => $status,
 						'duplicate' => (bool) $duplicate,
 					),
 					'client'
 				);
 				return array(
 					'proof_id' => $proofId,
-					'late'     => $late,
-					'status'   => $advance ? BookingStatus::PAYMENT_REVIEW : $status,
+					'version'  => $version,
+					'late'     => false,
+					'status'   => BookingStatus::PAYMENT_REVIEW,
 				);
 			}
 		);
-		Notifications::bookingEvent( $result['late'] ? 'proof_received_late' : 'proof_received', Bookings::get( $bookingId ), array( 'proof_id' => $result['proof_id'] ) );
+		Notifications::bookingEvent( 'proof_received', Bookings::get( $bookingId ), array( 'proof_id' => $result['proof_id'] ) );
 		return $result;
+	}
+
+	public const LATE_MESSAGE = 'Pasaste el tiempo límite para enviar tu anticipo. Realiza de nuevo tu reserva.';
+
+	/**
+	 * ¿Puede la persona subir un comprobante ahora? (P1: la capacidad de carga caduca
+	 * aunque el enlace siga sirviendo para consultar el estado.)
+	 *
+	 * - Pendiente de pago: hasta la hora límite (12 h desde que reservó; también tras un pago parcial).
+	 * - Corrección solicitada: una sola sustitución dentro del plazo de corrección.
+	 * - Después de esos plazos, o si la reserva venció o se rechazó: carga tardía rechazada.
+	 * - Con un comprobante en revisión o una cita confirmada: no hay carga.
+	 *
+	 * @return array{open:bool,reason:?string,message:string,until:?\DateTimeImmutable}
+	 */
+	public static function uploadWindow( array $booking, \DateTimeImmutable $now ): array {
+		$status = $booking['status'];
+		if ( BookingStatus::PENDING_PAYMENT === $status ) {
+			$until = $booking['expires'] ?: Db::fromSql( $booking['deadline_at'] ?? null );
+			if ( $until && $until > $now ) {
+				return array( 'open' => true, 'reason' => null, 'message' => '', 'until' => $until );
+			}
+			return array( 'open' => false, 'reason' => 'late', 'message' => self::LATE_MESSAGE, 'until' => null );
+		}
+		if ( BookingStatus::CORRECTION_REQUESTED === $status ) {
+			$until = Db::fromSql( $booking['correction_until'] );
+			if ( $until && $until > $now ) {
+				return array( 'open' => true, 'reason' => null, 'message' => '', 'until' => $until );
+			}
+			return array( 'open' => false, 'reason' => 'late', 'message' => self::LATE_MESSAGE, 'until' => null );
+		}
+		if ( in_array( $status, array( BookingStatus::EXPIRED, BookingStatus::REJECTED ), true ) ) {
+			return array( 'open' => false, 'reason' => 'late', 'message' => self::LATE_MESSAGE, 'until' => null );
+		}
+		if ( in_array( $status, array( BookingStatus::PAYMENT_REVIEW, BookingStatus::UNDER_REVIEW ), true ) ) {
+			return array( 'open' => false, 'reason' => 'review', 'message' => 'Ya recibimos tu comprobante y lo estamos revisando. Te avisaremos del resultado.', 'until' => null );
+		}
+		return array( 'open' => false, 'reason' => 'closed', 'message' => 'Esta reserva ya no recibe comprobantes en línea. Escríbenos si necesitas ayuda.', 'until' => null );
 	}
 
 	/**
@@ -216,8 +238,11 @@ final class Proofs {
 	}
 
 	/**
-	 * Envía el archivo a una persona autorizada. Imágenes en línea con sandbox; PDF como
-	 * descarga para que el navegador no ejecute su contenido en el sitio.
+	 * Envía el archivo a una persona autorizada (P2, PAY-07). Sin antivirus en el hosting,
+	 * nunca se muestra el archivo original dentro del navegador:
+	 * - "Ver": las imágenes se re-codifican en el servidor (se descarta cualquier contenido
+	 *   oculto) y se muestra esa copia. Si el servidor no tiene GD, se descarga.
+	 * - "Descargar" y cualquier PDF: descarga del original con nombre neutro.
 	 */
 	public static function stream( array $proof, bool $download = false ): void {
 		$path = PrivateStorage::path( $proof['stored_name'] );
@@ -227,14 +252,41 @@ final class Proofs {
 		nocache_headers();
 		header( 'Cache-Control: no-store, private' );
 		header( 'X-Content-Type-Options: nosniff' );
-		header( 'Content-Security-Policy: default-src \'none\'; img-src \'self\'; sandbox' );
+		header( "Content-Security-Policy: default-src 'none'; img-src 'self'; sandbox" );
 		header( 'Referrer-Policy: no-referrer' );
-		header( 'Content-Type: ' . $proof['mime'] );
+		$ext = pathinfo( $proof['stored_name'], PATHINFO_EXTENSION );
+
+		if ( ! $download && 'application/pdf' !== $proof['mime'] ) {
+			$safe = self::sanitizedImage( $path );
+			if ( null !== $safe ) {
+				header( 'Content-Type: image/png' );
+				header( 'Content-Length: ' . strlen( $safe ) );
+				header( 'Content-Disposition: inline; filename="comprobante-' . (int) $proof['id'] . '-copia.png"' );
+				echo $safe; // phpcs:ignore WordPress.Security.EscapeOutput
+				exit;
+			}
+		}
+		header( 'Content-Type: application/octet-stream' );
 		header( 'Content-Length: ' . filesize( $path ) );
-		$disposition = ( $download || 'application/pdf' === $proof['mime'] ) ? 'attachment' : 'inline';
-		$name        = 'comprobante-' . (int) $proof['id'] . '.' . pathinfo( $proof['stored_name'], PATHINFO_EXTENSION );
-		header( 'Content-Disposition: ' . $disposition . '; filename="' . $name . '"' );
+		header( 'Content-Disposition: attachment; filename="comprobante-' . (int) $proof['id'] . '.' . $ext . '"' );
 		readfile( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile
 		exit;
 	}
+
+	/** Copia re-codificada en PNG (solo píxeles), o null si no se puede generar. */
+	public static function sanitizedImage( string $path ): ?string {
+		if ( ! function_exists( 'imagecreatefromstring' ) || ! function_exists( 'imagepng' ) ) {
+			return null;
+		}
+		$data = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$img  = false === $data ? false : @imagecreatefromstring( $data ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		if ( ! $img ) {
+			return null;
+		}
+		ob_start();
+		imagepng( $img );
+		imagedestroy( $img );
+		return (string) ob_get_clean();
+	}
+
 }

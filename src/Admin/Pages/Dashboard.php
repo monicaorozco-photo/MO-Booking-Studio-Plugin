@@ -42,7 +42,7 @@ final class Dashboard {
 			echo Ui::card( sprintf( 'Comprobantes por revisar (%d)', count( $queue ) ), $body ); // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 
-		$pending = Bookings::list( array( 'status' => array( BookingStatus::PENDING_PAYMENT, BookingStatus::CORRECTION_REQUESTED, BookingStatus::PENDING_APPROVAL ), 'limit' => 20 ) );
+		$pending = Bookings::list( array( 'status' => BookingStatus::awaitingPayment(), 'limit' => 20 ) );
 		$body    = $pending ? '<ul class="mo-list">' : '<p>Nada pendiente.</p>';
 		foreach ( $pending as $b ) {
 			$deadline = BookingStatus::PENDING_PAYMENT === $b['status'] ? $b['expires_at'] : ( BookingStatus::CORRECTION_REQUESTED === $b['status'] ? $b['correction_until'] : null );
@@ -53,7 +53,7 @@ final class Dashboard {
 		echo Ui::card( 'Esperando pago o aprobación', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
 
 		// Próximas citas.
-		$upcoming = Bookings::list( array( 'status' => array( BookingStatus::CONFIRMED, BookingStatus::PENDING_APPROVAL, BookingStatus::PAYMENT_REVIEW ), 'from' => $today, 'to' => $now->modify( '+14 days' )->setTimezone( $zone )->format( 'Y-m-d' ), 'limit' => 30 ) );
+		$upcoming = Bookings::list( array( 'status' => array( BookingStatus::CONFIRMED, BookingStatus::PAYMENT_REVIEW, BookingStatus::UNDER_REVIEW ), 'from' => $today, 'to' => $now->modify( '+14 days' )->setTimezone( $zone )->format( 'Y-m-d' ), 'limit' => 30 ) );
 		$body     = $upcoming ? '<ul class="mo-list">' : '<p>No hay citas en los próximos 14 días.</p>';
 		foreach ( $upcoming as $b ) {
 			$summary = Bookings::summary( $b );

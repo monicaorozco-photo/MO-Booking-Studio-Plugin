@@ -17,7 +17,8 @@ final class Settings {
 			'bank_instructions'    => '',
 			'payment_reference'    => 'Usa tu número de reserva como concepto o referencia.',
 			'hold_hours'           => 12,   // Retención de horario mientras se paga.
-			'correction_hours'     => 12,   // Propuesta: plazo para corregir un comprobante.
+			'correction_hours'     => 2,    // DEC-01: una sola sustitución en 2 horas.
+			'review_reasons'       => "Archivo ilegible\nNo se identifica el monto\nReferencia incorrecta\nArchivo equivocado\nMonto incompleto\nNo recibimos el depósito", // P5: motivos que ve la persona.
 			'proof_max_mb'         => 10,   // Propuesta: tamaño máximo de comprobante.
 			'proof_max_files'      => 5,
 			'token_days_after'     => 90,   // Propuesta: el enlace privado vence 90 días después de la cita.
@@ -56,6 +57,27 @@ final class Settings {
 			}
 		}
 		update_option( self::OPTION, $current, false );
+	}
+
+	/**
+	 * Motivos de revisión que puede ver la persona (uno por línea, editables).
+	 *
+	 * @return array<string,string> clave => texto
+	 */
+	public static function reviewReasons(): array {
+		$out = array();
+		foreach ( preg_split( '/\r\n|\r|\n/', (string) self::get( 'review_reasons' ) ) as $line ) {
+			$line = trim( $line );
+			if ( '' !== $line ) {
+				$out[ sanitize_title( $line ) ] = $line;
+			}
+		}
+		return $out;
+	}
+
+	public static function correctionReason( string $key ): ?string {
+		$reasons = self::reviewReasons();
+		return $reasons[ $key ] ?? null;
 	}
 
 	/** Zona efectiva del negocio (con equivalente si el servidor no conoce la zona pedida). */

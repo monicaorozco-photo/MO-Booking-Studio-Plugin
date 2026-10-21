@@ -18,9 +18,15 @@ final class Installer {
 		self::schedule();
 	}
 
-	/** Migraciones idempotentes. Se llama al activar y si cambia la versión del esquema. */
+	/**
+	 * Migraciones idempotentes. Se llama al activar y si cambia la versión del esquema.
+	 * Si hay datos de una versión anterior, espera la confirmación de respaldo.
+	 */
 	public static function upgrade(): void {
-		Schema::install();
+		if ( Migrations::waitingForBackup() ) {
+			return;
+		}
+		Migrations::run();
 		self::ensureDefaultResource();
 		if ( false === get_option( Settings::OPTION ) ) {
 			add_option( Settings::OPTION, Settings::defaults(), '', false );

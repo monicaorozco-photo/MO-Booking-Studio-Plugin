@@ -45,7 +45,6 @@ final class Admin {
 		'save_client'         => Cap::CLIENTS,
 		'approve_payment'     => Cap::PAYMENTS,
 		'request_correction'  => Cap::PAYMENTS,
-		'reject_proof'        => Cap::PAYMENTS,
 		'add_movement'        => Cap::PAYMENTS,
 		'proof_file'          => Cap::PAYMENTS,
 		'confirm'             => Cap::BOOKINGS,
@@ -70,10 +69,16 @@ final class Admin {
 		add_action( 'admin_post_mo_booking', array( $this, 'dispatch' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'assets' ) );
 		add_action( 'admin_notices', array( $this, 'globalNotices' ) );
+		add_action( 'admin_notices', array( $this, 'upgradeNotice' ) );
+		add_action( 'admin_post_mo_booking_confirm_backup', array( $this, 'confirmBackup' ) );
 	}
 
 	public function menu(): void {
 		$icon = 'dashicons-camera';
+		if ( \MOBookingStudio\Plugin::maintenance() ) {
+			add_menu_page( 'MO Booking Studio', 'Reservas', Cap::SETTINGS, 'mo-booking', array( self::class, 'renderUpgradeGate' ), $icon, 26 );
+			return;
+		}
 		add_menu_page( 'MO Booking Studio', 'Reservas', Cap::AGENDA, 'mo-booking', array( Pages\Dashboard::class, 'render' ), $icon, 26 );
 		add_submenu_page( 'mo-booking', 'Inicio', 'Inicio', Cap::AGENDA, 'mo-booking', array( Pages\Dashboard::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Agenda', 'Agenda', Cap::AGENDA, 'mo-booking-agenda', array( Pages\Agenda::class, 'render' ) );
@@ -121,6 +126,46 @@ final class Admin {
 		foreach ( $notices as $n ) {
 			echo '<div class="notice notice-warning"><p>' . wp_kses( $n, array( 'strong' => array() ) ) . '</p></div>';
 		}
+	}
+
+	/** Aviso en todo el panel mientras la actualización espera el respaldo. */
+	public function upgradeNotice(): void {
+		if ( ! \MOBookingStudio\Plugin::maintenance() || ! current_user_can( Cap::SETTINGS ) ) {
+			return;
+		}
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( $screen && false !== strpos( (string) $screen->id, 'mo-booking' ) ) {
+			return;
+		}
+		echo '<div class="notice notice-warning"><p><strong>MO Booking Studio necesita actualizar su base de datos.</strong> Las reservas en línea están en pausa hasta entonces. <a href="' . esc_url( admin_url( 'admin.php?page=mo-booking' ) ) . '">Revisar y actualizar</a></p></div>';
+	}
+
+	public static function renderUpgradeGate(): void {
+		Ui::header( 'Actualización de datos pendiente' );
+		$installed = \MOBookingStudio\Infrastructure\Schema::installedVersion();
+		echo '<div class="mo-card"><p>Instalaste una versión nueva del plugin (' . esc_html( MO_BOOKING_VERSION ) . '). Antes de que actualice tus datos (esquema ' . esc_html( $installed ) . ' → ' . esc_html( \MOBookingStudio\Infrastructure\Schema::VERSION ) . ') necesitas un respaldo. Mientras tanto <strong>las reservas en línea están en pausa</strong> y nada se ha modificado.</p>';
+		echo '<ol><li>Ve a <em>Ajustes → UpdraftPlus Backups</em> y pulsa <strong>Respaldar ahora</strong> incluyendo base de datos, plugins y uploads.</li><li>Descarga los archivos del respaldo a tu computadora y comprueba que se abren (que no pesen 0 KB).</li><li>Si guardas comprobantes en una carpeta propia (MO_BOOKING_PRIVATE_DIR), respáldala también.</li><li>Vuelve aquí y confirma.</li></ol>';
+		echo '<p>Esta actualización solo agrega información: no borra reservas, clientes, pagos ni comprobantes. Si necesitas volver a la versión anterior, sigue <em>docs/respaldo-y-reversion.md</em>.</p>';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="mo_booking_confirm_backup">' . wp_nonce_field( 'mo_booking_confirm_backup', '_mo_nonce', true, false ) . // phpcs:ignore WordPress.Security.EscapeOutput
+			'<label class="mo-check"><input type="checkbox" name="backup_ok" value="1" required> Tengo un respaldo descargado y verificado</label><p><button class="button button-primary">Actualizar datos</button></p></form></div>';
+		Ui::footer();
+	}
+
+	public function confirmBackup(): void {
+		if ( ! current_user_can( Cap::SETTINGS ) ) {
+			wp_die( 'No tienes permiso para esta acción.', '', array( 'response' => 403 ) );
+		}
+		check_admin_referer( 'mo_booking_confirm_backup', '_mo_nonce' );
+		if ( empty( $_POST['backup_ok'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+			Ui::flash( 'error', 'Marca la casilla para confirmar que tienes respaldo.' );
+		} else {
+			\MOBookingStudio\Infrastructure\Migrations::confirmBackup();
+			\MOBookingStudio\Infrastructure\Installer::upgrade();
+			\MOBookingStudio\Infrastructure\Installer::schedule();
+			Ui::flash( 'success', 'Datos actualizados. Las reservas en línea están activas de nuevo.' );
+		}
+		wp_safe_redirect( admin_url( 'admin.php?page=mo-booking' ) );
+		exit;
 	}
 
 	public function dispatch(): void {
@@ -281,7 +326,6 @@ final class Admin {
 						'reference'     => (string) ( $p['reference'] ?? '' ),
 						'method'        => (string) ( $p['method'] ?? 'transfer' ),
 						'note'          => (string) ( $p['note'] ?? '' ),
-						'confirm'       => ! empty( $p['confirm'] ),
 						'form_key'      => (string) ( $p['form_key'] ?? '' ),
 					)
 				);
@@ -289,13 +333,8 @@ final class Admin {
 				return $bookingUrl;
 
 			case 'request_correction':
-				Bookings::requestCorrection( $bookingId, ! empty( $p['proof_id'] ) ? (int) $p['proof_id'] : null, (string) ( $p['reason'] ?? '' ) );
+				Bookings::requestCorrection( $bookingId, ! empty( $p['proof_id'] ) ? (int) $p['proof_id'] : null, sanitize_title( (string) ( $p['reason_key'] ?? '' ) ), (string) ( $p['internal_note'] ?? '' ) );
 				Ui::flash( 'success', 'Se pidió la corrección. El horario sigue apartado durante el plazo.' );
-				return $bookingUrl;
-
-			case 'reject_proof':
-				Bookings::rejectProof( $bookingId, (int) $p['proof_id'], (string) ( $p['reason'] ?? 'No válido' ) );
-				Ui::flash( 'success', 'Comprobante marcado como no válido.' );
 				return $bookingUrl;
 
 			case 'add_movement':
@@ -309,6 +348,9 @@ final class Admin {
 				if ( ! $proof ) {
 					throw new DomainException( 'not_found', 'Comprobante no encontrado.', 404 );
 				}
+				if ( empty( $_REQUEST['download'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+					Bookings::startReview( (int) $proof['booking_id'] );
+				}
 				Proofs::stream( $proof, ! empty( $_REQUEST['download'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
 				return $redirect;
 
@@ -318,7 +360,7 @@ final class Admin {
 				return $bookingUrl;
 
 			case 'reject':
-				Bookings::reject( $bookingId, sanitize_textarea_field( (string) ( $p['reason'] ?? '' ) ) );
+				Bookings::reject( $bookingId, sanitize_title( (string) ( $p['reason_key'] ?? '' ) ), (string) ( $p['internal_note'] ?? '' ) );
 				Ui::flash( 'success', 'Solicitud rechazada; el horario quedó libre.' );
 				return $bookingUrl;
 

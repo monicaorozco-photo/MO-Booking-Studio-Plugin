@@ -26,6 +26,7 @@ abstract class IntegrationTestCase extends TestCase {
 		delete_option( Settings::OPTION );
 		delete_option( 'mo_booking_templates' );
 		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_mo_rl_%' OR option_name LIKE '_transient_timeout_mo_rl_%'" );
+		update_option( \MOBookingStudio\Infrastructure\Migrations::BACKUP_OPTION, Schema::VERSION );
 		Installer::upgrade();
 		Settings::update( array( 'uploads_verified' => 'ok', 'admin_email' => 'estudio@example.com' ) );
 		$this->clock = FixedClock::at( '2026-10-20T18:00:00Z' );

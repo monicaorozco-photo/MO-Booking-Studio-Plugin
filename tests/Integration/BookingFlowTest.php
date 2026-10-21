@@ -80,20 +80,47 @@ final class BookingFlowTest extends IntegrationTestCase {
 		$this->assertSame( array( 'booking_created', 'proof_received', 'booking_confirmed', 'reminder' ), $events );
 	}
 
-	/** AC14: abono insuficiente no confirma y pide la diferencia. */
-	public function test_partial_payment_requests_difference(): void {
-		$service = $this->christmasService();
-		$booking = $this->book( $service, self::NOV20_10AM )['booking'];
+	/** Decisión 4: abono insuficiente no confirma; sigue pendiente con la hora límite original. */
+	public function test_partial_payment_keeps_original_deadline(): void {
+		$service  = $this->christmasService();
+		$booking  = $this->book( $service, self::NOV20_10AM )['booking'];
+		$deadline = $booking['deadline_at'];
+		$this->clock->advance( '+2 hours' );
 		$up      = Proofs::upload( $booking['id'], $this->fakeUpload( 'pdf' ), false );
-		$booking = Bookings::approvePayment( $booking['id'], array( 'proof_id' => $up['proof_id'], 'amount_cents' => 30000, 'received_date' => '2026-10-20', 'confirm' => true ) );
-		$this->assertSame( BookingStatus::CORRECTION_REQUESTED, $booking['status'] );
+		$booking = Bookings::approvePayment( $booking['id'], array( 'proof_id' => $up['proof_id'], 'amount_cents' => 30000, 'received_date' => '2026-10-20' ) );
+		$this->assertSame( BookingStatus::PENDING_PAYMENT, $booking['status'] );
+		$this->assertSame( $deadline, $booking['expires_at'], 'Conserva la hora límite original.' );
 		$this->assertSame( 20000, Bookings::summary( $booking )['deposit_missing'] );
-		$this->assertNotNull( $booking['correction_until'] );
 
+		// Antes de la hora límite puede enviar el resto.
+		$this->clock->advance( '+9 hours' );
 		$up2     = Proofs::upload( $booking['id'], $this->fakeUpload( 'png' ), false );
-		$booking = Bookings::approvePayment( $booking['id'], array( 'proof_id' => $up2['proof_id'], 'amount_cents' => 20000, 'received_date' => '2026-10-20', 'confirm' => true ) );
+		$booking = Bookings::approvePayment( $booking['id'], array( 'proof_id' => $up2['proof_id'], 'amount_cents' => 20000, 'received_date' => '2026-10-21' ) );
 		$this->assertSame( BookingStatus::CONFIRMED, $booking['status'] );
 		$this->assertCount( 2, Bookings::movements( $booking['id'] ) );
+	}
+
+	/** P4: pago parcial revisado cuando la hora límite ya pasó: vence y el dinero queda por resolver. */
+	public function test_partial_payment_after_deadline_expires_booking(): void {
+		$service = $this->christmasService();
+		$booking = $this->book( $service, self::NOV20_10AM )['booking'];
+		$this->clock->advance( '+11 hours' );
+		$up = Proofs::upload( $booking['id'], $this->fakeUpload( 'png' ), false );
+		$this->clock->advance( '+5 hours' ); // Revisa después de la hora límite.
+		$booking = Bookings::approvePayment( $booking['id'], array( 'proof_id' => $up['proof_id'], 'amount_cents' => 30000, 'received_date' => '2026-10-21' ) );
+		$this->assertSame( BookingStatus::EXPIRED, $booking['status'] );
+		$this->assertSame( 30000, Bookings::summary( $booking )['received_cents'] );
+		$this->assertNotNull( Catalog::findAvailableSlot( $service, new \DateTimeImmutable( self::NOV20_10AM ), $this->clock->now() ) );
+	}
+
+	/** Un pago mayor confirma y el excedente reduce el saldo. */
+	public function test_overpayment_confirms_and_reduces_balance(): void {
+		$service = $this->christmasService();
+		$booking = $this->book( $service, self::NOV20_10AM )['booking'];
+		$up      = Proofs::upload( $booking['id'], $this->fakeUpload( 'png' ), false );
+		$booking = Bookings::approvePayment( $booking['id'], array( 'proof_id' => $up['proof_id'], 'amount_cents' => 70000, 'received_date' => '2026-10-20' ) );
+		$this->assertSame( BookingStatus::CONFIRMED, $booking['status'] );
+		$this->assertSame( 70000, Bookings::summary( $booking )['balance_cents'] );
 	}
 
 	/** AC12: vencimiento sin cron; al consultar o reservar se concilia. */
@@ -108,9 +135,16 @@ final class BookingFlowTest extends IntegrationTestCase {
 		$this->assertSame( BookingStatus::EXPIRED, Bookings::get( $first['id'] )['status'] );
 		$this->assertSame( BookingStatus::PENDING_PAYMENT, $second['status'] );
 
-		// AC13: comprobante tardío no desplaza la reserva vigente.
-		$late = Proofs::upload( $first['id'], $this->fakeUpload( 'png' ), false );
-		$this->assertTrue( $late['late'] );
+		// AC13 / AC-PAY-02: un comprobante tardío se rechaza y no desplaza la reserva vigente.
+		try {
+			Proofs::upload( $first['id'], $this->fakeUpload( 'png' ), false );
+			$this->fail( 'Se esperaba rechazo de la carga tardía.' );
+		} catch ( DomainException $e ) {
+			$this->assertSame( 'upload_late', $e->errorCode() );
+			$this->assertSame( 410, $e->httpStatus() );
+			$this->assertStringContainsString( 'Realiza de nuevo tu reserva', $e->getMessage() );
+		}
+		$this->assertCount( 0, Bookings::proofs( $first['id'] ), 'La carga tardía no se guarda.' );
 		$this->assertSame( BookingStatus::EXPIRED, Bookings::get( $first['id'] )['status'] );
 		$this->assertSame( BookingStatus::PENDING_PAYMENT, Bookings::get( $second['id'] )['status'] );
 	}

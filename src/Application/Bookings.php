@@ -220,9 +220,7 @@ final class Bookings {
 		$params   = Services::availabilityParams( $service );
 		$occupy   = Availability::occupancyFor( $start, $params );
 		$holdUntil = $result['deposit_cents'] > 0 ? $now->modify( sprintf( '+%d minutes', (int) round( Services::holdHours( $service ) * 60 ) ) ) : null;
-		$status   = $result['deposit_cents'] > 0
-			? BookingStatus::PENDING_PAYMENT
-			: ( 'auto' === $service['confirmation_mode'] ? BookingStatus::CONFIRMED : BookingStatus::PENDING_APPROVAL );
+		$status   = $result['deposit_cents'] > 0 ? BookingStatus::PENDING_PAYMENT : BookingStatus::CONFIRMED;
 		$isTest      = ! empty( $options['is_test'] ) || ! empty( $service['is_test'] );
 		$verifiedId  = isset( $verification ) && $verification ? (int) $verification['client_id'] : 0;
 		$extrasInput = $context['extras'];
@@ -295,6 +293,7 @@ final class Bookings {
 						)
 					),
 					'expires_at'       => Db::toSql( $holdUntil ),
+					'deadline_at'      => Db::toSql( $holdUntil ),
 					'idempotency_key'  => $key,
 					'request_hash'     => $requestHash,
 					'token_nonce'      => $nonce,
@@ -322,6 +321,7 @@ final class Bookings {
 					'occupancy_insert'
 				);
 				Tokens::register( $id, $nonce, self::tokenExpiry( $start ) );
+				CalendarSync::enqueue( $id );
 				Audit::log(
 					'booking',
 					$id,
@@ -545,28 +545,32 @@ final class Bookings {
 				$paymentId = (int) $wpdb->insert_id;
 				Audit::log( 'booking', $bookingId, 'payment_approved', array( 'payment_id' => $paymentId, 'amount' => $amount, 'proof_id' => $proofId ) );
 
-				$summary = self::summary( $booking );
-				$event   = 'payment_approved';
-				$service = Services::find( $booking['service_id'] );
-				$waiting = array( BookingStatus::PENDING_PAYMENT, BookingStatus::PAYMENT_REVIEW, BookingStatus::CORRECTION_REQUESTED );
+				$summary  = self::summary( $booking );
+				$event    = 'payment_approved';
+				$waiting  = array( BookingStatus::PENDING_PAYMENT, BookingStatus::PAYMENT_REVIEW, BookingStatus::UNDER_REVIEW, BookingStatus::CORRECTION_REQUESTED, BookingStatus::PENDING_APPROVAL );
+				$deadline = Db::fromSql( $booking['deadline_at'] ) ?: Db::fromSql( $booking['expires_at'] );
 				if ( in_array( $booking['status'], $waiting, true ) ) {
 					if ( $summary['deposit_covered'] ) {
-						$confirm = ! empty( $data['confirm'] ) || ( $service && 'auto' === $service['confirmation_mode'] );
-						$to      = $confirm ? BookingStatus::CONFIRMED : BookingStatus::PENDING_APPROVAL;
-						self::transition( $booking, $to, 'Pago verificado.', array( 'expires_at' => null, 'correction_until' => null ) );
+						// Decisión 2: aprobar el anticipo completo confirma la cita.
+						self::transition( $booking, BookingStatus::CONFIRMED, 'Anticipo verificado.', array( 'expires_at' => null, 'correction_until' => null ) );
 						self::holdIndefinitely( $bookingId );
-						$event = $confirm ? 'booking_confirmed' : 'payment_approved';
-					} else {
-						$until = $now->modify( sprintf( '+%d minutes', (int) round( (float) Settings::get( 'correction_hours' ) * 60 ) ) );
-						$reason = sprintf( 'Recibimos %s. Para apartar tu horario faltan %s del anticipo.', Money::format( $amount ), Money::format( $summary['deposit_missing'] ) );
-						if ( BookingStatus::CORRECTION_REQUESTED === $booking['status'] ) {
-							self::update( $booking, array( 'correction_until' => Db::toSql( $until ) ) );
+						$event = 'booking_confirmed';
+					} elseif ( $deadline && $deadline > $now ) {
+						// Decisión 4: pago parcial; sigue pendiente con la hora límite original.
+						$fields = array( 'expires_at' => Db::toSql( $deadline ), 'correction_until' => null );
+						if ( BookingStatus::PENDING_PAYMENT === $booking['status'] ) {
+							self::update( $booking, $fields );
 						} else {
-							self::transition( $booking, BookingStatus::CORRECTION_REQUESTED, $reason, array( 'correction_until' => Db::toSql( $until ), 'expires_at' => null ) );
+							self::transition( $booking, BookingStatus::PENDING_PAYMENT, sprintf( 'Pago parcial de %s; faltan %s antes de la hora límite original.', Money::format( $amount ), Money::format( $summary['deposit_missing'] ) ), $fields );
 						}
-						self::setOccupancyExpiry( $bookingId, $until );
-						$event = 'correction_requested';
-						Audit::log( 'booking', $bookingId, 'correction_reason', array( 'reason' => $reason ) );
+						self::setOccupancyExpiry( $bookingId, $deadline );
+						$event = null; // La administradora avisa a la persona.
+					} else {
+						// P4: pago parcial revisado cuando la hora límite ya pasó.
+						self::transition( $booking, BookingStatus::EXPIRED, 'Pago parcial y la hora límite original ya pasó.', array( 'expires_at' => null, 'correction_until' => null ) );
+						self::releaseOccupancy( $bookingId, $now );
+						Audit::log( 'booking', $bookingId, 'reconciliation_needed', array( 'reason' => 'Dinero recibido en una reserva vencida: decide devolución o abono a una nueva reserva.' ) );
+						$event = 'booking_expired';
 					}
 				} elseif ( ! BookingStatus::isOpen( $booking['status'] ) ) {
 					Audit::log( 'booking', $bookingId, 'reconciliation_needed', array( 'reason' => 'Pago registrado en una reserva que ya no está activa. El horario no se recupera.' ) );
@@ -583,24 +587,40 @@ final class Bookings {
 	}
 
 	/**
-	 * Pide al cliente corregir el comprobante o completar el pago. Mantiene el horario
-	 * apartado hasta el plazo de corrección.
+	 * DEC-01: pide una sola sustitución del comprobante, con un motivo de la lista
+	 * (lo ve la persona) y una nota interna opcional (no la ve). El horario sigue
+	 * apartado durante el plazo de corrección (2 horas por defecto).
 	 */
-	public static function requestCorrection( int $bookingId, ?int $proofId, string $reason ): array {
-		$reason = trim( sanitize_textarea_field( $reason ) );
-		if ( '' === $reason ) {
-			throw new DomainException( 'reason_required', 'Explica qué debe corregir la persona.' );
+	public static function requestCorrection( int $bookingId, ?int $proofId, string $reasonKey, string $internalNote = '' ): array {
+		$reason = Settings::correctionReason( $reasonKey );
+		if ( null === $reason ) {
+			throw new DomainException( 'reason_required', 'Elige el motivo de la corrección.' );
 		}
 		$now   = Plugin::clock()->now();
 		$until = $now->modify( sprintf( '+%d minutes', (int) round( (float) Settings::get( 'correction_hours' ) * 60 ) ) );
 		Db::transaction(
-			static function () use ( $bookingId, $proofId, $reason, $now, $until ) {
+			static function () use ( $bookingId, $proofId, $reason, $internalNote, $now, $until ) {
 				$booking = self::get( $bookingId, true );
-				if ( $proofId ) {
-					self::reviewProof( $bookingId, $proofId, 'correction', $reason, $now );
+				if ( (int) $booking['corrections_used'] >= 1 ) {
+					throw new DomainException( 'correction_used', 'Esta reserva ya tuvo su corrección. Ahora solo puedes aprobar o rechazar.', 409 );
 				}
-				self::transition( $booking, BookingStatus::CORRECTION_REQUESTED, $reason, array( 'correction_until' => Db::toSql( $until ), 'expires_at' => null ) );
+				if ( $proofId ) {
+					self::reviewProof( $bookingId, $proofId, 'correction', $internalNote, $now, $reason );
+				}
+				self::transition(
+					$booking,
+					BookingStatus::CORRECTION_REQUESTED,
+					$reason,
+					array(
+						'correction_until' => Db::toSql( $until ),
+						'expires_at'       => null,
+						'corrections_used' => (int) $booking['corrections_used'] + 1,
+					)
+				);
 				self::setOccupancyExpiry( $bookingId, $until );
+				if ( '' !== trim( $internalNote ) ) {
+					Audit::log( 'booking', $bookingId, 'internal_note', array( 'note' => sanitize_textarea_field( $internalNote ) ) );
+				}
 			}
 		);
 		$booking = self::get( $bookingId );
@@ -608,16 +628,19 @@ final class Bookings {
 		return $booking;
 	}
 
-	public static function rejectProof( int $bookingId, int $proofId, string $reason ): void {
-		Db::transaction(
-			static function () use ( $bookingId, $proofId, $reason ) {
-				self::get( $bookingId, true );
-				self::reviewProof( $bookingId, $proofId, 'rejected', $reason, Plugin::clock()->now() );
+	/** La administradora abrió o asumió la revisión del comprobante. */
+	public static function startReview( int $bookingId ): void {
+		$booking = self::find( $bookingId );
+		if ( $booking && BookingStatus::PAYMENT_REVIEW === $booking['status'] ) {
+			try {
+				self::transition( $booking, BookingStatus::UNDER_REVIEW, 'Revisión iniciada.' );
+			} catch ( DomainException $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+				// Otra pestaña ya la inició: no pasa nada.
 			}
-		);
+		}
 	}
 
-	private static function reviewProof( int $bookingId, int $proofId, string $status, string $note, \DateTimeImmutable $now ): void {
+	private static function reviewProof( int $bookingId, int $proofId, string $status, string $note, \DateTimeImmutable $now, string $clientReason = '' ): void {
 		$wpdb  = Db::wpdb();
 		$proof = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . Schema::table( 'proofs' ) . ' WHERE id = %d AND booking_id = %d FOR UPDATE', $proofId, $bookingId ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		if ( ! $proof ) {
@@ -629,14 +652,15 @@ final class Bookings {
 		$wpdb->update(
 			Schema::table( 'proofs' ),
 			array(
-				'status'      => $status,
-				'review_note' => mb_substr( sanitize_text_field( $note ), 0, 255 ),
+				'status'        => $status,
+				'review_note'   => mb_substr( sanitize_text_field( $note ), 0, 255 ),
+				'client_reason' => mb_substr( $clientReason, 0, 190 ),
 				'reviewed_by' => get_current_user_id(),
 				'reviewed_at' => Db::toSql( $now ),
 			),
 			array( 'id' => $proofId )
 		);
-		Audit::log( 'booking', $bookingId, 'proof_' . $status, array( 'proof_id' => $proofId, 'note' => $note ) );
+		Audit::log( 'booking', $bookingId, 'proof_' . $status, array( 'proof_id' => $proofId, 'reason' => $clientReason ) );
 	}
 
 	/**
@@ -733,12 +757,29 @@ final class Bookings {
 		return $booking;
 	}
 
-	public static function reject( int $bookingId, string $reason ): array {
+	/**
+	 * Rechazo final: libera el horario de inmediato. El motivo que ve la persona sale de
+	 * la lista editable; la nota interna nunca se le envía.
+	 */
+	public static function reject( int $bookingId, string $reasonKey, string $internalNote = '' ): array {
+		$reason = Settings::correctionReason( $reasonKey );
+		if ( null === $reason ) {
+			throw new DomainException( 'reason_required', 'Elige el motivo del rechazo.' );
+		}
 		Db::transaction(
-			static function () use ( $bookingId, $reason ) {
+			static function () use ( $bookingId, $reason, $internalNote ) {
 				$booking = self::get( $bookingId, true );
-				self::transition( $booking, BookingStatus::REJECTED, $reason ?: 'Solicitud no aprobada.' );
-				self::releaseOccupancy( $bookingId, Plugin::clock()->now() );
+				$now     = Plugin::clock()->now();
+				foreach ( self::proofs( $bookingId ) as $proof ) {
+					if ( in_array( $proof['status'], array( 'pending', 'correction' ), true ) ) {
+						self::reviewProof( $bookingId, (int) $proof['id'], 'rejected', $internalNote, $now, $reason );
+					}
+				}
+				self::transition( $booking, BookingStatus::REJECTED, $reason, array( 'expires_at' => null, 'correction_until' => null ) );
+				self::releaseOccupancy( $bookingId, $now );
+				if ( '' !== trim( $internalNote ) ) {
+					Audit::log( 'booking', $bookingId, 'internal_note', array( 'note' => sanitize_textarea_field( $internalNote ) ) );
+				}
 			}
 		);
 		Notifications::cancelPending( $bookingId );
@@ -1086,6 +1127,8 @@ final class Bookings {
 		if ( 1 !== $done ) {
 			throw new DomainException( 'version_conflict', 'La reserva cambió mientras trabajabas. Recarga la página para ver la versión actual.', 409 );
 		}
+		// La sincronización con Google se registra en la misma transacción que el cambio.
+		CalendarSync::enqueue( (int) $booking['id'] );
 	}
 
 	private static function assertVersion( array $booking, int $expected ): void {

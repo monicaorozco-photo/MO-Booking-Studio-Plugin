@@ -62,6 +62,11 @@ final class Plugin {
 		}
 	}
 
+	/** Actualización de datos pendiente de confirmar respaldo: reservas en línea en pausa. */
+	public static function maintenance(): bool {
+		return Infrastructure\Migrations::waitingForBackup();
+	}
+
 	public function maybeUpgrade(): void {
 		if ( ! Schema::isCurrent() || get_option( 'mo_booking_version' ) !== MO_BOOKING_VERSION ) {
 			Installer::upgrade();
@@ -86,7 +91,7 @@ final class Plugin {
 	 * el servidor con "wp mo-booking process" cada minuto si el hosting lo permite.
 	 */
 	public function runQueue(): void {
-		if ( get_transient( 'mo_booking_queue_lock' ) ) {
+		if ( self::maintenance() || get_transient( 'mo_booking_queue_lock' ) ) {
 			return;
 		}
 		set_transient( 'mo_booking_queue_lock', 1, 4 * MINUTE_IN_SECONDS );

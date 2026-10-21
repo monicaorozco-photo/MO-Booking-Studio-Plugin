@@ -28,7 +28,8 @@ final class SettingsPage {
 		$body  = Ui::row( 'Datos para transferencia', Ui::textarea( 'bank_instructions', $s['bank_instructions'], 5, array( 'placeholder' => "Banco:\nTitular:\nCLABE:\nTarjeta:" ) ), 'Solo se muestran a la persona en su confirmación y en su portal mientras tenga pagos pendientes.', 'bank_instructions' );
 		$body .= Ui::row( 'Instrucción de referencia', Ui::input( 'payment_reference', $s['payment_reference'], 'text', array( 'class' => 'large-text' ) ), '', 'payment_reference' );
 		$body .= Ui::row( 'Horas para pagar el anticipo', Ui::input( 'hold_hours', $s['hold_hours'], 'number', array( 'min' => '0.25', 'step' => '0.25' ) ), 'Valor general; cada servicio puede tener el suyo.', 'hold_hours' );
-		$body .= Ui::row( 'Horas para corregir un comprobante', Ui::input( 'correction_hours', $s['correction_hours'], 'number', array( 'min' => '0.25', 'step' => '0.25' ) ), 'Propuesta inicial: 12 horas. Valor por confirmar antes de publicar.', 'correction_hours' );
+		$body .= Ui::row( 'Horas para corregir un comprobante', Ui::input( 'correction_hours', $s['correction_hours'], 'number', array( 'min' => '0.25', 'step' => '0.25' ) ), 'Solo se permite una corrección por reserva. Decisión: 2 horas.', 'correction_hours' );
+		$body .= Ui::row( 'Motivos de corrección o rechazo', Ui::textarea( 'review_reasons', $s['review_reasons'], 6 ), 'Uno por línea. La persona ve el motivo que elijas; tus notas internas nunca se le envían.', 'review_reasons' );
 		$body .= Ui::row( 'Tamaño máximo de comprobante (MB)', Ui::input( 'proof_max_mb', $s['proof_max_mb'], 'number', array( 'min' => 1, 'max' => 20 ) ), 'Ten en cuenta el límite de subida de tu hosting.', 'proof_max_mb' );
 		$body .= Ui::row( 'Máximo de comprobantes por reserva', Ui::input( 'proof_max_files', $s['proof_max_files'], 'number', array( 'min' => 1, 'max' => 20 ) ), '', 'proof_max_files' );
 		$body .= Ui::row( 'Sesiones para cliente frecuente', Ui::input( 'frequent_threshold', Clients::frequentThreshold(), 'number', array( 'min' => 1 ) ), '', 'frequent_threshold' );
@@ -110,6 +111,7 @@ final class SettingsPage {
 				'payment_reference'   => sanitize_text_field( (string) ( $p['payment_reference'] ?? '' ) ),
 				'hold_hours'          => $num( 'hold_hours', 0.25, 720 ),
 				'correction_hours'    => $num( 'correction_hours', 0.25, 720 ),
+				'review_reasons'      => sanitize_textarea_field( (string) ( $p['review_reasons'] ?? '' ) ) ?: Settings::defaults()['review_reasons'],
 				'proof_max_mb'        => $num( 'proof_max_mb', 1, 20 ),
 				'proof_max_files'     => (int) $num( 'proof_max_files', 1, 20 ),
 				'email_mode'          => 'live' === ( $p['email_mode'] ?? '' ) ? 'live' : 'simulate',

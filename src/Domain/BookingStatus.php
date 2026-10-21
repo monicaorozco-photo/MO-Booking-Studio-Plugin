@@ -7,9 +7,10 @@ namespace MOBookingStudio\Domain;
  */
 final class BookingStatus {
 	public const PENDING_PAYMENT      = 'pending_payment';
-	public const PAYMENT_REVIEW       = 'payment_review';
+	public const PAYMENT_REVIEW       = 'payment_review';       // "Comprobante recibido" (proof_received).
+	public const UNDER_REVIEW         = 'under_review';         // La administradora abrió la revisión.
 	public const CORRECTION_REQUESTED = 'correction_requested';
-	public const PENDING_APPROVAL     = 'pending_approval';
+	public const PENDING_APPROVAL     = 'pending_approval';     // Solo compatibilidad con 0.1.x; ya no se crea.
 	public const CONFIRMED            = 'confirmed';
 	public const COMPLETED            = 'completed';
 	public const EXPIRED              = 'expired';
@@ -19,7 +20,8 @@ final class BookingStatus {
 
 	public const LABELS = array(
 		self::PENDING_PAYMENT      => 'Pendiente de pago',
-		self::PAYMENT_REVIEW       => 'Pago en revisión',
+		self::PAYMENT_REVIEW       => 'Comprobante recibido',
+		self::UNDER_REVIEW         => 'En revisión',
 		self::CORRECTION_REQUESTED => 'Corrección solicitada',
 		self::PENDING_APPROVAL     => 'Pendiente de aprobación',
 		self::CONFIRMED            => 'Confirmada',
@@ -31,11 +33,12 @@ final class BookingStatus {
 	);
 
 	private const TRANSITIONS = array(
-		self::PENDING_PAYMENT      => array( self::PAYMENT_REVIEW, self::PENDING_APPROVAL, self::CONFIRMED, self::EXPIRED, self::REJECTED, self::CANCELLED ),
-		self::PAYMENT_REVIEW       => array( self::CORRECTION_REQUESTED, self::PENDING_PAYMENT, self::PENDING_APPROVAL, self::CONFIRMED, self::REJECTED, self::CANCELLED ),
-		self::CORRECTION_REQUESTED => array( self::PAYMENT_REVIEW, self::PENDING_PAYMENT, self::PENDING_APPROVAL, self::CONFIRMED, self::EXPIRED, self::REJECTED, self::CANCELLED ),
-		self::PENDING_APPROVAL     => array( self::CONFIRMED, self::REJECTED, self::CANCELLED, self::PAYMENT_REVIEW, self::PENDING_PAYMENT ),
-		self::CONFIRMED            => array( self::COMPLETED, self::NO_SHOW, self::CANCELLED, self::PAYMENT_REVIEW, self::PENDING_PAYMENT ),
+		self::PENDING_PAYMENT      => array( self::PAYMENT_REVIEW, self::CONFIRMED, self::EXPIRED, self::REJECTED, self::CANCELLED ),
+		self::PAYMENT_REVIEW       => array( self::UNDER_REVIEW, self::CORRECTION_REQUESTED, self::PENDING_PAYMENT, self::CONFIRMED, self::EXPIRED, self::REJECTED, self::CANCELLED ),
+		self::UNDER_REVIEW         => array( self::CORRECTION_REQUESTED, self::PENDING_PAYMENT, self::CONFIRMED, self::EXPIRED, self::REJECTED, self::CANCELLED ),
+		self::CORRECTION_REQUESTED => array( self::PAYMENT_REVIEW, self::PENDING_PAYMENT, self::CONFIRMED, self::EXPIRED, self::REJECTED, self::CANCELLED ),
+		self::PENDING_APPROVAL     => array( self::CONFIRMED, self::REJECTED, self::CANCELLED, self::PENDING_PAYMENT, self::EXPIRED ),
+		self::CONFIRMED            => array( self::COMPLETED, self::NO_SHOW, self::CANCELLED, self::PENDING_PAYMENT ),
 		self::COMPLETED            => array( self::CONFIRMED ),
 		self::NO_SHOW              => array( self::CONFIRMED ),
 		self::EXPIRED              => array(),
@@ -47,6 +50,7 @@ final class BookingStatus {
 	private const OCCUPYING = array(
 		self::PENDING_PAYMENT,
 		self::PAYMENT_REVIEW,
+		self::UNDER_REVIEW,
 		self::CORRECTION_REQUESTED,
 		self::PENDING_APPROVAL,
 		self::CONFIRMED,
@@ -72,7 +76,17 @@ final class BookingStatus {
 	}
 
 	public static function isOpen( string $status ): bool {
-		return in_array( $status, array( self::PENDING_PAYMENT, self::PAYMENT_REVIEW, self::CORRECTION_REQUESTED, self::PENDING_APPROVAL, self::CONFIRMED ), true );
+		return in_array( $status, self::active(), true );
+	}
+
+	/** Reservas vigentes (ocupan horario y aún no ocurren o no se cierran). */
+	public static function active(): array {
+		return array( self::PENDING_PAYMENT, self::PAYMENT_REVIEW, self::UNDER_REVIEW, self::CORRECTION_REQUESTED, self::PENDING_APPROVAL, self::CONFIRMED );
+	}
+
+	/** Esperando pago o decisión de la administradora. */
+	public static function awaitingPayment(): array {
+		return array( self::PENDING_PAYMENT, self::PAYMENT_REVIEW, self::UNDER_REVIEW, self::CORRECTION_REQUESTED, self::PENDING_APPROVAL );
 	}
 
 	public static function label( string $status ): string {

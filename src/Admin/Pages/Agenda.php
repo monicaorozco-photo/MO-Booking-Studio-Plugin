@@ -47,7 +47,7 @@ final class Agenda {
 
 		$list = Bookings::list(
 			array(
-				'status'     => array( BookingStatus::PENDING_PAYMENT, BookingStatus::PAYMENT_REVIEW, BookingStatus::CORRECTION_REQUESTED, BookingStatus::PENDING_APPROVAL, BookingStatus::CONFIRMED, BookingStatus::COMPLETED, BookingStatus::NO_SHOW ),
+				'status'     => array_merge( BookingStatus::active(), array( BookingStatus::COMPLETED, BookingStatus::NO_SHOW ) ),
 				'from'       => $start->format( 'Y-m-d' ),
 				'to'         => $end->format( 'Y-m-d' ),
 				'service_id' => $g['service_id'] ?? '',

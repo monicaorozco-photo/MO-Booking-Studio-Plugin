@@ -135,7 +135,14 @@ final class Admin {
 		add_submenu_page( 'mo-booking', 'Tarifas y descuentos', 'Tarifas y descuentos', Cap::SETTINGS, 'mo-booking-rates', array( Pages\RatesPage::class, 'render' ) );
 		// 6.5: "Políticas" se renombra "Contratos"; las reglas económicas quedan como pestaña.
 		add_submenu_page( 'mo-booking', 'Contratos', 'Contratos', Cap::SETTINGS, 'mo-booking-contracts', array( Pages\ContractsPage::class, 'render' ) );
-		add_submenu_page( '', 'Reglas de cancelación y cambios', 'Reglas de cancelación y cambios', Cap::SETTINGS, 'mo-booking-policies', array( Pages\PoliciesPage::class, 'render' ) );
+		$hook = add_submenu_page( '', 'Reglas de cancelación y cambios', 'Reglas de cancelación y cambios', Cap::SETTINGS, 'mo-booking-policies', array( Pages\PoliciesPage::class, 'render' ) );
+		// Las páginas ocultas no tienen título en el menú; se fija para la cabecera de WordPress.
+		add_action(
+			'load-' . $hook,
+			static function () {
+				$GLOBALS['title'] = 'Reglas de cancelación y cambios'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+			}
+		);
 		add_submenu_page( 'mo-booking', 'Notificaciones', 'Notificaciones', Cap::SETTINGS, 'mo-booking-notifications', array( Pages\NotificationsPage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Google Calendar', 'Google Calendar', Cap::GOOGLE, 'mo-booking-google', array( Pages\GooglePage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Finanzas (próximamente)', 'Finanzas · próx.', Cap::FINANCE, 'mo-booking-finance', array( Pages\UpcomingPage::class, 'finance' ) );

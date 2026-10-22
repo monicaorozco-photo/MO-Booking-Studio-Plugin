@@ -27,7 +27,7 @@ final class Notifications {
 	public const MAX_ATTEMPTS     = 5;
 
 	public const STATUS_LABELS = array(
-		'pending'        => 'Pendiente',
+		'pending'        => 'Preparado (en cola)',
 		'accepted'       => 'Aceptado por el transporte de correo',
 		'simulated'      => 'Simulado (no enviado)',
 		'failed'         => 'Fallido',

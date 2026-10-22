@@ -163,6 +163,10 @@ final class Connection {
 			Logger::error( 'No se pudo leer la cuenta de Google', array( 'http' => $e->http ) );
 		}
 		Audit::log( 'google', 0, 'connected', array( 'account' => self::data()['account'] ) );
+		// Reconexión: lo que cambió mientras estuvo desconectada vuelve a la cola.
+		if ( '' !== self::data()['destination'] ) {
+			\MOBookingStudio\Application\CalendarSync::enqueueActive();
+		}
 	}
 
 	/**

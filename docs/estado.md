@@ -1,3 +1,9 @@
+# Estado de la versión 0.2.0-beta.2
+
+Beta para preventa controlada (P0 con Salida B). El detalle de alcance, criterios AC-01 a AC-18, pruebas hechas y pendientes está en `docs/entrega-preventa-beta2.md`; los cambios, en `CHANGELOG.md`.
+
+---
+
 # Estado de la versión 0.2.0-beta.1
 
 ## Entrega 1 de la v0.2 (21 de octubre de 2026)

@@ -26,7 +26,7 @@ const notice = async page => (await page.locator('.notice').allInnerTexts()).joi
 
   // Reserva de prueba activa más reciente.
   await page.goto(BASE + '/wp-admin/admin.php?page=mo-booking-bookings&status=active');
-  const href = await page.locator('td[data-label=Reserva] a').first().getAttribute('href');
+  const href = await page.locator('tr:has(.mo-pill--test) td[data-label=Reserva] a').first().getAttribute('href');
   await page.goto(href);
   const ref = (await page.locator('h1').innerText()).replace('Reserva ', '').trim().split(/\s/)[0];
   const before = (await page.locator('.mo-contract-copy').innerHTML());

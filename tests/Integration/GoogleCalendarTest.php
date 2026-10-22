@@ -632,4 +632,25 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 			$this->assertStringNotContainsString( $secret, $public, 'El evento del cliente no debe contener: ' . $secret );
 		}
 	}
+
+	/** Desconectar a mano y reconectar: los cambios hechos mientras tanto llegan a Google. */
+	public function test_reconnect_after_manual_disconnect_resyncs(): void {
+		$service = $this->christmasService();
+		$this->google->connect();
+		$booking = $this->book( $service, self::START )['booking'];
+		SyncWorker::processQueue();
+		Connection::disconnect();
+		$this->google->revoked = false; // Se puede volver a autorizar.
+		$this->approve( Bookings::get( $booking['id'] ) );
+		SyncWorker::processQueue();
+		$this->assertCount( 0, $this->google->owned( 'client' ), 'Desconectada no escribe.' );
+
+		$url = Connection::authUrl();
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $q );
+		Connection::handleCallback( 'code-2', $q['state'] );
+		SyncWorker::processQueue();
+		$this->assertStringStartsWith( 'MO CONFIRMADA', $this->google->owned( 'internal' )[0]['summary'] );
+		$this->assertCount( 1, $this->google->owned( 'client' ) );
+		$this->assertSame( 1, $this->google->invitations );
+	}
 }

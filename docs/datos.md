@@ -27,4 +27,6 @@ Tablas con el prefijo de WordPress más `mo_`. La versión del esquema se guarda
 
 Esquema 2 (v0.2) agrega a `mo_bookings`: `deadline_at` (hora límite original de pago), `corrections_used`, `sync_state` y `conflict_state`; a `mo_proofs`: `version` y `client_reason`. Pasos de datos registrados en `mo_booking_migrations`. Opciones: `mo_booking_google` (conexión; tokens cifrados), `mo_booking_site_key` (marca de propiedad de eventos), `mo_booking_token_key` (fuente fija de la clave de enlaces).
 
+Esquema 3 (0.2.0-beta.2) agrega a `mo_bookings`: `children`, `adults`, `important_info`, copia del contrato (`contract_id`, `contract_version`, `contract_title`, `contract_body`, `contract_hash` SHA-256, `contract_accepted_at`), `invite_override`, `cancel_outcome` y `archived_at`; a `mo_clients`: `archived_at`. Tablas `mo_contracts` (plantilla, borrador, versión vigente) y `mo_contract_versions` (versiones publicadas inmutables). Las respuestas de preguntas guardan etiqueta, tipo, opciones y valor. La entrega rápida es el extra `entrega-rapida` dentro de la cotización congelada.
+
 Desactivar el plugin no borra nada. Desinstalarlo solo borra los datos si la opción está marcada en Ajustes.

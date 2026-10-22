@@ -187,12 +187,6 @@ final class GooglePage {
 
 	/** Al elegir el destino por primera vez se reflejan las reservas vigentes futuras. */
 	public static function enqueueActive(): int {
-		$wpdb     = Db::wpdb();
-		$statuses = "'" . implode( "','", BookingStatus::active() ) . "'";
-		$ids      = $wpdb->get_col( $wpdb->prepare( 'SELECT id FROM ' . Schema::table( 'bookings' ) . " WHERE status IN ($statuses) AND start_utc >= %s", Db::toSql( \MOBookingStudio\Plugin::clock()->now() ) ) ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		foreach ( $ids as $id ) {
-			CalendarSync::enqueue( (int) $id );
-		}
-		return count( $ids );
+		return CalendarSync::enqueueActive();
 	}
 }

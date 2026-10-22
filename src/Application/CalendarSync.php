@@ -35,6 +35,21 @@ final class CalendarSync {
 		}
 	}
 
+	/**
+	 * Encola todas las reservas vigentes futuras. Es seguro repetirlo: lo que ya está igual
+	 * en Google no se vuelve a enviar. Se usa al elegir el destino y al reconectar, para que
+	 * los cambios hechos mientras Google estuvo desconectado lleguen al calendario.
+	 */
+	public static function enqueueActive(): int {
+		$wpdb     = Db::wpdb();
+		$statuses = "'" . implode( "','", \MOBookingStudio\Domain\BookingStatus::active() ) . "'";
+		$ids      = $wpdb->get_col( $wpdb->prepare( 'SELECT id FROM ' . Schema::table( 'bookings' ) . " WHERE status IN ($statuses) AND start_utc >= %s", Db::toSql( Plugin::clock()->now() ) ) ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		foreach ( $ids as $id ) {
+			self::enqueue( (int) $id );
+		}
+		return count( $ids );
+	}
+
 	public static function enqueue( int $bookingId, string $operation = 'sync_booking', bool $force = false ): void {
 		if ( ! Connection::isConfigured() ) {
 			return;

@@ -108,6 +108,7 @@ async function submit(page, selector) { await Promise.all([page.waitForNavigatio
   await page.click('a:has-text("a petición del cliente")');
   await page.waitForSelector('.mo-preview');
   log('Vista previa cancelación:', (await page.locator('.mo-preview p').nth(1).innerText()));
+  await page.selectOption('.mo-preview select[name=deposit_outcome]', 'policy');
   await page.fill('.mo-preview input[name=reason]', 'Cambio de planes');
   log('Cancelar:', await submit(page, '.mo-preview button'));
   log('Estado final:', await page.locator('.mo-detail-status').innerText());

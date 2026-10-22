@@ -21,15 +21,35 @@ final class ServicesPage {
 			Ui::footer();
 			return;
 		}
-		$statusLabels = array( 'draft' => 'Borrador', 'published' => 'Publicado', 'inactive' => 'Desactivado' );
-		echo '<table class="widefat striped mo-table"><thead><tr><th>Servicio</th><th>Estado</th><th>Precio base</th><th>Duración</th><th>Shortcode</th><th></th></tr></thead><tbody>';
+		$showArchived = ! empty( $_GET['archived'] ); // phpcs:ignore WordPress.Security.NonceVerification
+		echo '<p><a href="' . esc_url( Ui::url( 'mo-booking-services', $showArchived ? array() : array( 'archived' => 1 ) ) ) . '">' . ( $showArchived ? 'Ver servicios activos y borradores' : 'Ver archivados' ) . '</a></p>';
+		echo '<table class="widefat striped mo-table"><thead><tr><th>Servicio</th><th>Estado</th><th>Precio base</th><th>Duración</th><th>Shortcode</th><th>Acciones</th></tr></thead><tbody>';
 		foreach ( $services as $s ) {
-			echo '<tr><td data-label="Servicio"><strong>' . esc_html( $s['title'] ) . '</strong>' . ( $s['is_test'] ? ' <span class="mo-pill mo-pill--test">PRUEBA</span>' : '' ) . '<br><span class="description">' . esc_html( $s['brand'] ) . '</span></td>';
-			echo '<td data-label="Estado">' . esc_html( $statusLabels[ $s['status'] ] ?? $s['status'] ) . '</td>';
+			if ( ( 'archived' === $s['status'] ) !== $showArchived ) {
+				continue;
+			}
+			$sid   = array( 'service_id' => $s['id'] );
+			$used  = Services::usageCount( (int) $s['id'] );
+			$acts  = '<a class="button" href="' . esc_url( Ui::url( 'mo-booking-services', array( 'service' => $s['id'] ) ) ) . '">Editar</a> ';
+			$acts .= Ui::formOpen( 'duplicate_service', $sid, 'mo-inline-form' ) . Ui::button( 'Duplicar', 'button-secondary' ) . '</form> ';
+			if ( 'published' === $s['status'] ) {
+				$acts .= Ui::formOpen( 'service_status', $sid + array( 'status' => 'inactive' ), 'mo-inline-form' ) . Ui::button( 'Desactivar', 'button-secondary', '¿Desactivar? Deja de aceptar reservas nuevas; las existentes no cambian.' ) . '</form> ';
+			} elseif ( 'archived' !== $s['status'] ) {
+				$acts .= Ui::formOpen( 'service_status', $sid + array( 'status' => 'published' ), 'mo-inline-form' ) . Ui::button( 'Activar', 'button-secondary' ) . '</form> ';
+			}
+			$acts .= 'archived' === $s['status']
+				? Ui::formOpen( 'service_status', $sid + array( 'status' => 'inactive' ), 'mo-inline-form' ) . Ui::button( 'Restaurar', 'button-secondary' ) . '</form> '
+				: Ui::formOpen( 'service_status', $sid + array( 'status' => 'archived' ), 'mo-inline-form' ) . Ui::button( 'Archivar', 'button-link', '¿Archivar? Deja de aparecer para reservas nuevas y conserva su historial.' ) . '</form> ';
+			$acts .= $used
+				? '<span class="description">Con ' . (int) $used . ' reserva(s): no se puede eliminar.</span>'
+				: Ui::formOpen( 'delete_service', $sid, 'mo-inline-form' ) . Ui::button( 'Eliminar', 'button-link-delete', '¿Eliminar definitivamente? Nunca se usó.' ) . '</form>';
+			$acts .= ' <a href="' . esc_url( Ui::url( 'mo-booking-rates', array( 'service' => $s['id'] ) ) ) . '">Tarifas</a> · <a href="' . esc_url( Ui::url( 'mo-booking-policies', array( 'service' => $s['id'] ) ) ) . '">Reglas de cancelación</a>';
+			echo '<tr><td data-label="Servicio"><strong>' . esc_html( $s['title'] ) . '</strong>' . ( $s['is_test'] ? ' <span class="mo-pill mo-pill--test">PRUEBA</span>' : '' ) . '<br><span class="description">' . esc_html( $s['brand'] ) . '</span>' . ( empty( $s['contract_id'] ) ? '<br><span class="mo-pill mo-pill--review">Sin contrato</span>' : '' ) . '</td>';
+			echo '<td data-label="Estado">' . esc_html( Services::STATUS_LABELS[ $s['status'] ] ?? $s['status'] ) . '</td>';
 			echo '<td data-label="Precio base">' . Ui::money( (int) $s['price_cents'] ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput
 			echo '<td data-label="Duración">' . (int) $s['duration'] . ' min</td>';
 			echo '<td data-label="Shortcode"><code>[mo_booking service="' . esc_html( $s['slug'] ) . '"]</code></td>';
-			echo '<td><a class="button" href="' . esc_url( Ui::url( 'mo-booking-services', array( 'service' => $s['id'] ) ) ) . '">Editar</a> <a class="button" href="' . esc_url( Ui::url( 'mo-booking-rates', array( 'service' => $s['id'] ) ) ) . '">Tarifas</a> <a class="button" href="' . esc_url( Ui::url( 'mo-booking-policies', array( 'service' => $s['id'] ) ) ) . '">Reglas de cancelación</a></td></tr>';
+			echo '<td data-label="Acciones">' . $acts . '</td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 		echo '</tbody></table>';
 		Ui::footer();
@@ -72,7 +92,7 @@ final class ServicesPage {
 		$general  = Ui::row( 'Nombre del servicio', Ui::input( 'title', $v( 'title' ), 'text', array( 'class' => 'regular-text', 'required' => 'required' ) ), '', 'title' );
 		$general .= Ui::row( 'Identificador (slug)', Ui::input( 'slug', $v( 'slug' ), 'text', array( 'class' => 'regular-text', 'pattern' => '[a-z0-9-]*' ) ), 'Se usa en el shortcode. Si lo dejas vacío se genera del nombre.', 'slug' );
 		$general .= Ui::row( 'Nombre comercial visible', Ui::input( 'brand', $v( 'brand' ), 'text', array( 'class' => 'regular-text', 'placeholder' => 'Por ejemplo: Clics con Amor Fotografía' ) ), 'Si lo dejas vacío se usa el nombre del negocio de Ajustes.', 'brand' );
-		$general .= Ui::row( 'Estado', Ui::select( 'status', array( 'draft' => 'Borrador (no visible)', 'published' => 'Publicado', 'inactive' => 'Desactivado (conserva historial)' ), $v( 'status' ) ), 'Solo los servicios publicados aceptan reservas.', 'status' );
+		$general .= Ui::row( 'Estado', Ui::select( 'status', array( 'draft' => 'Borrador (no visible)', 'published' => 'Publicado', 'inactive' => 'Desactivado (conserva historial)', 'archived' => 'Archivado (conserva historial)' ), $v( 'status' ) ), 'Solo los servicios publicados aceptan reservas.', 'status' );
 		$general .= Ui::row( 'Categoría para reportes', Ui::select( 'category_id', $categories, (string) $v( 'category_id' ) ) . ' ' . Ui::input( 'new_category', '', 'text', array( 'placeholder' => 'o escribe una nueva', 'class' => 'mo-inline' ) ), 'Por ejemplo: minis, estudio, bodas, eventos.', 'category_id' );
 		if ( count( $resources ) > 1 ) {
 			$general .= Ui::row( 'Agenda (recurso)', Ui::select( 'resource_id', $resources, (string) $v( 'resource_id' ) ), 'Los servicios que comparten agenda no pueden vender el mismo tiempo.', 'resource_id' );

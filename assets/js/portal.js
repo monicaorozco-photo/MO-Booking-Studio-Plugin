@@ -93,6 +93,7 @@
 		}
 		html += '<div class="mo-booking__actions">';
 		if (b.whatsapp_url) { html += '<a class="mo-booking__button" href="' + esc(b.whatsapp_url) + '" target="_blank" rel="noopener noreferrer">Escribir por WhatsApp</a>'; }
+		if (b.change_url) { html += ' <a class="mo-booking__button" href="' + esc(b.change_url) + '" target="_blank" rel="noopener noreferrer">Pedir cambio o cancelación por WhatsApp</a>'; }
 		html += '<button type="button" class="mo-booking__button" data-action="logout">Cerrar sesión</button></div>';
 		html += '</div>';
 		this.root.innerHTML = html;

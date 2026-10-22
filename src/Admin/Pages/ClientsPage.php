@@ -14,8 +14,10 @@ final class ClientsPage {
 		}
 		Ui::header( 'Clientes', ' <a class="page-title-action" href="' . esc_url( Ui::url( 'mo-booking-clients', array( 'client' => 'new' ) ) ) . '">Agregar cliente</a>' );
 		echo '<form method="get" class="mo-filter"><input type="hidden" name="page" value="mo-booking-clients">' . Ui::input( 's', $g['s'] ?? '', 'search', array( 'placeholder' => 'Nombre, correo o teléfono', 'aria-label' => 'Buscar' ) ) . ' <button class="button">Buscar</button></form>'; // phpcs:ignore WordPress.Security.EscapeOutput
-		echo '<p class="description">Umbral para cliente frecuente: ' . (int) Clients::frequentThreshold() . ' sesiones (sesiones previas registradas + sesiones completadas en el sistema). Una categoría manual prevalece. La importación por CSV llega en la siguiente etapa.</p>';
-		$list = Clients::search( (string) ( $g['s'] ?? '' ), 200 );
+		echo '<p class="description">Umbral para cliente frecuente: ' . (int) Clients::frequentThreshold() . ' sesiones (sesiones previas registradas + sesiones completadas en el sistema). Una categoría manual prevalece. La importación por CSV, los contactos secundarios y la fusión de duplicados llegan en la siguiente entrega; mientras tanto la tarifa frecuente la aplicas tú en cada reserva.</p>';
+		$archived = ! empty( $g['archived'] );
+		echo '<p><a href="' . esc_url( Ui::url( 'mo-booking-clients', $archived ? array() : array( 'archived' => 1 ) ) ) . '">' . ( $archived ? 'Ver clientes activos' : 'Ver archivados' ) . '</a></p>';
+		$list = Clients::search( (string) ( $g['s'] ?? '' ), 200, 0, $archived );
 		if ( ! $list ) {
 			echo '<p>No hay clientes todavía. Se crean automáticamente con cada reserva o puedes agregarlos a mano.</p>';
 			Ui::footer();
@@ -44,6 +46,11 @@ final class ClientsPage {
 		};
 		Ui::header( $id ? 'Cliente: ' . $c['name'] : 'Nuevo cliente', ' <a class="page-title-action" href="' . esc_url( Ui::url( 'mo-booking-clients' ) ) . '">Volver</a>' );
 		echo '<div class="mo-grid mo-grid--2">';
+		if ( $id ) {
+			$archivedNow = ! empty( $c['archived_at'] );
+			echo '<p>' . ( $archivedNow ? '<span class="mo-pill">Archivado</span> ' : '' ) . Ui::formOpen( $archivedNow ? 'restore_client' : 'archive_client', array( 'client_id' => $id ), 'mo-inline-form' ) . Ui::button( $archivedNow ? 'Restaurar' : 'Archivar', 'button-secondary', $archivedNow ? '' : '¿Archivar? No se borra nada; puedes restaurarlo.' ) . '</form> ' . // phpcs:ignore WordPress.Security.EscapeOutput
+				Ui::formOpen( 'delete_client', array( 'client_id' => $id ), 'mo-inline-form' ) . Ui::button( 'Eliminar', 'button-link-delete', '¿Eliminar definitivamente? Solo es posible si no tiene reservas.' ) . '</form></p>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		}
 		$body  = Ui::formOpen( 'save_client', array( 'client_id' => (int) $c['id'] ) );
 		$body .= Ui::row( 'Nombre', Ui::input( 'name', $v( 'name' ), 'text', array( 'required' => 'required', 'class' => 'regular-text' ) ), '', 'name' );
 		$body .= Ui::row( 'Correo', Ui::input( 'email', $v( 'email' ), 'email', array( 'class' => 'regular-text' ) ), '', 'email' );

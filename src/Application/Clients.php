@@ -157,14 +157,35 @@ final class Clients {
 		Audit::log( 'client', $id, $delta > 0 ? 'session_completed' : 'session_reverted', array( 'reason' => $reason ) );
 	}
 
-	public static function search( string $term = '', int $limit = 50, int $offset = 0 ): array {
+	public static function search( string $term = '', int $limit = 50, int $offset = 0, bool $archived = false ): array {
 		$wpdb  = Db::wpdb();
 		$table = Schema::table( 'clients' );
+		$arch  = $archived ? 'archived_at IS NOT NULL' : 'archived_at IS NULL';
 		if ( '' === trim( $term ) ) {
-			return $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $table ORDER BY needs_review DESC, name LIMIT %d OFFSET %d", $limit, $offset ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			return $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $table WHERE $arch ORDER BY needs_review DESC, name LIMIT %d OFFSET %d", $limit, $offset ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		}
 		$like = '%' . $wpdb->esc_like( trim( $term ) ) . '%';
-		return $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $table WHERE name LIKE %s OR email LIKE %s OR phone LIKE %s ORDER BY name LIMIT %d OFFSET %d", $like, $like, $like, $limit, $offset ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $table WHERE $arch AND (name LIKE %s OR email LIKE %s OR phone LIKE %s) ORDER BY name LIMIT %d OFFSET %d", $like, $like, $like, $limit, $offset ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/** 10.4: archivar no borra; restaurar lo recupera. */
+	public static function setArchived( int $id, bool $archived ): void {
+		if ( ! self::find( $id ) ) {
+			throw new DomainException( 'not_found', 'El cliente no existe.', 404 );
+		}
+		Db::wpdb()->update( Schema::table( 'clients' ), array( 'archived_at' => $archived ? Db::toSql( \MOBookingStudio\Plugin::clock()->now() ) : null ), array( 'id' => $id ) );
+		Audit::log( 'client', $id, $archived ? 'archived' : 'restored' );
+	}
+
+	/** Eliminar solo sin reservas (y por tanto sin pagos, comprobantes ni contratos). */
+	public static function delete( int $id ): void {
+		$wpdb     = Db::wpdb();
+		$bookings = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . Schema::table( 'bookings' ) . ' WHERE client_id = %d', $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( $bookings ) {
+			throw new DomainException( 'has_dependencies', sprintf( 'No se puede eliminar: tiene %d reserva(s) con su historial. Archívalo o anonimízalo.', $bookings ), 409 );
+		}
+		$wpdb->delete( Schema::table( 'clients' ), array( 'id' => $id ) );
+		Audit::log( 'client', $id, 'deleted' );
 	}
 
 	private static function cleanCategory( $value ): ?string {

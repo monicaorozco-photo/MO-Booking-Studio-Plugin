@@ -49,6 +49,17 @@ final class Admin {
 		'proof_file'          => Cap::PAYMENTS,
 		'confirm'             => Cap::BOOKINGS,
 		'invite_without_deposit' => Cap::BOOKINGS,
+		'duplicate_service'   => Cap::SETTINGS,
+		'service_status'      => Cap::SETTINGS,
+		'delete_service'      => Cap::SETTINGS,
+		'archive_client'      => Cap::CLIENTS,
+		'restore_client'      => Cap::CLIENTS,
+		'delete_client'       => Cap::CLIENTS,
+		'archive_booking'     => Cap::BOOKINGS,
+		'restore_booking'     => Cap::BOOKINGS,
+		'delete_booking'      => Cap::BOOKINGS,
+		'edit_preview'        => Cap::BOOKINGS,
+		'edit_apply'          => Cap::BOOKINGS,
 		'save_contract'       => Cap::SETTINGS,
 		'archive_contract'    => Cap::SETTINGS,
 		'restore_contract'    => Cap::SETTINGS,
@@ -397,7 +408,7 @@ final class Admin {
 				return $bookingUrl;
 
 			case 'request_correction':
-				Bookings::requestCorrection( $bookingId, ! empty( $p['proof_id'] ) ? (int) $p['proof_id'] : null, sanitize_title( (string) ( $p['reason_key'] ?? '' ) ), (string) ( $p['internal_note'] ?? '' ) );
+				Bookings::requestCorrection( $bookingId, ! empty( $p['proof_id'] ) ? (int) $p['proof_id'] : null, sanitize_title( (string) ( $p['reason_key'] ?? '' ) ), (string) ( $p['internal_note'] ?? '' ), (string) ( $p['other_reason'] ?? '' ), (string) ( $p['exception_reason'] ?? '' ) );
 				Ui::flash( 'success', 'Se pidió la corrección. El horario sigue apartado durante el plazo.' );
 				return $bookingUrl;
 
@@ -444,8 +455,62 @@ final class Admin {
 				Ui::flash( 'success', 'Solicitud rechazada; el horario quedó libre.' );
 				return $bookingUrl;
 
+			case 'duplicate_service':
+				$newId = Services::duplicate( (int) $p['service_id'] );
+				Ui::flash( 'success', 'Servicio duplicado como borrador.' );
+				return Ui::url( 'mo-booking-services', array( 'service' => $newId ) );
+
+			case 'service_status':
+				Services::setStatus( (int) $p['service_id'], sanitize_key( (string) ( $p['status'] ?? '' ) ) );
+				Ui::flash( 'success', 'Estado del servicio actualizado. Las reservas existentes no cambian.' );
+				return Ui::url( 'mo-booking-services' );
+
+			case 'delete_service':
+				Services::delete( (int) $p['service_id'] );
+				Ui::flash( 'success', 'Servicio eliminado.' );
+				return Ui::url( 'mo-booking-services' );
+
+			case 'archive_client':
+			case 'restore_client':
+				\MOBookingStudio\Application\Clients::setArchived( (int) $p['client_id'], 'archive_client' === $do );
+				Ui::flash( 'success', 'archive_client' === $do ? 'Cliente archivado.' : 'Cliente restaurado.' );
+				return Ui::url( 'mo-booking-clients', array( 'client' => (int) $p['client_id'] ) );
+
+			case 'delete_client':
+				\MOBookingStudio\Application\Clients::delete( (int) $p['client_id'] );
+				Ui::flash( 'success', 'Cliente eliminado.' );
+				return Ui::url( 'mo-booking-clients' );
+
+			case 'archive_booking':
+			case 'restore_booking':
+				Bookings::setArchived( $bookingId, 'archive_booking' === $do );
+				Ui::flash( 'success', 'archive_booking' === $do ? 'Reserva archivada. No se modificó su estado ni sus pagos.' : 'Reserva restaurada.' );
+				return $bookingUrl;
+
+			case 'delete_booking':
+				Bookings::deleteTest( $bookingId, (string) ( $p['confirm'] ?? '' ) );
+				Ui::flash( 'success', 'Reserva de prueba eliminada.' );
+				return Ui::url( 'mo-booking-bookings' );
+
+			case 'edit_preview':
+				$data = array_intersect_key( $p, array_flip( array( 'children', 'adults', 'pets', 'extras', 'fast_delivery', 'name', 'email', 'phone', 'phone_country', 'important_info' ) ) );
+				Bookings::previewEdit( Bookings::get( $bookingId ), $data ); // Valida antes de mostrar.
+				$key = bin2hex( random_bytes( 8 ) );
+				set_transient( 'mo_edit_' . get_current_user_id() . '_' . $bookingId, array( 'key' => $key, 'data' => $data ), 30 * MINUTE_IN_SECONDS );
+				return add_query_arg( 'edit_preview', $key, $bookingUrl ) . '#editar';
+
+			case 'edit_apply':
+				$pending = get_transient( 'mo_edit_' . get_current_user_id() . '_' . $bookingId );
+				if ( ! is_array( $pending ) || ! hash_equals( $pending['key'], sanitize_key( (string) ( $p['edit_key'] ?? '' ) ) ) ) {
+					throw new DomainException( 'edit_expired', 'La vista previa venció. Vuelve a revisar el cambio.' );
+				}
+				Bookings::applyEdit( $bookingId, array_merge( $pending['data'], array( 'reason' => (string) ( $p['reason'] ?? '' ) ) ), (int) $p['version'] );
+				delete_transient( 'mo_edit_' . get_current_user_id() . '_' . $bookingId );
+				Ui::flash( 'success', 'Cambios guardados. Se registraron los valores anteriores y nuevos.' );
+				return $bookingUrl;
+
 			case 'cancel':
-				Bookings::cancel( $bookingId, 'business' === ( $p['by'] ?? '' ), (string) ( $p['reason'] ?? '' ), (int) $p['version'] );
+				Bookings::cancel( $bookingId, 'business' === ( $p['by'] ?? '' ), (string) ( $p['reason'] ?? '' ), (int) $p['version'], sanitize_key( (string) ( $p['deposit_outcome'] ?? '' ) ) );
 				Ui::flash( 'success', 'Reserva cancelada. Revisa los movimientos registrados.' );
 				return $bookingUrl;
 

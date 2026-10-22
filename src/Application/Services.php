@@ -132,6 +132,68 @@ final class Services {
 	}
 
 	/** @return array[] */
+	public const STATUS_LABELS = array(
+		'draft'     => 'Borrador',
+		'published' => 'Activo (publicado)',
+		'inactive'  => 'Desactivado',
+		'archived'  => 'Archivado',
+	);
+
+	/** 13: cambia el estado sin tocar su configuración ni las reservas históricas. */
+	public static function setStatus( int $id, string $status ): void {
+		if ( ! isset( self::STATUS_LABELS[ $status ] ) ) {
+			throw new DomainException( 'invalid_service', 'Estado no válido.' );
+		}
+		$service = self::get( $id );
+		if ( 'published' === $status && ! Contracts::forService( $service ) ) {
+			throw new DomainException( 'contract_missing', 'Asigna un contrato publicado antes de activar el servicio.' );
+		}
+		Db::wpdb()->update( Schema::table( 'services' ), array( 'status' => $status, 'updated_at' => Db::toSql( Plugin::clock()->now() ) ), array( 'id' => $id ) );
+		Audit::log( 'service', $id, 'status:' . $status, array( 'from' => $service['status'] ) );
+	}
+
+	/** Copia la configuración, tarifas y reglas propias en un borrador nuevo. */
+	public static function duplicate( int $id ): int {
+		$service = self::get( $id );
+		$slug    = $service['slug'] . '-copia';
+		for ( $n = 2; self::findBySlug( $slug ); $n++ ) {
+			$slug = $service['slug'] . '-copia-' . $n;
+		}
+		$newId = self::save( array_merge( $service, array( 'title' => 'Copia de ' . $service['title'], 'slug' => $slug, 'status' => 'draft' ) ), null, (bool) $service['is_test'] );
+		foreach ( self::rules( $id, false ) as $rule ) {
+			unset( $rule['id'] );
+			self::saveRule( $newId, $rule, null, (bool) $service['is_test'] );
+		}
+		foreach ( Policy::ACTIONS as $action ) {
+			$own = self::ownPolicy( $id, $action );
+			if ( $own ) {
+				self::savePolicy( $newId, $action, $own['ranges'], (string) $own['summary'], (bool) $service['is_test'] );
+			}
+		}
+		Audit::log( 'service', $newId, 'duplicated', array( 'from' => $id ) );
+		return $newId;
+	}
+
+	public static function usageCount( int $id ): int {
+		$wpdb = Db::wpdb();
+		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . Schema::table( 'bookings' ) . ' WHERE service_id = %d', $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/** Solo si nunca se usó: un servicio con historial se desactiva o archiva. */
+	public static function delete( int $id ): void {
+		$service = self::get( $id );
+		$used    = self::usageCount( $id );
+		if ( $used > 0 ) {
+			throw new DomainException( 'has_dependencies', sprintf( 'No se puede eliminar: tiene %d reserva(s). Desactívalo o archívalo; las reservas históricas lo siguen mostrando.', $used ), 409 );
+		}
+		$wpdb = Db::wpdb();
+		$wpdb->delete( Schema::table( 'price_rules' ), array( 'service_id' => $id ) );
+		$wpdb->delete( Schema::table( 'policies' ), array( 'service_id' => $id ) );
+		$wpdb->delete( Schema::table( 'quotes' ), array( 'service_id' => $id ) );
+		$wpdb->delete( Schema::table( 'services' ), array( 'id' => $id ) );
+		Audit::log( 'service', $id, 'deleted', array( 'title' => $service['title'] ) );
+	}
+
 	public static function all( ?string $status = null ): array {
 		$wpdb  = Db::wpdb();
 		$table = Schema::table( 'services' );
@@ -176,7 +238,7 @@ final class Services {
 			throw new DomainException( 'invalid_service', sprintf( 'Ya existe otro servicio con el identificador "%s".', $slug ) );
 		}
 		$status = (string) ( $data['status'] ?? 'draft' );
-		$status = in_array( $status, array( 'draft', 'published', 'inactive' ), true ) ? $status : 'draft';
+		$status = in_array( $status, array( 'draft', 'published', 'inactive', 'archived' ), true ) ? $status : 'draft';
 
 		$config = array_intersect_key( array_merge( self::defaultConfig(), $data ), self::defaultConfig() );
 		$config = self::validateConfig( $config );

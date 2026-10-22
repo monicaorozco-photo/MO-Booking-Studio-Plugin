@@ -39,6 +39,10 @@ final class Settings {
 			'uploads_verified_path' => '',  // SEG-01: ruta canónica que se verificó.
 			'uploads_reason'       => '',
 			'delete_confirm_path'  => '',   // SEG-02: ruta exacta confirmada para borrar al desinstalar.
+			// 9.5: medio público de contacto en el evento del cliente (nunca el teléfono de la clienta).
+			'public_contact'       => '',
+			// 8.1: texto del portal junto a la carga del comprobante. {whatsapp} = número de WhatsApp del negocio.
+			'portal_proof_text'    => 'Sube aquí tu comprobante de anticipo o envíalo por WhatsApp con tu nombre o número de reserva al {whatsapp}.',
 		);
 	}
 

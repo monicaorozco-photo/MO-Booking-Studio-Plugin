@@ -40,9 +40,14 @@ final class BookingsPage {
 		foreach ( Services::all() as $s ) {
 			$services[ $s['id'] ] = $s['title'];
 		}
+		$payOpts  = array( '' => 'Todos los pagos' ) + \MOBookingStudio\Domain\Ledger::LABELS;
+		$viewOpts = array( '0' => 'Solo no archivadas', '1' => 'Solo archivadas' );
 		echo '<form method="get" class="mo-filter"><input type="hidden" name="page" value="mo-booking-bookings">' .
 			Ui::select( 'status', $statusOpts, $g['status'] ?? 'active', array( 'aria-label' => 'Estado' ) ) . ' ' .
 			Ui::select( 'service_id', $services, $g['service_id'] ?? '', array( 'aria-label' => 'Servicio' ) ) . ' ' .
+			Ui::select( 'pay', $payOpts, $g['pay'] ?? '', array( 'aria-label' => 'Pago' ) ) . ' ' .
+			'<label>' . Ui::checkbox( 'conflict', ! empty( $g['conflict'] ), 'Con conflicto' ) . '</label> ' .
+			Ui::select( 'archived', $viewOpts, (string) ( $g['archived'] ?? '0' ), array( 'aria-label' => 'Archivadas' ) ) . ' ' .
 			'<label>Desde ' . Ui::input( 'from', $g['from'] ?? '', 'date' ) . '</label> <label>Hasta ' . Ui::input( 'to', $g['to'] ?? '', 'date' ) . '</label> ' .
 			Ui::input( 'search', $g['search'] ?? '', 'search', array( 'placeholder' => 'Referencia, nombre, correo o teléfono', 'aria-label' => 'Buscar' ) ) . ' <button class="button">Filtrar</button></form>'; // phpcs:ignore WordPress.Security.EscapeOutput
 
@@ -52,6 +57,8 @@ final class BookingsPage {
 			'to'         => $g['to'] ?? '',
 			'service_id' => $g['service_id'] ?? '',
 			'search'     => $g['search'] ?? '',
+			'archived'   => '1' === (string) ( $g['archived'] ?? '0' ),
+			'conflict'   => ! empty( $g['conflict'] ),
 			'limit'      => 200,
 		);
 		if ( 'active' === $status ) {
@@ -59,24 +66,32 @@ final class BookingsPage {
 		} elseif ( $status ) {
 			$filters['status'] = array( $status );
 		}
-		$list = Bookings::list( $filters );
-		if ( ! $list ) {
+		$pay  = (string) ( $g['pay'] ?? '' );
+		$rows = '';
+		foreach ( Bookings::list( $filters ) as $b ) {
+			$summary = Bookings::summary( $b );
+			if ( '' !== $pay && $summary['status'] !== $pay ) {
+				continue;
+			}
+			$url   = Ui::url( 'mo-booking-bookings', array( 'booking' => $b['id'] ) );
+			$sync  = array( 'none' => '—', 'pending' => 'Pendiente', 'retrying' => 'Reintentando', 'synced' => 'Sincronizada', 'error' => 'Error' );
+			$rows .= '<tr><td data-label="Reserva"><a href="' . esc_url( $url ) . '"><strong>' . esc_html( $b['public_ref'] ) . '</strong></a>' . ( $b['is_test'] ? ' <span class="mo-pill mo-pill--test">PRUEBA</span>' : '' ) . ( $b['archived'] ? ' <span class="mo-pill">Archivada</span>' : '' ) . '</td>' .
+				'<td data-label="Cliente">' . esc_html( (string) $b['client_name'] ) . ( $b['frequent_claim'] && 'frequent' !== $b['client_category'] ? ' <span class="mo-pill mo-pill--review">Frecuente por revisar</span>' : '' ) . '</td>' .
+				'<td data-label="Servicio">' . esc_html( (string) $b['service_title'] ) . '</td>' .
+				'<td data-label="Fecha y hora">' . esc_html( Ui::localDateTime( $b['start_utc'], 'D d/m/Y H:i' ) ) . '</td>' .
+				'<td data-label="Estado">' . Ui::statusPill( $b['status'] ) . '</td>' .
+				'<td data-label="Anticipo">' . Ui::financialPill( $summary['status'] ) . '</td>' .
+				'<td data-label="Total y saldo">' . Ui::money( $b['total_cents'] ) . '<br><span class="description">Saldo ' . Ui::money( $summary['balance_cents'] ) . '</span></td>' .
+				'<td data-label="Calendar">' . esc_html( $sync[ $b['sync_state'] ] ?? $b['sync_state'] ) . '</td>' .
+				'<td data-label="Conflicto">' . ( 'open' === $b['conflict_state'] ? '<span class="mo-pill mo-pill--review">Empalme</span>' : '—' ) . '</td>' .
+				'<td data-label="Acciones"><a class="button button-small" href="' . esc_url( $url ) . '">Ver</a> <a class="button button-small" href="' . esc_url( add_query_arg( 'edit', '1', $url ) . '#editar' ) . '">Editar</a></td></tr>';
+		}
+		if ( '' === $rows ) {
 			echo '<p>No hay reservas con estos filtros.</p>';
 			Ui::footer();
 			return;
 		}
-		echo '<table class="widefat striped mo-table"><thead><tr><th>Reserva</th><th>Fecha</th><th>Servicio</th><th>Cliente</th><th>Estado</th><th>Pago</th><th>Total</th></tr></thead><tbody>';
-		foreach ( $list as $b ) {
-			$summary = Bookings::summary( $b );
-			echo '<tr><td data-label="Reserva"><a href="' . esc_url( Ui::url( 'mo-booking-bookings', array( 'booking' => $b['id'] ) ) ) . '"><strong>' . esc_html( $b['public_ref'] ) . '</strong></a>' . ( $b['is_test'] ? ' <span class="mo-pill mo-pill--test">PRUEBA</span>' : '' ) . '</td>' .
-				'<td data-label="Fecha">' . esc_html( Ui::localDateTime( $b['start_utc'], 'D d/m/Y H:i' ) ) . '</td>' .
-				'<td data-label="Servicio">' . esc_html( (string) $b['service_title'] ) . '</td>' .
-				'<td data-label="Cliente">' . esc_html( (string) $b['client_name'] ) . ( $b['frequent_claim'] && 'frequent' !== $b['client_category'] ? ' <span class="mo-pill mo-pill--review">Frecuente por revisar</span>' : '' ) . '</td>' .
-				'<td data-label="Estado">' . Ui::statusPill( $b['status'] ) . '</td>' .
-				'<td data-label="Pago">' . Ui::financialPill( $summary['status'] ) . '</td>' .
-				'<td data-label="Total">' . Ui::money( $b['total_cents'] ) . '</td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
-		}
-		echo '</tbody></table>';
+		echo '<table class="widefat striped mo-table"><thead><tr><th>Referencia</th><th>Cliente</th><th>Servicio</th><th>Fecha y hora</th><th>Estado</th><th>Anticipo</th><th>Total y saldo</th><th>Calendar</th><th>Conflicto</th><th>Acciones</th></tr></thead><tbody>' . $rows . '</tbody></table>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		Ui::footer();
 	}
 
@@ -217,6 +232,7 @@ final class BookingsPage {
 		$html   = '';
 		$labels  = array( 'pending' => 'Por revisar', 'approved' => 'Aprobado', 'rejected' => 'Rechazado', 'correction' => 'Corrección pedida', 'replaced' => 'Sustituido (versión anterior, no vigente)' );
 		$reasons = array( '' => 'Elige el motivo que verá la persona' ) + Settings::reviewReasons();
+		$fixReasons = $reasons + array( 'otro' => 'Otro motivo (escríbelo)' );
 		$canFix  = (int) $b['corrections_used'] < 1;
 		if ( $proofs ) {
 			foreach ( $proofs as $p ) {
@@ -239,10 +255,14 @@ final class BookingsPage {
 						'<label>Fecha de recepción ' . Ui::input( 'received_date', $today, 'date', array( 'required' => 'required' ) ) . '</label> ' .
 						'<label>Referencia ' . Ui::input( 'reference', '', 'text' ) . '</label> ' . Ui::button( 'Aprobar pago' ) . '</form>';
 					$html .= '<p class="description">Si el importe cubre el anticipo, la cita se confirma. Si es menor, la reserva queda pendiente con su hora límite original' . ( $b['deadline_at'] ? ' (' . esc_html( Ui::localDateTime( $b['deadline_at'], 'd/m H:i' ) ) . ')' : '' ) . ' y tú avisas a la persona.</p>';
-					$html .= '<details class="mo-details"><summary>' . ( $canFix ? 'Pedir corrección o rechazar' : 'Rechazar (la corrección ya se usó)' ) . '</summary>';
-					if ( $canFix ) {
-						$html .= Ui::formOpen( 'request_correction', array_merge( $hidden, array( 'proof_id' => $p['id'] ) ) ) . '<p><strong>Pedir corrección</strong> (una sola vez; plazo de ' . esc_html( (string) Settings::get( 'correction_hours' ) ) . ' h)</p>' . Ui::select( 'reason_key', $reasons, '', array( 'required' => 'required', 'aria-label' => 'Motivo de corrección' ) ) . ' ' . Ui::input( 'internal_note', '', 'text', array( 'placeholder' => 'Nota interna (opcional, no se envía)', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Pedir corrección', 'button-secondary' ) . '</form>';
-					}
+					$html .= '<details class="mo-details"><summary>Pedir corrección o rechazar</summary>';
+					$html .= Ui::formOpen( 'request_correction', array_merge( $hidden, array( 'proof_id' => $p['id'] ) ) ) .
+						'<p><strong>Pedir corrección</strong> (' . ( $canFix ? 'una sola vez' : 'la corrección automática ya se usó: requiere excepción' ) . '; plazo de ' . esc_html( (string) Settings::get( 'correction_hours' ) ) . ' h)</p>' .
+						Ui::select( 'reason_key', $fixReasons, '', array( 'required' => 'required', 'aria-label' => 'Motivo de corrección' ) ) . ' ' .
+						Ui::input( 'other_reason', '', 'text', array( 'placeholder' => 'Si eliges "Otro": motivo que verá la persona', 'class' => 'regular-text', 'maxlength' => 190 ) ) . ' ' .
+						Ui::input( 'internal_note', '', 'text', array( 'placeholder' => 'Nota interna (opcional, no se envía)', 'class' => 'regular-text' ) ) .
+						( $canFix ? '' : '<br>' . Ui::input( 'exception_reason', '', 'text', array( 'placeholder' => 'Motivo de la excepción (obligatorio)', 'class' => 'regular-text', 'required' => 'required' ) ) ) . ' ' .
+						Ui::button( $canFix ? 'Pedir corrección' : 'Dar otra oportunidad (excepción)', 'button-secondary' ) . '</form>';
 					$html .= Ui::formOpen( 'reject', $hidden ) . '<p><strong>Rechazo final</strong>: libera el horario de inmediato.</p>' . Ui::select( 'reason_key', $reasons, '', array( 'required' => 'required', 'aria-label' => 'Motivo de rechazo' ) ) . ' ' . Ui::input( 'internal_note', '', 'text', array( 'placeholder' => 'Nota interna (opcional, no se envía)', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Rechazar y liberar horario', 'button-link-delete', '¿Rechazar de forma definitiva y liberar el horario?' ) . '</form></details>';
 				}
 				$html .= '</div>';
@@ -347,12 +367,78 @@ final class BookingsPage {
 				$o     = Bookings::previewPolicy( $b, 'cancel', 'business' === $by );
 				$html .= '<div class="mo-preview"><p><strong>' . ( 'business' === $by ? 'Cancelación por parte del negocio' : 'Cancelación solicitada por el cliente' ) . '</strong></p><p>' . esc_html( $o['range_text'] ) . '</p>' . PoliciesPage::outcomeTable( $o ) .
 					'<p class="description">No se ejecuta ninguna transferencia. Las devoluciones quedan pendientes hasta que registres que las hiciste.</p>' .
-					Ui::formOpen( 'cancel', array_merge( $hiddenV, array( 'by' => $by ) ) ) . Ui::input( 'reason', '', 'text', array( 'placeholder' => 'Motivo (lo verá la persona)', 'required' => 'required', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Confirmar cancelación', 'button-link-delete', '¿Cancelar la reserva con estas consecuencias?' ) . ' <a href="' . esc_url( $base ) . '">No cancelar</a></form></div>';
+					Ui::formOpen( 'cancel', array_merge( $hiddenV, array( 'by' => $by ) ) ) .
+					'<p><label>Anticipo pagado (' . Ui::money( max( 0, (int) $summary['applied_cents'] ) ) . '): ' . Ui::select( 'deposit_outcome', array( '' => 'Elige qué pasa con el anticipo' ) + Bookings::CANCEL_OUTCOMES, '', array( 'required' => 'required' ) ) . '</label></p>' .
+					Ui::input( 'reason', '', 'text', array( 'placeholder' => 'Motivo (lo verá la persona)', 'required' => 'required', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Confirmar cancelación', 'button-link-delete', '¿Cancelar la reserva? Se libera el horario y se retiran sus eventos de Google; no se borran pagos, comprobantes ni contrato.' ) . ' <a href="' . esc_url( $base ) . '">No cancelar</a></form></div>';
 			} else {
 				$html .= '<p>Cancelar: <a href="' . esc_url( add_query_arg( 'cancel', 'client', $base ) ) . '">a petición del cliente…</a> · <a href="' . esc_url( add_query_arg( 'cancel', 'business', $base ) ) . '">por parte del negocio…</a></p>';
 			}
 		}
+		// 12.2: edición administrativa con vista previa del efecto.
+		if ( BookingStatus::isOpen( $s ) ) {
+			$html .= self::editBlock( $b, $hiddenV, $g );
+		}
+		// 7.8: archivar es solo visibilidad.
+		$html .= '<p>' . Ui::formOpen( $b['archived'] ? 'restore_booking' : 'archive_booking', $hidden, 'mo-inline-form' ) . Ui::button( $b['archived'] ? 'Restaurar (quitar de archivadas)' : 'Archivar', 'button-secondary', $b['archived'] ? '' : '¿Archivar? No cambia el estado ni los pagos; puedes restaurarla después.' ) . '</form></p>';
+		if ( $b['is_test'] ) {
+			$blockers = Bookings::deleteBlockers( $b );
+			$html    .= '<details class="mo-details"><summary>Eliminar definitivamente (solo pruebas)</summary>';
+			if ( $blockers ) {
+				$html .= '<p>No se puede eliminar porque tiene:</p><ul><li>' . implode( '</li><li>', array_map( 'esc_html', $blockers ) ) . '</li></ul><p class="description">Cancélala o archívala.</p>';
+			} else {
+				$html .= Ui::formOpen( 'delete_booking', $hidden ) . '<p>Se borran la reserva, sus eventos propios de Google, su enlace y sus avisos pendientes. La bitácora conserva el registro.</p><label>Escribe <strong>' . esc_html( $b['public_ref'] ) . '</strong> para confirmar ' . Ui::input( 'confirm', '', 'text', array( 'autocomplete' => 'off', 'required' => 'required' ) ) . '</label> ' . Ui::button( 'Eliminar', 'button-link-delete' ) . '</form>';
+			}
+			$html .= '</details>';
+		}
 		return $html ?: '<p>No hay acciones disponibles en este estado.</p>';
+	}
+
+	private static function editBlock( array $b, array $hiddenV, array $g ): string {
+		$service = Services::find( $b['service_id'] );
+		$open    = ! empty( $g['edit'] ) || ! empty( $g['edit_preview'] );
+		$html    = '<details class="mo-details" id="editar"' . ( $open ? ' open' : '' ) . '><summary>Editar datos, asistentes o extras</summary>';
+		$pending = ! empty( $g['edit_preview'] ) ? get_transient( 'mo_edit_' . get_current_user_id() . '_' . $b['id'] ) : false;
+		if ( is_array( $pending ) && sanitize_key( (string) $g['edit_preview'] ) === $pending['key'] ) {
+			try {
+				$p     = Bookings::previewEdit( $b, $pending['data'] );
+				$html .= '<div class="mo-preview"><p><strong>Efecto del cambio</strong> (aún no se guarda):</p><table class="widefat"><thead><tr><th>Dato</th><th>Antes</th><th>Después</th></tr></thead><tbody>';
+				foreach ( $p['changes'] as $label => $c ) {
+					$money = in_array( $label, array( 'Total', 'Anticipo' ), true );
+					$html .= '<tr><td>' . esc_html( $label ) . '</td><td>' . ( $money ? Ui::money( (int) $c['from'] ) : esc_html( (string) $c['from'] ) ) . '</td><td>' . ( $money ? Ui::money( (int) $c['to'] ) : esc_html( (string) $c['to'] ) ) . '</td></tr>';
+				}
+				$html .= '</tbody></table>';
+				$html .= $p['changes'] ? '' : '<p>No hay cambios.</p>';
+				if ( $p['economic'] ) {
+					$html .= '<p class="description">Se genera una cotización nueva con la fecha de solicitud original; los pagos registrados no se modifican. El horario y su disponibilidad no cambian (para cambiar la fecha usa "Reprogramar"). Google se actualiza al guardar.</p>';
+				}
+				if ( $p['changes'] ) {
+					$html .= Ui::formOpen( 'edit_apply', array_merge( $hiddenV, array( 'edit_key' => $pending['key'] ) ) ) . Ui::input( 'reason', '', 'text', array( 'placeholder' => 'Motivo del cambio (para la bitácora)', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Guardar cambios' ) . ' <a href="' . esc_url( Ui::url( 'mo-booking-bookings', array( 'booking' => $b['id'] ) ) ) . '">Descartar</a></form>';
+				}
+				$html .= '</div>';
+			} catch ( DomainException $e ) {
+				$html .= '<p class="mo-error">' . esc_html( $e->getMessage() ) . '</p>';
+			}
+		}
+		$c      = (array) $b['contact'];
+		$extras = (array) ( $b['quote']['extras_input'] ?? array() );
+		$form   = Ui::formOpen( 'edit_preview', $hiddenV );
+		$form  .= Ui::row( 'Niños', Ui::input( 'children', null === $b['children'] ? '' : (string) $b['children'], 'number', array( 'min' => 0, 'step' => 1 ) ) );
+		$form  .= Ui::row( 'Adultos', Ui::input( 'adults', null === $b['adults'] ? '' : (string) $b['adults'], 'number', array( 'min' => 0, 'step' => 1 ) ), null === $b['adults'] ? 'Reserva anterior sin desglose: indica niños y adultos para registrarlo.' : '' );
+		$form  .= Ui::row( 'Mascotas', Ui::input( 'pets', (string) $b['pets'], 'number', array( 'min' => 0, 'step' => 1 ) ) );
+		if ( $service ) {
+			foreach ( (array) $service['extras'] as $ex ) {
+				$form .= Ui::row( $ex['label'], Ui::input( 'extras[' . $ex['key'] . ']', (string) (int) ( $extras[ $ex['key'] ] ?? 0 ), 'number', array( 'min' => 0, 'max' => (int) $ex['max_qty'] ) ) );
+			}
+			if ( ! empty( $service['fast_delivery']['enabled'] ) || isset( $extras[ Services::FAST_KEY ] ) ) {
+				$form .= Ui::row( 'Entrega rápida', '<input type="hidden" name="fast_delivery" value="0">' . Ui::checkbox( 'fast_delivery', isset( $extras[ Services::FAST_KEY ] ), 'Incluida' ) );
+			}
+		}
+		$form .= Ui::row( 'Nombre y apellido', Ui::input( 'name', (string) ( $c['name'] ?? '' ), 'text', array( 'class' => 'regular-text' ) ) );
+		$form .= Ui::row( 'Correo', Ui::input( 'email', (string) ( $c['email'] ?? '' ), 'email', array( 'class' => 'regular-text' ) ) );
+		$form .= Ui::row( 'Teléfono', Ui::select( 'phone_country', array( 'MX' => 'México +52', 'US' => 'EE. UU. +1' ), (string) ( $c['phone_country'] ?? 'MX' ) ) . ' ' . Ui::input( 'phone', (string) ( $c['phone'] ?? '' ), 'tel' ) );
+		$form .= Ui::row( 'Información importante', Ui::textarea( 'important_info', $b['important_info'], 3, array( 'maxlength' => 2000 ) ) );
+		$form .= Ui::button( 'Ver efecto del cambio', 'button-secondary' ) . '</form>';
+		return $html . $form . '</details>';
 	}
 
 	private static function rescheduleBlock( array $b, array $hiddenV, array $g, string $base ): string {
@@ -444,7 +530,7 @@ final class BookingsPage {
 			'booking_cancelled'    => 'Cancelación',
 		);
 		if ( 'off' !== Settings::get( 'whatsapp_mode' ) && ! empty( $b['contact']['phone_e164'] ) ) {
-			$html .= '<h3>WhatsApp manual</h3><p class="description">Abre el chat con el texto listo. Abrir el chat no significa que se envió: márcalo después de enviarlo.</p>' . Ui::formOpen( 'whatsapp_open', $hidden, 'mo-inline-form' ) . Ui::select( 'event', $events, 'booking_created' ) . ' ' . Ui::button( 'Abrir WhatsApp', 'button-secondary' ) . '</form>';
+			$html .= '<h3>WhatsApp manual</h3><p class="description">Abre el chat con el texto listo. Abrir el chat no significa que se envió: márcalo después de enviarlo.</p>' . str_replace( '<form ', '<form target="_blank" rel="noopener noreferrer" ', Ui::formOpen( 'whatsapp_open', $hidden, 'mo-inline-form' ) ) . Ui::select( 'event', $events, 'booking_created' ) . ' ' . Ui::button( 'Abrir WhatsApp', 'button-secondary' ) . '</form>';
 		}
 		$notes = Notifications::forBooking( $b['id'] );
 		if ( $notes ) {

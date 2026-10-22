@@ -108,6 +108,12 @@ final class Bookings {
 			$where[]  = '(b.public_ref LIKE %s OR c.name LIKE %s OR c.email LIKE %s OR c.phone LIKE %s)';
 			$params   = array_merge( $params, array( $like, $like, $like, $like ) );
 		}
+		if ( isset( $filters['archived'] ) ) {
+			$where[] = $filters['archived'] ? 'b.archived_at IS NOT NULL' : 'b.archived_at IS NULL';
+		}
+		if ( ! empty( $filters['conflict'] ) ) {
+			$where[] = "b.conflict_state = 'open'";
+		}
 		if ( isset( $filters['is_test'] ) ) {
 			$where[]  = 'b.is_test = %d';
 			$params[] = (int) $filters['is_test'];
@@ -683,18 +689,23 @@ final class Bookings {
 	 * (lo ve la persona) y una nota interna opcional (no la ve). El horario sigue
 	 * apartado durante el plazo de corrección (2 horas por defecto).
 	 */
-	public static function requestCorrection( int $bookingId, ?int $proofId, string $reasonKey, string $internalNote = '' ): array {
-		$reason = Settings::correctionReason( $reasonKey );
-		if ( null === $reason ) {
-			throw new DomainException( 'reason_required', 'Elige el motivo de la corrección.' );
+	public static function requestCorrection( int $bookingId, ?int $proofId, string $reasonKey, string $internalNote = '', string $otherReason = '', string $exceptionReason = '' ): array {
+		// 7.3: motivo comprensible para la persona: uno de la lista o uno escrito ("Otro").
+		$reason = 'otro' === $reasonKey ? trim( sanitize_text_field( $otherReason ) ) : Settings::correctionReason( $reasonKey );
+		if ( null === $reason || '' === $reason ) {
+			throw new DomainException( 'reason_required', 'otro' === $reasonKey ? 'Escribe el motivo que verá la persona.' : 'Elige el motivo de la corrección.' );
 		}
+		$exceptionReason = trim( sanitize_text_field( $exceptionReason ) );
 		$now   = Plugin::clock()->now();
 		$until = $now->modify( sprintf( '+%d minutes', (int) round( (float) Settings::get( 'correction_hours' ) * 60 ) ) );
 		Db::transaction(
-			static function () use ( $bookingId, $proofId, $reason, $internalNote, $now, $until ) {
+			static function () use ( $bookingId, $proofId, $reason, $internalNote, $now, $until, $exceptionReason ) {
 				$booking = self::get( $bookingId, true );
 				if ( (int) $booking['corrections_used'] >= 1 ) {
-					throw new DomainException( 'correction_used', 'Esta reserva ya tuvo su corrección. Ahora solo puedes aprobar o rechazar.', 409 );
+					if ( '' === $exceptionReason ) {
+						throw new DomainException( 'correction_used', 'Esta reserva ya tuvo su corrección. Para dar otra oportunidad escribe el motivo de la excepción.', 409 );
+					}
+					Audit::log( 'booking', $bookingId, 'correction_exception', array( 'reason' => $exceptionReason, 'number' => (int) $booking['corrections_used'] + 1 ) );
 				}
 				if ( $proofId ) {
 					self::reviewProof( $bookingId, $proofId, 'correction', $internalNote, $now, $reason );
@@ -936,26 +947,254 @@ final class Bookings {
 		return $outcome;
 	}
 
-	public static function cancel( int $bookingId, bool $byBusiness, string $reason, int $expectedVersion ): array {
+	public const CANCEL_OUTCOMES = array(
+		'policy' => 'Según la política aceptada',
+		'lost'   => 'El anticipo se pierde',
+		'credit' => 'Se acredita a favor de la persona',
+		'manual' => 'Requiere resolución manual (por decidir)',
+	);
+
+	/**
+	 * 7.7: cancela con motivo y actor, libera el horario y retira los eventos propios. No
+	 * borra pagos, comprobantes, contrato ni historial; registra qué pasa con el anticipo.
+	 *
+	 * @param string $depositOutcome policy | lost | credit | manual
+	 */
+	public static function cancel( int $bookingId, bool $byBusiness, string $reason, int $expectedVersion, string $depositOutcome = 'policy' ): array {
 		$reason = trim( sanitize_textarea_field( $reason ) );
 		if ( '' === $reason ) {
 			throw new DomainException( 'reason_required', 'Indica el motivo de la cancelación.' );
 		}
+		if ( ! isset( self::CANCEL_OUTCOMES[ $depositOutcome ] ) ) {
+			throw new DomainException( 'invalid_outcome', 'Indica qué pasa con el anticipo.' );
+		}
 		Db::transaction(
-			static function () use ( $bookingId, $byBusiness, $reason, $expectedVersion ) {
+			static function () use ( $bookingId, $byBusiness, $reason, $expectedVersion, $depositOutcome ) {
 				$booking = self::get( $bookingId, true );
 				self::assertVersion( $booking, $expectedVersion );
-				$outcome = self::previewPolicy( $booking, 'cancel', $byBusiness );
-				self::transition( $booking, BookingStatus::CANCELLED, ( $byBusiness ? 'Cancelada por el negocio: ' : 'Cancelada: ' ) . $reason, array( 'expires_at' => null, 'correction_until' => null ) );
+				$outcome = self::cancelOutcome( $booking, $byBusiness, $depositOutcome );
+				self::transition( $booking, BookingStatus::CANCELLED, ( $byBusiness ? 'Cancelada por el negocio: ' : 'Cancelada: ' ) . $reason, array( 'expires_at' => null, 'correction_until' => null, 'cancel_outcome' => $depositOutcome ) );
 				self::applyOutcomeMovements( $booking, $outcome, 'cancel' );
 				self::releaseOccupancy( $bookingId, Plugin::clock()->now() );
-				Audit::log( 'booking', $bookingId, 'cancel_outcome', self::outcomeForAudit( $outcome ) );
+				Audit::log( 'booking', $bookingId, 'cancel_outcome', array_merge( self::outcomeForAudit( $outcome ), array( 'deposit' => $depositOutcome, 'reason' => $reason ) ) );
+				if ( 'manual' === $depositOutcome && $outcome['paid_cents'] > 0 ) {
+					Audit::log( 'booking', $bookingId, 'reconciliation_needed', array( 'reason' => 'Cancelada con anticipo por resolver: decide devolución, crédito o retención.' ) );
+				}
 			}
 		);
 		Notifications::cancelPending( $bookingId );
 		$booking = self::get( $bookingId );
 		Notifications::bookingEvent( 'booking_cancelled', $booking, array( 'reason' => $reason ) );
 		return $booking;
+	}
+
+	/** Consecuencia económica de cancelar según la decisión de la administradora. */
+	public static function cancelOutcome( array $booking, bool $byBusiness, string $depositOutcome ): array {
+		$outcome = self::previewPolicy( $booking, 'cancel', $byBusiness );
+		$paid    = max( 0, (int) self::summary( $booking )['applied_cents'] );
+		$outcome['paid_cents'] = $paid;
+		if ( 'policy' === $depositOutcome ) {
+			return $outcome;
+		}
+		$outcome = array_merge(
+			$outcome,
+			array(
+				'retained'          => 'lost' === $depositOutcome ? $paid : 0,
+				'credit'            => 'credit' === $depositOutcome ? $paid : 0,
+				'refund_due'        => 0,
+				'penalty'           => 0,
+				'penalty_from_paid' => 0,
+				'penalty_due'       => 0,
+			)
+		);
+		return $outcome;
+	}
+
+	// ----- Archivo y eliminación (7.8, 12.3) -----
+
+	/** Archivar es solo visibilidad: no cambia estado, pago ni vigencia. */
+	public static function setArchived( int $bookingId, bool $archived ): array {
+		$booking = self::get( $bookingId );
+		Db::wpdb()->update( Schema::table( 'bookings' ), array( 'archived_at' => $archived ? Db::toSql( Plugin::clock()->now() ) : null ), array( 'id' => $bookingId ) );
+		Audit::log( 'booking', $bookingId, $archived ? 'archived' : 'restored', array( 'status' => $booking['status'] ) );
+		return self::get( $bookingId );
+	}
+
+	/** Lo que impide borrar definitivamente una reserva. Vacío = se puede borrar. */
+	public static function deleteBlockers( array $booking ): array {
+		$wpdb     = Db::wpdb();
+		$blockers = array();
+		if ( ! $booking['is_test'] ) {
+			$blockers[] = 'No es una reserva de prueba (las reservas reales se cancelan o archivan).';
+		}
+		$payments = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . Schema::table( 'payments' ) . ' WHERE booking_id = %d', $booking['id'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( $payments ) {
+			$blockers[] = sprintf( '%d movimiento(s) de dinero.', $payments );
+		}
+		$proofs = count( self::proofs( $booking['id'] ) );
+		if ( $proofs ) {
+			$blockers[] = sprintf( '%d comprobante(s).', $proofs );
+		}
+		if ( ! empty( $booking['contract_accepted_at'] ) ) {
+			$blockers[] = 'Contrato aceptado por la persona.';
+		}
+		$sent = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . Schema::table( 'notifications' ) . " WHERE booking_id = %d AND status IN ('accepted', 'sent_manual', 'opened_manual')", $booking['id'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( $sent ) {
+			$blockers[] = sprintf( '%d mensaje(s) enviados o abiertos para envío.', $sent );
+		}
+		return $blockers;
+	}
+
+	/**
+	 * 12.3: elimina definitivamente una reserva de prueba sin dependencias. Borra solo sus
+	 * eventos propios, tokens, ocupación y avisos pendientes; la bitácora conserva el registro.
+	 */
+	public static function deleteTest( int $bookingId, string $confirm ): void {
+		$booking  = self::get( $bookingId );
+		$blockers = self::deleteBlockers( $booking );
+		if ( $blockers ) {
+			throw new DomainException( 'has_dependencies', 'No se puede eliminar: ' . implode( ' ', $blockers ), 409, array( 'blockers' => $blockers ) );
+		}
+		if ( $booking['public_ref'] !== trim( $confirm ) ) {
+			throw new DomainException( 'confirm_required', 'Para eliminar escribe la referencia exacta de la reserva (' . $booking['public_ref'] . ').' );
+		}
+		$wpdb = Db::wpdb();
+		if ( \MOBookingStudio\Integrations\Google\Connection::isActive() ) {
+			foreach ( \MOBookingStudio\Integrations\Google\SyncWorker::eventsFor( $bookingId ) as $row ) {
+				if ( 'active' !== $row['state'] ) {
+					continue;
+				}
+				try {
+					( new \MOBookingStudio\Integrations\Google\Api() )->deleteEvent( $row['calendar_id'], $row['event_id'], 'client' === $row['kind'] ? 'all' : 'none' );
+				} catch ( \MOBookingStudio\Integrations\Google\GoogleException $e ) {
+					if ( ! in_array( $e->type, array( 'not_found', 'gone' ), true ) ) {
+						throw new DomainException( 'google_unavailable', 'No se pudo retirar su evento de Google; intenta de nuevo. No se eliminó nada.', 503 );
+					}
+				}
+			}
+		}
+		Db::transaction(
+			static function () use ( $wpdb, $bookingId, $booking ) {
+				foreach ( array( 'occupancies', 'access_tokens', 'portal_sessions', 'notifications', 'calendar_events', 'sync_jobs', 'conflicts' ) as $t ) {
+					$wpdb->delete( Schema::table( $t ), array( 'booking_id' => $bookingId ) );
+				}
+				$wpdb->delete( Schema::table( 'bookings' ), array( 'id' => $bookingId ) );
+				Audit::log( 'booking', $bookingId, 'deleted', array( 'ref' => $booking['public_ref'], 'is_test' => true ) );
+			}
+		);
+	}
+
+	// ----- Edición administrativa (12.2) -----
+
+	/**
+	 * Calcula el efecto de editar datos, asistentes o extras sin guardar nada.
+	 *
+	 * @return array{changes:array,quote:?array,fields:array,contact:array}
+	 */
+	public static function previewEdit( array $booking, array $data ): array {
+		$contact = self::validateContact( array_merge( (array) $booking['contact'], array_intersect_key( $data, array_flip( array( 'name', 'email', 'phone', 'phone_country' ) ) ) ) );
+		$info    = self::validateImportantInfo( $data['important_info'] ?? $booking['important_info'] );
+		$service = Services::get( $booking['service_id'] );
+		$extras  = (array) ( $booking['quote']['extras_input'] ?? array() );
+		if ( isset( $data['extras'] ) ) {
+			$extras = (array) $data['extras'];
+		}
+		if ( array_key_exists( 'fast_delivery', $data ) ) {
+			unset( $extras[ Services::FAST_KEY ] );
+			if ( ! empty( $data['fast_delivery'] ) ) {
+				$extras[ Services::FAST_KEY ] = 1;
+			}
+		}
+		$input = array(
+			'children' => $data['children'] ?? ( null === $booking['children'] ? null : (string) $booking['children'] ),
+			'adults'   => $data['adults'] ?? ( null === $booking['adults'] ? null : (string) $booking['adults'] ),
+			'pets'     => $data['pets'] ?? (string) $booking['pets'],
+			'extras'   => $extras,
+		);
+		if ( null === $input['children'] && null === $input['adults'] ) {
+			$input['participants'] = $booking['participants'];
+		}
+		$requestedAt = new \DateTimeImmutable( (string) ( $booking['quote']['requested_at'] ?? $booking['created_at'] ) );
+		$context     = Catalog::pricingContext( $input, $booking['start'], $requestedAt, $booking['client_category'] );
+		$quote       = ( new Pricing( Settings::timezone() ) )->quote( Services::forPricing( $service, $booking['quote'] ), Services::rules( (int) $service['id'] ), $context );
+
+		$changes = array();
+		$compare = array(
+			'Nombre'                 => array( $booking['contact']['name'] ?? '', $contact['name'] ),
+			'Correo'                 => array( $booking['contact']['email'] ?? '', $contact['email'] ),
+			'Teléfono'               => array( $booking['contact']['phone'] ?? '', $contact['phone'] ),
+			'Información importante' => array( $booking['important_info'], $info ),
+			'Niños'                  => array( (string) $booking['children'], (string) $context['children'] ),
+			'Adultos'                => array( (string) $booking['adults'], (string) $context['adults'] ),
+			'Mascotas'               => array( (string) $booking['pets'], (string) $context['pets'] ),
+			'Extras'                 => array( wp_json_encode( (object) ( $booking['quote']['extras_input'] ?? array() ) ), wp_json_encode( (object) $context['extras'] ) ),
+			'Total'                  => array( (string) $booking['total_cents'], (string) $quote['total_cents'] ),
+			'Anticipo'               => array( (string) $booking['deposit_cents'], (string) $quote['deposit_cents'] ),
+		);
+		foreach ( $compare as $label => $pair ) {
+			if ( (string) $pair[0] !== (string) $pair[1] ) {
+				$changes[ $label ] = array( 'from' => $pair[0], 'to' => $pair[1] );
+			}
+		}
+		$economic = isset( $changes['Total'] ) || isset( $changes['Anticipo'] ) || isset( $changes['Extras'] ) || isset( $changes['Niños'] ) || isset( $changes['Adultos'] ) || isset( $changes['Mascotas'] );
+		return array(
+			'changes'  => $changes,
+			'quote'    => $economic ? $quote : null,
+			'contact'  => $contact,
+			'info'     => $info,
+			'context'  => $context,
+			'economic' => $economic,
+		);
+	}
+
+	/**
+	 * Aplica la edición: una nueva cotización o ajuste (sin tocar movimientos), valores
+	 * anteriores y nuevos en la bitácora y sincronización idempotente con Google.
+	 */
+	public static function applyEdit( int $bookingId, array $data, int $expectedVersion ): array {
+		Db::transaction(
+			static function () use ( $bookingId, $data, $expectedVersion ) {
+				$booking = self::get( $bookingId, true );
+				self::assertVersion( $booking, $expectedVersion );
+				if ( ! BookingStatus::isOpen( $booking['status'] ) ) {
+					throw new DomainException( 'invalid_transition', 'Solo se editan reservas activas.', 409 );
+				}
+				$p = self::previewEdit( $booking, $data );
+				if ( ! $p['changes'] ) {
+					throw new DomainException( 'no_changes', 'No hay cambios que guardar.' );
+				}
+				$fields = array(
+					'contact'        => Db::json( array_merge( (array) $booking['contact'], $p['contact'] ) ),
+					'important_info' => $p['info'],
+				);
+				if ( $p['economic'] ) {
+					$fields = array_merge(
+						$fields,
+						array(
+							'participants'  => $p['quote']['participants'],
+							'pets'          => $p['quote']['pets'],
+							'children'      => $p['context']['children'],
+							'adults'        => $p['context']['adults'],
+							'total_cents'   => $p['quote']['total_cents'],
+							'deposit_cents' => $p['quote']['deposit_cents'],
+							'quote'         => Db::json(
+								array_merge(
+									$booking['quote'],
+									$p['quote'],
+									array(
+										'extras_input' => $p['context']['extras'],
+										'previous'     => array( 'total' => $booking['total_cents'], 'deposit' => $booking['deposit_cents'], 'lines' => $booking['quote']['lines'] ?? array() ),
+									)
+								)
+							),
+						)
+					);
+				}
+				self::update( $booking, $fields );
+				Audit::log( 'booking', $bookingId, 'edited', array( 'changes' => $p['changes'], 'reason' => (string) ( $data['reason'] ?? '' ) ) );
+			}
+		);
+		return self::get( $bookingId );
 	}
 
 	public static function markNoShow( int $bookingId, int $expectedVersion ): array {

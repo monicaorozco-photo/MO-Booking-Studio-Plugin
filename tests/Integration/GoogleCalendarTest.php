@@ -185,6 +185,9 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 			$this->assertStringNotContainsString( $secret, $public, 'El evento del cliente no debe contener: ' . $secret );
 		}
 		$this->assertStringContainsString( '656 999 8888', $internal[0]['description'], 'El interno sí lleva el teléfono.' );
+		$this->assertStringContainsString( 'Correo: ana@clientes-mo.mx', $internal[0]['description'] );
+		$this->assertStringContainsString( 'Pago: Anticipo cubierto', $internal[0]['description'] );
+		$this->assertStringContainsString( 'admin.php?page=mo-booking-bookings', $internal[0]['description'] );
 
 		// AC-CAL-08: repetir no duplica eventos ni invitaciones y no llama a Google si nada cambió.
 		$before = count( $this->google->requests );
@@ -592,5 +595,41 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		$this->assertSame( 0, $this->google->count( 'DELETE', '/events/' ) );
 		$this->assertSame( 3, $this->google->moves );
 		unset( $confirmed, $pending );
+	}
+
+	/** AC-09 y AC-10: contenido exacto de los dos eventos (9.4 y 9.5). */
+	public function test_event_contents_follow_spec(): void {
+		\MOBookingStudio\Infrastructure\Settings::update( array( 'public_contact' => 'WhatsApp 656 634 4849' ) );
+		$service = $this->christmasService(
+			array(
+				'location'      => 'Estudio Clics',
+				'instructions'  => 'Llega 10 minutos antes.',
+				'delivery_text' => 'Entrega en 5 días',
+				'fast_delivery' => array( 'enabled' => true, 'label' => 'Entrega rápida', 'price_cents' => 30000, 'question' => '¿Entrega rápida?', 'regular_text' => '' ),
+			)
+		);
+		$this->google->connect();
+		$quote   = Catalog::quote( $service, array( 'start' => self::START, 'children' => '2', 'adults' => '3', 'pets' => '1', 'fast_delivery' => true ) );
+		$booking = Bookings::create( $service, array_merge( $this->contact( array( 'phone' => '656 999 8888' ) ), array( 'quote_id' => $quote['quote_id'], 'idempotency_key' => wp_generate_uuid4(), 'important_info' => 'Mi hija es alérgica al polen' ) ) )['booking'];
+		SyncWorker::processQueue();
+		$internal = $this->google->owned( 'internal' )[0];
+		foreach ( array( 'Nombre: Ana Prueba', 'Teléfono: 656 999 8888', 'Correo: ana@clientes-mo.mx', 'Asistentes: 5 (niños 2, adultos 3)', 'Mascotas: 1', 'Extras: Entrega rápida', 'Pago: Sin pago', 'Información importante: Mi hija es alérgica al polen', $booking['public_ref'] ) as $text ) {
+			$this->assertStringContainsString( $text, $internal['description'] );
+		}
+		$this->assertSame( array(), $internal['attendees'], 'El interno nunca invita a la clienta.' );
+
+		$this->approve( $booking );
+		SyncWorker::processQueue();
+		$this->assertStringStartsWith( 'MO CONFIRMADA', $this->google->owned( 'internal' )[0]['summary'] );
+		$client = $this->google->owned( 'client' )[0];
+		$this->assertSame( 'Sesión con Clics con Amor Fotografía', $client['summary'] );
+		foreach ( array( 'Servicio: Minis navideñas 2026', 'Duración: 20 minutos', 'Llega 10 minutos antes.', 'Contacto: WhatsApp 656 634 4849' ) as $text ) {
+			$this->assertStringContainsString( $text, $client['description'] );
+		}
+		$this->assertSame( 'Estudio Clics', $client['location'] );
+		$public = wp_json_encode( $client );
+		foreach ( array( $booking['public_ref'], 'alérgica', '656 999 8888', '6569998888', 'Entrega en 5 días', 'Pago', 'admin.php', 'acceso=', 'comprobante', '$' ) as $secret ) {
+			$this->assertStringNotContainsString( $secret, $public, 'El evento del cliente no debe contener: ' . $secret );
+		}
 	}
 }

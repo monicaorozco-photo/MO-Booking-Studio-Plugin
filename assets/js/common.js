@@ -92,7 +92,8 @@
 			return view.uploads_note ? '<p class="mo-booking__note">' + esc(view.uploads_note) + '</p>' : '';
 		}
 		var id = idPrefix + '-file';
-		return '<form class="mo-booking__upload" data-mo-upload novalidate>' +
+		return (view.proof_text ? '<p class="mo-booking__note">' + esc(view.proof_text) + '</p>' : '') +
+			'<form class="mo-booking__upload" data-mo-upload novalidate>' +
 			'<label class="mo-booking__label" for="' + id + '">Comprobante de transferencia (JPG, PNG o PDF, máximo ' + esc(view.max_mb) + ' MB)</label>' +
 			'<input class="mo-booking__file" type="file" id="' + id + '" name="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" required>' +
 			'<p class="mo-booking__field-error" data-error-for="file" role="alert"></p>' +

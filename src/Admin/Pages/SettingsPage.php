@@ -41,6 +41,8 @@ final class SettingsPage {
 		$body .= Ui::row( 'Recordatorio (horas antes)', Ui::input( 'reminder_hours', $s['reminder_hours'], 'number', array( 'min' => 0 ) ), '0 = sin recordatorio. Propuesta: 48.', 'reminder_hours' );
 		$body .= Ui::row( 'WhatsApp', Ui::select( 'whatsapp_mode', array( 'off' => 'Desactivado', 'manual' => 'Manual (abrir chat con el texto listo)', 'automatic' => 'Automático (pendiente de conectar proveedor oficial)' ), $s['whatsapp_mode'] ), 'El modo automático aún no envía: requiere un proveedor oficial de WhatsApp Business, plantillas aprobadas y credenciales.', 'whatsapp_mode' );
 		$body .= Ui::row( 'Número de WhatsApp del negocio', Ui::input( 'whatsapp_number', $s['whatsapp_number'], 'tel' ), 'Para el botón "Escribir por WhatsApp" del portal.', 'whatsapp_number' );
+		$body .= Ui::row( 'Texto junto al comprobante', Ui::textarea( 'portal_proof_text', $s['portal_proof_text'], 2 ), 'Se muestra en el enlace privado sobre la carga del comprobante. {whatsapp} se reemplaza por el número de arriba.', 'portal_proof_text' );
+		$body .= Ui::row( 'Contacto público para Google Calendar', Ui::input( 'public_contact', $s['public_contact'], 'text', array( 'class' => 'regular-text', 'placeholder' => 'WhatsApp 656 000 0000 · hola@tuestudio.com' ) ), 'Aparece en el evento que recibe la clienta. No pongas datos privados.', 'public_contact' );
 		$body .= Ui::row( 'Enlace privado vence (días después de la cita)', Ui::input( 'token_days_after', $s['token_days_after'], 'number', array( 'min' => 1 ) ), 'Propuesta: 90 días.', 'token_days_after' );
 		echo Ui::card( 'Comunicaciones', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
 
@@ -148,6 +150,8 @@ final class SettingsPage {
 				'reminder_hours'      => $num( 'reminder_hours', 0, 720 ),
 				'whatsapp_mode'       => in_array( $p['whatsapp_mode'] ?? '', array( 'off', 'manual', 'automatic' ), true ) ? $p['whatsapp_mode'] : 'manual',
 				'whatsapp_number'     => sanitize_text_field( (string) ( $p['whatsapp_number'] ?? '' ) ),
+				'portal_proof_text'   => sanitize_textarea_field( (string) ( $p['portal_proof_text'] ?? '' ) ),
+				'public_contact'      => sanitize_text_field( (string) ( $p['public_contact'] ?? '' ) ),
 				'token_days_after'    => (int) $num( 'token_days_after', 1, 3650 ),
 				'terms_text'          => sanitize_textarea_field( (string) ( $p['terms_text'] ?? '' ) ),
 				'privacy_url'         => esc_url_raw( (string) ( $p['privacy_url'] ?? '' ) ),

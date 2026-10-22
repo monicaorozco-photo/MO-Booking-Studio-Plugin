@@ -6,6 +6,7 @@ use MOBookingStudio\Application\Catalog;
 use MOBookingStudio\Application\Services;
 use MOBookingStudio\Domain\BookingStatus;
 use MOBookingStudio\Domain\Ledger;
+use MOBookingStudio\Domain\Money;
 use MOBookingStudio\Infrastructure\Settings;
 
 /**
@@ -73,27 +74,61 @@ final class EventBuilder {
 		);
 	}
 
+	/** Etiqueta del estado en el evento interno (9.4). */
+	private static function internalState( array $booking ): string {
+		switch ( $booking['status'] ) {
+			case BookingStatus::CONFIRMED:
+				return 'MO CONFIRMADA';
+			case BookingStatus::PAYMENT_REVIEW:
+			case BookingStatus::UNDER_REVIEW:
+				return 'MO EN REVISIÓN';
+			default:
+				return 'MO PENDIENTE';
+		}
+	}
+
+	/**
+	 * 9.4: evento administrativo, nunca compartido ni con invitados. Incluye lo necesario
+	 * para atender la sesión: contacto, asistentes, extras, pagos, información importante
+	 * y el enlace al panel (que exige iniciar sesión).
+	 */
 	public static function internal( array $booking ): array {
-		$service   = Services::find( $booking['service_id'] );
-		$confirmed = BookingStatus::CONFIRMED === $booking['status'];
-		$summary   = Bookings::summary( $booking );
-		$lines     = array(
+		$service = Services::find( $booking['service_id'] );
+		$summary = Bookings::summary( $booking );
+		$lines   = array(
 			'Reserva ' . $booking['public_ref'] . ' · ' . BookingStatus::label( $booking['status'] ),
 			'Servicio: ' . ( $service ? $service['title'] : (string) ( $booking['quote']['service_title'] ?? '' ) ),
 			'Nombre: ' . (string) ( $booking['contact']['name'] ?? '' ),
 			'Teléfono: ' . (string) ( $booking['contact']['phone'] ?? '' ),
-			'Personas: ' . (int) $booking['participants'] . ( $booking['pets'] ? ' · Mascotas: ' . (int) $booking['pets'] : '' ),
-			'Pago: ' . ( Ledger::LABELS[ $summary['status'] ] ?? '' ),
+			'Correo: ' . (string) ( $booking['contact']['email'] ?? '' ),
 		);
-		if ( ! $confirmed && $booking['expires'] ) {
+		if ( null !== $booking['children'] || null !== $booking['adults'] ) {
+			$lines[] = sprintf( 'Asistentes: %d (niños %d, adultos %d)', (int) $booking['participants'], (int) $booking['children'], (int) $booking['adults'] );
+		} else {
+			$lines[] = 'Personas: ' . (int) $booking['participants'];
+		}
+		$lines[] = 'Mascotas: ' . (int) $booking['pets'];
+		$extras  = array();
+		foreach ( (array) ( $booking['quote']['lines'] ?? array() ) as $l ) {
+			if ( 'extra' === ( $l['kind'] ?? '' ) ) {
+				$extras[] = (string) $l['label'] . ( (int) $l['quantity'] > 1 ? ' ×' . (int) $l['quantity'] : '' );
+			}
+		}
+		$lines[] = 'Extras: ' . ( $extras ? implode( ', ', $extras ) : 'ninguno' );
+		$lines[] = sprintf( 'Pago: %s · total %s · pagado %s · saldo %s', Ledger::LABELS[ $summary['status'] ] ?? '', Money::format( (int) $booking['total_cents'] ), Money::format( (int) $summary['received_cents'] ), Money::format( (int) $summary['balance_cents'] ) );
+		if ( BookingStatus::CONFIRMED !== $booking['status'] && $booking['expires'] ) {
 			$lines[] = 'Vence: ' . Catalog::dateTimeText( $booking['expires'] );
+		}
+		if ( '' !== (string) $booking['important_info'] ) {
+			$lines[] = '';
+			$lines[] = 'Información importante: ' . $booking['important_info'];
 		}
 		$lines[] = '';
 		$lines[] = 'Panel (requiere iniciar sesión): ' . admin_url( 'admin.php?page=mo-booking-bookings&booking=' . (int) $booking['id'] );
 		return array_merge(
 			self::times( $booking ),
 			array(
-				'summary'            => ( $booking['is_test'] ? 'PRUEBA · ' : '' ) . ( $confirmed ? 'MO CONFIRMADA' : 'MO PENDIENTE' ) . ' · ' . $booking['public_ref'],
+				'summary'            => ( $booking['is_test'] ? 'PRUEBA · ' : '' ) . self::internalState( $booking ) . ' · ' . $booking['public_ref'],
 				'description'        => implode( "\n", $lines ),
 				'visibility'         => 'private',
 				'transparency'       => 'opaque',
@@ -104,19 +139,26 @@ final class EventBuilder {
 		);
 	}
 
+	/**
+	 * 9.5: evento limpio para la persona invitada. Solo: nombre público del estudio,
+	 * servicio, fecha, hora, duración, ubicación, indicaciones públicas y contacto público.
+	 * Nunca teléfono, pagos, comprobantes, notas, información privada, panel ni tokens.
+	 */
 	public static function client( array $booking ): array {
 		$service = Services::find( $booking['service_id'] );
 		$brand   = ( $service && $service['brand'] ) ? $service['brand'] : (string) Settings::get( 'business_name' );
-		$parts   = array();
+		$title   = $service ? $service['title'] : (string) ( $booking['quote']['service_title'] ?? '' );
+		$minutes = (int) round( ( $booking['end']->getTimestamp() - $booking['start']->getTimestamp() ) / 60 );
+		$parts   = array( 'Servicio: ' . $title, 'Duración: ' . $minutes . ' minutos' );
 		if ( $service && $service['instructions'] ) {
 			$parts[] = $service['instructions'];
 		}
-		if ( $service && $service['delivery_text'] ) {
-			$parts[] = $service['delivery_text'];
+		$contact = trim( (string) Settings::get( 'public_contact' ) );
+		if ( '' !== $contact ) {
+			$parts[] = 'Contacto: ' . $contact;
 		}
-		$parts[] = 'Referencia: ' . $booking['public_ref'];
-		$email   = (string) $booking['contact']['email'];
-		$event   = array_merge(
+		$email = (string) $booking['contact']['email'];
+		$event = array_merge(
 			self::times( $booking ),
 			array(
 				'summary'                 => 'Sesión con ' . $brand,

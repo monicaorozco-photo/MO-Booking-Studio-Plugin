@@ -196,7 +196,7 @@ final class BookingsPage {
 		$today  = Ui::localToday();
 		$suggest = $summary['deposit_missing'] > 0 ? $summary['deposit_missing'] : $summary['balance_cents'];
 		$html   = '';
-		$labels  = array( 'pending' => 'Por revisar', 'approved' => 'Aprobado', 'rejected' => 'Rechazado', 'correction' => 'Corrección pedida' );
+		$labels  = array( 'pending' => 'Por revisar', 'approved' => 'Aprobado', 'rejected' => 'Rechazado', 'correction' => 'Corrección pedida', 'replaced' => 'Sustituido (versión anterior, no vigente)' );
 		$reasons = array( '' => 'Elige el motivo que verá la persona' ) + Settings::reviewReasons();
 		$canFix  = (int) $b['corrections_used'] < 1;
 		if ( $proofs ) {
@@ -277,12 +277,25 @@ final class BookingsPage {
 		$base   = Ui::url( 'mo-booking-bookings', array( 'booking' => $b['id'] ) );
 
 		if ( in_array( $s, BookingStatus::awaitingPayment(), true ) ) {
-			$html .= Ui::formOpen( 'confirm', $hidden, 'mo-action' ) . ( $summary['deposit_covered'] ? '' : Ui::input( 'override', '', 'text', array( 'placeholder' => 'Motivo de la excepción (falta ' . Money::format( $summary['deposit_missing'] ) . ')', 'class' => 'regular-text' ) ) . ' ' ) . Ui::button( 'Confirmar cita' ) . '</form>';
+			if ( $summary['deposit_covered'] ) {
+				$html .= Ui::formOpen( 'confirm', $hidden, 'mo-action' ) . Ui::button( 'Confirmar cita' ) . '</form>';
+			} else {
+				// SEG-03: confirmar sin anticipo es una excepción con motivo y NO invita al cliente.
+				$html .= '<details class="mo-details"><summary>Confirmar sin anticipo (excepción)</summary>' . Ui::formOpen( 'confirm', $hidden ) .
+					Ui::input( 'override', '', 'text', array( 'placeholder' => 'Motivo de la excepción (falta ' . Money::format( $summary['deposit_missing'] ) . ')', 'class' => 'regular-text', 'required' => 'required' ) ) . ' ' .
+					Ui::button( 'Confirmar por excepción', 'button-secondary', '¿Confirmar sin el anticipo? Quedará registrado y la clienta no recibirá invitación de Google.' ) .
+					'<p class="description">No envía invitación de Google Calendar. Para invitar después usa "Invitar al cliente sin anticipo".</p></form></details>';
+			}
 			$reasons = array( '' => 'Elige el motivo que verá la persona' ) + Settings::reviewReasons();
 			$html   .= '<details class="mo-details"><summary>Rechazar solicitud</summary>' . Ui::formOpen( 'reject', $hidden ) . Ui::select( 'reason_key', $reasons, '', array( 'required' => 'required', 'aria-label' => 'Motivo' ) ) . ' ' . Ui::input( 'internal_note', '', 'text', array( 'placeholder' => 'Nota interna (opcional)', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Rechazar y liberar horario', 'button-link-delete', '¿Rechazar la solicitud?' ) . '</form></details>';
 		}
 		if ( BookingStatus::CONFIRMED === $s ) {
 			$html .= Ui::formOpen( 'complete', $hidden, 'mo-action mo-inline-form' ) . Ui::button( 'Marcar sesión completada' ) . '</form> ';
+			if ( ! Bookings::inviteAllowed( $b ) ) {
+				$html .= '<div class="mo-preview"><p><strong>Sin invitación de Google:</strong> la cita se confirmó sin anticipo cubierto.</p>' .
+					Ui::formOpen( 'invite_without_deposit', $hidden ) . Ui::input( 'reason', '', 'text', array( 'placeholder' => 'Motivo (obligatorio)', 'class' => 'regular-text', 'required' => 'required' ) ) . ' ' .
+					Ui::button( 'Invitar al cliente sin anticipo', 'button-secondary', '¿Enviar la invitación de Google aunque el anticipo no esté cubierto? Quedará registrado.' ) . '</form></div>';
+			}
 			$preview = Bookings::previewPolicy( $b, 'no_show' );
 			$html   .= '<details class="mo-details"><summary>Marcar inasistencia</summary><p>' . esc_html( $preview['range_text'] ) . '</p>' . PoliciesPage::outcomeTable( $preview ) . Ui::formOpen( 'no_show', $hiddenV ) . Ui::button( 'Registrar inasistencia', 'button-secondary', '¿Registrar inasistencia con estas consecuencias?' ) . '</form></details>';
 		}

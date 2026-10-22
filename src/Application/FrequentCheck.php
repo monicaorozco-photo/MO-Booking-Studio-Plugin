@@ -29,6 +29,18 @@ use MOBookingStudio\Infrastructure\Schema;
 final class FrequentCheck {
 	private const TTL = 3 * HOUR_IN_SECONDS;
 
+	public const REVIEW_MESSAGE = 'Verás los precios para público general. Antes de confirmar tu reserva revisaremos tu historial de sesiones; si aplica la tarifa de cliente frecuente, ajustaremos el precio y te avisaremos.';
+
+	/**
+	 * SEG-04 / Salida B: el precio frecuente automático está deshabilitado hasta tener una
+	 * prueba de posesión del contacto (código o enlace de verificación). Mientras tanto,
+	 * "Ya me he tomado fotos con ustedes" es una solicitud de revisión y la administradora
+	 * aplica la tarifa con la acción auditada del panel.
+	 */
+	public static function automaticEnabled(): bool {
+		return false;
+	}
+
 	public const NOT_CONFIRMED = 'No pudimos confirmar el beneficio de cliente frecuente con esos datos. Verás los precios para público general; si crees que es un error, continúa con tu reserva y lo revisaremos antes de confirmarla.';
 
 	/**
@@ -36,6 +48,14 @@ final class FrequentCheck {
 	 * @return array{frequent:bool,token?:string,message:string,email?:string,phone?:string}
 	 */
 	public static function identify( array $input ): array {
+		if ( ! self::automaticEnabled() ) {
+			// Salida B: no se busca a nadie ni se revela si existe; solo se registra la solicitud de revisión.
+			return array(
+				'frequent' => false,
+				'review'   => true,
+				'message'  => self::REVIEW_MESSAGE,
+			);
+		}
 		$name    = trim( sanitize_text_field( (string) ( $input['name'] ?? '' ) ) );
 		$contact = trim( sanitize_text_field( (string) ( $input['contact'] ?? '' ) ) );
 		$country = 'US' === strtoupper( (string) ( $input['phone_country'] ?? 'MX' ) ) ? 'US' : 'MX';
@@ -79,6 +99,9 @@ final class FrequentCheck {
 
 	/** Verificación vigente o null. */
 	public static function get( ?string $token ): ?array {
+		if ( ! self::automaticEnabled() ) {
+			return null; // Ningún token concede precio frecuente (SEG-04).
+		}
 		$token = (string) $token;
 		if ( ! preg_match( '/^[a-f0-9]{64}$/', $token ) ) {
 			return null;

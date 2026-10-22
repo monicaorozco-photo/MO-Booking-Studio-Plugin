@@ -508,4 +508,89 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		$this->assertFalse( EventBuilder::canInvite( 'x@demo.test' ) );
 		$this->assertTrue( EventBuilder::canInvite( 'monica@gmail.com' ) );
 	}
+
+	/** SEG-03 / AC-07: confirmar por excepción no invita; la acción explícita sí, una sola vez. */
+	public function test_exception_confirmation_does_not_invite(): void {
+		$service = $this->christmasService();
+		$this->google->connect();
+		$booking = $this->book( $service, self::START )['booking'];
+		Bookings::confirm( $booking['id'], 'Pagó en efectivo en el estudio; registro el pago mañana' );
+		SyncWorker::processQueue();
+		$this->assertSame( BookingStatus::CONFIRMED, Bookings::get( $booking['id'] )['status'] );
+		$this->assertCount( 1, $this->google->owned( 'internal' ) );
+		$this->assertStringStartsWith( 'MO CONFIRMADA', $this->google->owned( 'internal' )[0]['summary'] );
+		$this->assertCount( 0, $this->google->owned( 'client' ), 'Sin invitación.' );
+		$this->assertSame( 0, $this->google->invitations );
+		$audit = array_column( \MOBookingStudio\Infrastructure\Audit::forEntity( 'booking', $booking['id'] ), 'action' );
+		$this->assertContains( 'confirmed_by_exception', $audit );
+
+		try {
+			Bookings::inviteWithoutDeposit( $booking['id'], '  ' );
+			$this->fail( 'Exige motivo.' );
+		} catch ( DomainException $e ) {
+			$this->assertSame( 'reason_required', $e->errorCode() );
+		}
+		Bookings::inviteWithoutDeposit( $booking['id'], 'Clienta de confianza; paga el día de la sesión' );
+		Bookings::inviteWithoutDeposit( $booking['id'], 'Repetido por error' );
+		SyncWorker::processQueue();
+		SyncWorker::processQueue();
+		$this->assertCount( 1, $this->google->owned( 'client' ) );
+		$this->assertSame( 1, $this->google->invitations );
+		$audit = array_count_values( array_column( \MOBookingStudio\Infrastructure\Audit::forEntity( 'booking', $booking['id'] ), 'action' ) );
+		$this->assertSame( 1, $audit['invite_without_deposit'] );
+	}
+
+	/** SEG-03: confirmada por excepción y luego se registra el anticipo: entonces sí se invita. */
+	public function test_payment_after_exception_invites(): void {
+		$service = $this->christmasService();
+		$this->google->connect();
+		$booking = $this->book( $service, self::START )['booking'];
+		Bookings::confirm( $booking['id'], 'Excepción' );
+		SyncWorker::processQueue();
+		$this->assertSame( 0, $this->google->invitations );
+		Bookings::approvePayment( $booking['id'], array( 'amount_cents' => 50000, 'received_date' => '2026-10-20', 'form_key' => wp_generate_uuid4() ) );
+		SyncWorker::processQueue();
+		$this->assertSame( 1, $this->google->invitations );
+	}
+
+	/** Anticipo configurado en cero: confirmada al reservar e invitada. */
+	public function test_zero_deposit_invites_on_creation(): void {
+		$service = $this->christmasService( array( 'deposit_type' => 'fixed', 'deposit_value' => 0 ) );
+		$this->google->connect();
+		$booking = $this->book( $service, self::START )['booking'];
+		$this->assertSame( BookingStatus::CONFIRMED, $booking['status'] );
+		SyncWorker::processQueue();
+		$this->assertSame( 1, $this->google->invitations );
+	}
+
+	/** SEG-05: cambiar el calendario destino mueve los eventos propios, verifica y no reenvía invitaciones. */
+	public function test_destination_change_moves_own_events(): void {
+		$service = $this->christmasService();
+		$this->google->connect();
+		$confirmed = $this->approve( $this->book( $service, self::START )['booking'] );
+		$pending   = $this->book( $service, '2026-11-20T18:00:00Z' )['booking'];
+		$foreign   = $this->google->addExternal( FakeGoogle::DESTINATION, '2026-11-21T17:00:00Z', '2026-11-21T18:00:00Z' );
+		SyncWorker::processQueue();
+		$this->assertCount( 3, $this->google->owned() );
+
+		Connection::save( array( 'destination' => FakeGoogle::NEW_DEST ) );
+		$this->assertCount( 3, SyncWorker::pendingMigration() );
+		foreach ( array_unique( array_column( SyncWorker::pendingMigration(), 'booking_id' ) ) as $id ) {
+			\MOBookingStudio\Application\CalendarSync::enqueue( (int) $id );
+		}
+		$this->google->failNext = array( 503 ); // El primer movimiento falla y se reintenta.
+		SyncWorker::processQueue();
+		$this->clock->advance( '+10 minutes' );
+		SyncWorker::processQueue();
+
+		$this->assertCount( 0, SyncWorker::pendingMigration() );
+		$this->assertCount( 0, $this->google->owned(), 'No quedan eventos propios en el calendario anterior.' );
+		$this->assertCount( 3, $this->google->owned( null, FakeGoogle::NEW_DEST ) );
+		$this->assertArrayHasKey( $foreign, $this->google->events[ FakeGoogle::DESTINATION ], 'El evento ajeno no se toca.' );
+		$this->assertSame( 1, $this->google->invitations, 'Mover no reenvía la invitación.' );
+		$this->assertSame( 0, $this->google->cancellations );
+		$this->assertSame( 0, $this->google->count( 'DELETE', '/events/' ) );
+		$this->assertSame( 3, $this->google->moves );
+		unset( $confirmed, $pending );
+	}
 }

@@ -6,7 +6,7 @@ namespace MOBookingStudio\Infrastructure;
  * duplica ni borra datos. Todas las fechas se guardan en UTC (DATETIME).
  */
 final class Schema {
-	public const VERSION = '2';
+	public const VERSION = '3';
 	public const OPTION  = 'mo_booking_schema_version';
 
 	public static function tables(): array {
@@ -31,6 +31,8 @@ final class Schema {
 			'sync_jobs',
 			'calendar_events',
 			'conflicts',
+			'contracts',
+			'contract_versions',
 		);
 	}
 
@@ -121,6 +123,7 @@ final class Schema {
   needs_review tinyint(1) NOT NULL DEFAULT 0,
   review_note varchar(190) NOT NULL DEFAULT '',
   notes text,
+  archived_at datetime DEFAULT NULL,
   is_test tinyint(1) NOT NULL DEFAULT 0,
   created_at datetime NOT NULL,
   updated_at datetime NOT NULL,
@@ -143,6 +146,18 @@ final class Schema {
   timezone varchar(64) NOT NULL,
   participants smallint(5) unsigned NOT NULL DEFAULT 1,
   pets smallint(5) unsigned NOT NULL DEFAULT 0,
+  children smallint(5) unsigned DEFAULT NULL,
+  adults smallint(5) unsigned DEFAULT NULL,
+  important_info text,
+  contract_id bigint(20) unsigned DEFAULT NULL,
+  contract_version int(10) unsigned DEFAULT NULL,
+  contract_title varchar(190) NOT NULL DEFAULT '',
+  contract_body longtext,
+  contract_hash char(64) NOT NULL DEFAULT '',
+  contract_accepted_at datetime DEFAULT NULL,
+  invite_override tinyint(1) NOT NULL DEFAULT 0,
+  cancel_outcome varchar(20) NOT NULL DEFAULT '',
+  archived_at datetime DEFAULT NULL,
   client_category varchar(20) NOT NULL DEFAULT 'general',
   frequent_claim tinyint(1) NOT NULL DEFAULT 0,
   session_counted tinyint(1) NOT NULL DEFAULT 0,
@@ -412,6 +427,33 @@ final class Schema {
   PRIMARY KEY  (id),
   UNIQUE KEY booking_busy (booking_id,calendar_id(100),busy_start,busy_end),
   KEY status (status)
+) ENGINE=InnoDB $c;";
+
+		// 6.5: plantillas de contrato; cada edición publicada es una versión nueva e inmutable.
+		$sql[] = "CREATE TABLE {$t('contracts')} (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  name varchar(190) NOT NULL,
+  status varchar(20) NOT NULL DEFAULT 'active',
+  current_version int(10) unsigned NOT NULL DEFAULT 0,
+  draft_title varchar(190) NOT NULL DEFAULT '',
+  draft_body longtext,
+  is_test tinyint(1) NOT NULL DEFAULT 0,
+  created_at datetime NOT NULL,
+  updated_at datetime NOT NULL,
+  PRIMARY KEY  (id)
+) ENGINE=InnoDB $c;";
+
+		$sql[] = "CREATE TABLE {$t('contract_versions')} (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  contract_id bigint(20) unsigned NOT NULL,
+  version int(10) unsigned NOT NULL,
+  title varchar(190) NOT NULL,
+  body longtext NOT NULL,
+  body_hash char(64) NOT NULL,
+  created_by bigint(20) unsigned NOT NULL DEFAULT 0,
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY contract_version (contract_id,version)
 ) ENGINE=InnoDB $c;";
 
 		foreach ( $sql as $statement ) {

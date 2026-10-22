@@ -91,6 +91,12 @@ final class GooglePage {
 		$body .= '<li>Última revisión de empalmes: ' . esc_html( $d['last_scan_at'] ? Ui::localDateTime( gmdate( 'Y-m-d H:i:s', strtotime( $d['last_scan_at'] ) ), 'd/m/Y H:i' ) : 'todavía no' ) . '</li>';
 		$body .= '<li>Trabajos pendientes: <strong>' . (int) $jobs['pending'] . '</strong>' . ( $jobs['next'] ? ' · próximo ' . esc_html( Ui::localDateTime( $jobs['next'], 'd/m H:i' ) ) : '' ) . '</li>';
 		$body .= '<li>Trabajos fallidos: <strong>' . count( $jobs['failed'] ) . '</strong></li></ul>';
+		$migration = SyncWorker::pendingMigration();
+		if ( $migration ) {
+			// SEG-05: progreso de la migración al nuevo calendario destino.
+			$refs  = array_unique( array_column( $migration, 'public_ref' ) );
+			$body .= '<div class="notice notice-warning inline"><p><strong>Migración al nuevo calendario destino:</strong> ' . count( $migration ) . ' eventos de ' . count( $refs ) . ' reservas siguen en el calendario anterior (' . esc_html( implode( ', ', array_slice( $refs, 0, 20 ) ) ) . ( count( $refs ) > 20 ? '…' : '' ) . '). Se mueven con la sincronización; los errores aparecen abajo con "Reintentar".</p></div>';
+		}
 		$body .= Ui::formOpen( 'google_reconcile', array(), 'mo-inline-form' ) . Ui::button( 'Sincronizar y conciliar ahora', 'button-secondary' ) . '</form>';
 		if ( $jobs['failed'] ) {
 			$body .= '<table class="widefat striped"><thead><tr><th>Reserva</th><th>Error</th><th></th></tr></thead><tbody>';
@@ -169,6 +175,13 @@ final class GooglePage {
 		Audit::log( 'google', 0, 'calendars_saved', array( 'read' => count( $read ), 'destination_changed' => $before['destination'] !== $destination ) );
 		if ( '' === $before['destination'] ) {
 			self::enqueueActive();
+		} elseif ( $before['destination'] !== $destination ) {
+			// SEG-05: migración explícita de los eventos propios al nuevo destino.
+			$ids = array_unique( array_map( 'intval', array_column( SyncWorker::pendingMigration(), 'booking_id' ) ) );
+			foreach ( $ids as $id ) {
+				CalendarSync::enqueue( $id );
+			}
+			Audit::log( 'google', 0, 'destination_migration_started', array( 'from' => $before['destination'], 'to' => $destination, 'bookings' => count( $ids ) ) );
 		}
 	}
 

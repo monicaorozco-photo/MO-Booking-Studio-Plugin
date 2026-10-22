@@ -124,9 +124,12 @@ final class SyncWorker {
 			return;
 		}
 		self::upsert( $booking, 'internal', EventBuilder::internal( $booking ), $force );
-		if ( BookingStatus::CONFIRMED === $status ) {
+		$client = self::row( (int) $booking['id'], 'client' );
+		$active = $client && 'active' === $client['state'];
+		if ( BookingStatus::CONFIRMED === $status && ( $active || Bookings::inviteAllowed( $booking ) ) ) {
+			// SEG-03: solo con anticipo aprobado, anticipo cero o invitación explícita.
 			self::upsert( $booking, 'client', EventBuilder::client( $booking ), $force );
-		} else {
+		} elseif ( BookingStatus::CONFIRMED !== $status ) {
 			// Si volvió a pendiente (por ejemplo, reprogramación con nuevo anticipo), sin invitación.
 			self::remove( $booking, 'client' );
 		}
@@ -140,6 +143,9 @@ final class SyncWorker {
 
 	private static function upsert( array $booking, string $kind, array $body, bool $force ): void {
 		$row = self::row( (int) $booking['id'], $kind );
+		if ( $row && 'active' === $row['state'] && $row['calendar_id'] !== Connection::data()['destination'] ) {
+			$row = self::moveToDestination( $row );
+		}
 		$fp  = EventBuilder::fingerprint( $body );
 		if ( $row && 'active' === $row['state'] && $row['fingerprint'] === $fp && ! $force ) {
 			return;
@@ -198,6 +204,46 @@ final class SyncWorker {
 		if ( $invites && $isNew ) {
 			Audit::log( 'booking', (int) $booking['id'], 'google_invitation_sent', array( 'event' => 'client' ), 'system', 0 );
 		}
+	}
+
+	/**
+	 * SEG-05: el calendario destino cambió. Se mueve el evento propio, se verifica en el
+	 * calendario nuevo y solo entonces se actualiza el registro. Si el evento ya no existía
+	 * en el calendario anterior, se recreará en el nuevo. Un fallo deja el trabajo en la
+	 * cola para reintentar; nunca se borra nada del calendario anterior que no sea propio.
+	 */
+	private static function moveToDestination( array $row ): array {
+		$api         = new Api();
+		$destination = Connection::data()['destination'];
+		$from        = $row['calendar_id'];
+		$wpdb        = Db::wpdb();
+		try {
+			$api->moveEvent( $from, $row['event_id'], $destination, 'none' );
+			$moved = $api->getEvent( $destination, $row['event_id'] );
+			if ( ( $moved['extendedProperties']['private']['mo_owner'] ?? '' ) !== EventBuilder::siteKey() ) {
+				throw new GoogleException( 'permanent', 0, 'No se pudo verificar el evento movido.' );
+			}
+			$wpdb->update( Schema::table( 'calendar_events' ), array( 'calendar_id' => $destination, 'etag' => (string) ( $moved['etag'] ?? '' ) ), array( 'id' => $row['id'] ) );
+			Audit::log( 'booking', (int) $row['booking_id'], 'google_event_moved', array( 'kind' => $row['kind'], 'from' => $from, 'to' => $destination ), 'system', 0 );
+		} catch ( GoogleException $e ) {
+			if ( ! in_array( $e->type, array( 'not_found', 'gone' ), true ) ) {
+				throw $e;
+			}
+			// Ya no estaba en el calendario anterior: se creará de nuevo en el destino.
+			$wpdb->update( Schema::table( 'calendar_events' ), array( 'calendar_id' => $destination, 'state' => 'deleted' ), array( 'id' => $row['id'] ) );
+			Audit::log( 'booking', (int) $row['booking_id'], 'google_event_recreate', array( 'kind' => $row['kind'], 'from' => $from, 'to' => $destination ), 'system', 0 );
+		}
+		return self::row( (int) $row['booking_id'], $row['kind'] );
+	}
+
+	/** Reservas cuyos eventos todavía están en un calendario distinto del destino (SEG-05). */
+	public static function pendingMigration(): array {
+		$wpdb = Db::wpdb();
+		$dest = Connection::data()['destination'];
+		if ( '' === $dest ) {
+			return array();
+		}
+		return $wpdb->get_results( $wpdb->prepare( 'SELECT ce.booking_id, ce.kind, ce.calendar_id, b.public_ref FROM ' . Schema::table( 'calendar_events' ) . ' ce JOIN ' . Schema::table( 'bookings' ) . " b ON b.id = ce.booking_id WHERE ce.state = 'active' AND ce.calendar_id <> %s ORDER BY b.start_utc", $dest ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/** Borra solo eventos que el plugin registró como suyos (CAL-09). */

@@ -35,6 +35,7 @@ final class Portal {
 		'approved'   => 'Aprobado',
 		'rejected'   => 'No válido',
 		'correction' => 'Requiere corrección',
+		'replaced'   => 'Sustituido por una versión nueva',
 	);
 
 	public static function view( array $booking ): array {

@@ -24,18 +24,32 @@ define( 'MO_BOOKING_FILE', __FILE__ );
 define( 'MO_BOOKING_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MO_BOOKING_URL', plugin_dir_url( __FILE__ ) );
 
-if ( version_compare( PHP_VERSION, MO_BOOKING_MIN_PHP, '<' ) ) {
-	register_activation_hook( __FILE__, 'mo_booking_reject_activation' );
-	add_action( 'admin_notices', 'mo_booking_php_notice' );
-	return;
+/**
+ * SEG-06: requisitos del servidor. Si falta alguno, el plugin no se activa ni carga a
+ * medias; solo muestra un aviso comprensible.
+ */
+function mo_booking_missing_requirements() {
+	$missing = array();
+	if ( version_compare( PHP_VERSION, MO_BOOKING_MIN_PHP, '<' ) ) {
+		$missing[] = sprintf( 'PHP %1$s o superior (este sitio usa PHP %2$s)', MO_BOOKING_MIN_PHP, PHP_VERSION );
+	}
+	if ( ! extension_loaded( 'mbstring' ) ) {
+		$missing[] = 'la extensión mbstring de PHP';
+	}
+	if ( ! function_exists( 'sodium_crypto_secretbox' ) ) {
+		$missing[] = 'la extensión sodium (libsodium) de PHP, necesaria para cifrar la conexión con Google';
+	}
+	return $missing;
 }
 
 function mo_booking_php_message() {
-	return sprintf(
-		'MO Booking Studio necesita PHP %1$s o superior. Este sitio usa PHP %2$s. Pide a tu hosting actualizar PHP y vuelve a activar el plugin.',
-		MO_BOOKING_MIN_PHP,
-		PHP_VERSION
-	);
+	return 'MO Booking Studio no se puede activar porque falta: ' . implode( '; ', mo_booking_missing_requirements() ) . '. Pide a tu hosting que lo habilite y vuelve a activar el plugin.';
+}
+
+if ( mo_booking_missing_requirements() ) {
+	register_activation_hook( __FILE__, 'mo_booking_reject_activation' );
+	add_action( 'admin_notices', 'mo_booking_php_notice' );
+	return;
 }
 
 function mo_booking_reject_activation() {

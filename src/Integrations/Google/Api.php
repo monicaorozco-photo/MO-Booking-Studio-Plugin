@@ -197,6 +197,11 @@ final class Api {
 		return $this->request( 'PATCH', '/calendars/' . rawurlencode( $calendarId ) . '/events/' . rawurlencode( $eventId ), array( 'sendUpdates' => $sendUpdates ), $event, 'patchEvent' );
 	}
 
+	/** SEG-05: mueve un evento propio a otro calendario sin crear una copia ni reenviar la invitación. */
+	public function moveEvent( string $calendarId, string $eventId, string $destination, string $sendUpdates ): array {
+		return $this->request( 'POST', '/calendars/' . rawurlencode( $calendarId ) . '/events/' . rawurlencode( $eventId ) . '/move', array( 'destination' => $destination, 'sendUpdates' => $sendUpdates ), null, 'moveEvent' );
+	}
+
 	public function deleteEvent( string $calendarId, string $eventId, string $sendUpdates ): void {
 		$this->request( 'DELETE', '/calendars/' . rawurlencode( $calendarId ) . '/events/' . rawurlencode( $eventId ), array( 'sendUpdates' => $sendUpdates ), null, 'deleteEvent' );
 	}

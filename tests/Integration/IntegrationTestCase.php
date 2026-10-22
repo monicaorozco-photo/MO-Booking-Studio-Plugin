@@ -31,7 +31,8 @@ abstract class IntegrationTestCase extends TestCase {
 		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_mo_rl_%' OR option_name LIKE '_transient_timeout_mo_rl_%'" );
 		update_option( \MOBookingStudio\Infrastructure\Migrations::BACKUP_OPTION, Schema::VERSION );
 		Installer::upgrade();
-		Settings::update( array( 'uploads_verified' => 'ok', 'admin_email' => 'estudio@example.com' ) );
+		\MOBookingStudio\Infrastructure\PrivateStorage::ensure();
+		Settings::update( array( 'uploads_verified' => 'ok', 'uploads_verified_path' => \MOBookingStudio\Infrastructure\PrivateStorage::canonical( \MOBookingStudio\Infrastructure\PrivateStorage::dir() ), 'admin_email' => 'estudio@example.com' ) );
 		$this->clock = FixedClock::at( '2026-10-20T18:00:00Z' );
 		Plugin::setClock( $this->clock );
 		wp_set_current_user( 1 );

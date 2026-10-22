@@ -12,6 +12,7 @@ use MOBookingStudio\Integrations\Google\Connection;
 final class FakeGoogle {
 	public const DESTINATION = 'estudio@example.com';
 	public const BUSY_CAL    = 'ocupado@group.calendar.google.com';
+	public const NEW_DEST    = 'reservas2@group.calendar.google.com';
 
 	/** @var array<string,array<string,array>> calendario => id => evento */
 	public $events = array();
@@ -23,6 +24,8 @@ final class FakeGoogle {
 	public $invitations = 0;
 	/** Avisos de cancelación a invitados. */
 	public $cancellations = 0;
+	/** Eventos movidos de calendario. */
+	public $moves = 0;
 	/** @var int[] Códigos HTTP a devolver en las siguientes solicitudes a Calendar. */
 	public $failNext = array();
 	/** Google caído: toda solicitud falla con error de conexión. */
@@ -75,10 +78,10 @@ final class FakeGoogle {
 	}
 
 	/** Eventos vigentes del plugin en el calendario destino. */
-	public function owned( ?string $kind = null ): array {
+	public function owned( ?string $kind = null, string $calendar = self::DESTINATION ): array {
 		return array_values(
 			array_filter(
-				$this->events[ self::DESTINATION ] ?? array(),
+				$this->events[ $calendar ] ?? array(),
 				static function ( $e ) use ( $kind ) {
 					return 'cancelled' !== $e['status'] && isset( $e['extendedProperties']['private']['mo_owner'] )
 						&& ( null === $kind || $e['extendedProperties']['private']['mo_kind'] === $kind );
@@ -137,6 +140,7 @@ final class FakeGoogle {
 					'items' => array(
 						array( 'id' => self::DESTINATION, 'summary' => 'MO Reservas (prueba)', 'accessRole' => 'owner', 'primary' => true ),
 						array( 'id' => self::BUSY_CAL, 'summary' => 'Ocupado (prueba)', 'accessRole' => 'reader' ),
+						array( 'id' => self::NEW_DEST, 'summary' => 'MO Reservas 2', 'accessRole' => 'owner' ),
 					),
 				)
 			);
@@ -158,6 +162,18 @@ final class FakeGoogle {
 				$out[ $id ] = array( 'busy' => $blocks );
 			}
 			return $this->json( array( 'calendars' => $out ) );
+		}
+		if ( preg_match( '#^/calendars/([^/]+)/events/([^/]+)/move$#', $path, $m ) && 'POST' === $method ) {
+			$from = rawurldecode( $m[1] );
+			$id   = rawurldecode( $m[2] );
+			$to   = (string) ( $query['destination'] ?? '' );
+			if ( ! isset( $this->events[ $from ][ $id ] ) || 'cancelled' === $this->events[ $from ][ $id ]['status'] ) {
+				return $this->error( 404, 'notFound' );
+			}
+			$this->events[ $to ][ $id ] = $this->events[ $from ][ $id ];
+			unset( $this->events[ $from ][ $id ] );
+			++$this->moves;
+			return $this->json( $this->events[ $to ][ $id ] );
 		}
 		if ( preg_match( '#^/calendars/([^/]+)/events(?:/([^/]+))?$#', $path, $m ) ) {
 			$cal = rawurldecode( $m[1] );

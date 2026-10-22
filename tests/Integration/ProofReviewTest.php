@@ -58,6 +58,9 @@ final class ProofReviewTest extends IntegrationTestCase {
 		$v2 = Proofs::upload( $booking['id'], $this->fakeUpload( 'pdf' ), false );
 		$this->assertSame( 2, $v2['version'] );
 		$this->assertCount( 2, Bookings::proofs( $booking['id'] ), 'La versión anterior se conserva.' );
+		$byVersion = array_column( Bookings::proofs( $booking['id'] ), 'status', 'version' );
+		$this->assertSame( 'replaced', $byVersion[1], 'La versión anterior queda marcada como sustituida.' );
+		$this->assertSame( 'pending', $byVersion[2] );
 		$this->assertFalse( Portal::view( Bookings::get( $booking['id'] ) )['can_upload'], 'Ya no puede subir más mientras se revisa.' );
 
 		try {
@@ -142,5 +145,33 @@ final class ProofReviewTest extends IntegrationTestCase {
 		$this->assertNotNull( $copy );
 		$this->assertStringStartsWith( "\x89PNG", $copy );
 		$this->assertStringNotContainsString( '<script>', $copy );
+	}
+
+	/** 8.4: si el registro en la base de datos falla, el archivo guardado no queda huérfano. */
+	public function test_failed_insert_leaves_no_orphan_file(): void {
+		$service = $this->christmasService();
+		$booking = $this->book( $service, self::START )['booking'];
+		$dir     = \MOBookingStudio\Infrastructure\PrivateStorage::dir();
+		$count   = static function () use ( $dir ) {
+			$n = 0;
+			foreach ( new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $dir, \FilesystemIterator::SKIP_DOTS ) ) as $f ) {
+				$n += preg_match( '/[a-f0-9]{40}\.(png|pdf|jpg)$/', $f->getFilename() ) ? 1 : 0;
+			}
+			return $n;
+		};
+		$before = $count();
+		$break  = static function ( $sql ) {
+			return 0 === strpos( ltrim( $sql ), 'INSERT INTO `' . Schema::table( 'proofs' ) ) ? 'INSERT INTO tabla_que_no_existe VALUES (1)' : $sql;
+		};
+		add_filter( 'query', $break );
+		try {
+			Proofs::upload( $booking['id'], $this->fakeUpload( 'png' ), false );
+			$this->fail( 'Debió fallar el registro.' );
+		} catch ( \Throwable $e ) {
+			$this->assertSame( $before, $count(), 'El archivo se retiró.' );
+		} finally {
+			remove_filter( 'query', $break );
+		}
+		$this->assertCount( 0, Bookings::proofs( $booking['id'] ) );
 	}
 }

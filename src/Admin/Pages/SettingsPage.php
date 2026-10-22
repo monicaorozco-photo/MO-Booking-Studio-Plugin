@@ -52,7 +52,16 @@ final class SettingsPage {
 		}
 		$body .= Ui::row( 'Página de reservas', Ui::select( 'booking_page_id', $pages, (string) $s['booking_page_id'] ), 'Página con el shortcode o el widget de Elementor.', 'booking_page_id' );
 		$body .= Ui::row( 'Página "Mi reserva" (portal)', Ui::select( 'portal_page_id', $pages, (string) $s['portal_page_id'] ), 'Debe contener [mo_booking_portal]. Sin página se usa ' . home_url( '/?mo_portal=1' ) . '.', 'portal_page_id' );
-		$body .= Ui::row( 'Al desinstalar', Ui::checkbox( 'delete_on_uninstall', (bool) $s['delete_on_uninstall'], 'Borrar todos los datos del plugin al eliminarlo (reservas, clientes, pagos y comprobantes). No se puede deshacer.' ) );
+		// SEG-02: la ruta exacta se muestra antes de activar el borrado y se confirma por separado.
+		$purgeDir  = PrivateStorage::canonical( PrivateStorage::dir() );
+		$confirmed = (bool) $s['delete_on_uninstall'] && $s['delete_confirm_path'] === $purgeDir;
+		$body     .= Ui::row(
+			'Al desinstalar',
+			Ui::checkbox( 'delete_on_uninstall', $confirmed, 'Borrar todos los datos del plugin al eliminarlo (reservas, clientes, pagos, contratos y comprobantes). No se puede deshacer.' ) .
+			'<p>Comprobantes que se borrarían (solo los archivos registrados por el plugin) en: <code>' . esc_html( $purgeDir ) . '</code></p>' .
+			'<p><label>Confirmación: escribe <strong>BORRAR</strong> ' . Ui::input( 'delete_confirm', '', 'text', array( 'autocomplete' => 'off', 'size' => 10 ) ) . '</label></p>',
+			$confirmed ? 'Activado y confirmado para esta ruta exacta. Si la ruta cambia, la confirmación deja de valer.' : 'Desactivado: al eliminar el plugin se conservan todos los datos.'
+		);
 		echo Ui::card( 'Páginas, condiciones y datos', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
 
 		echo '<p class="mo-sticky-actions">' . Ui::button( 'Guardar ajustes' ) . '</p></form>'; // phpcs:ignore WordPress.Security.EscapeOutput
@@ -64,7 +73,18 @@ final class SettingsPage {
 			'public' => 'PÚBLICO: los archivos se pueden descargar por URL',
 			'error'  => 'No se pudo verificar',
 		);
-		$body   = '<p>Carpeta: <code>' . esc_html( PrivateStorage::dir() ) . '</code>' . ( PrivateStorage::isOutsideWebRoot() ? ' (fuera de la carpeta pública)' : '' ) . '</p>';
+		$where  = array( 'outside' => 'fuera de WordPress y del document root', 'uploads' => 'dentro de uploads: requiere comprobar que el servidor niega el acceso por URL', 'site' => 'dentro del sitio: no se puede verificar; usa una carpeta fuera de public_html' );
+		$body   = '<p>Carpeta: <code>' . esc_html( PrivateStorage::canonical( PrivateStorage::dir() ) ) . '</code> (' . esc_html( $where[ PrivateStorage::location() ] ) . ')</p>';
+		$problem = PrivateStorage::pathProblem( PrivateStorage::dir() );
+		if ( '' !== $problem ) {
+			$body .= '<div class="notice notice-error inline"><p>' . esc_html( $problem ) . '</p></div>';
+		}
+		if ( Settings::get( 'uploads_reason' ) ) {
+			$body .= '<p class="description">Resultado de la última verificación: ' . esc_html( (string) Settings::get( 'uploads_reason' ) ) . '</p>';
+		}
+		if ( 'ok' === Settings::get( 'uploads_verified' ) && ! PrivateStorage::uploadsEnabled() ) {
+			$body .= '<p><strong>La carpeta cambió o se verificó con una versión anterior: vuelve a verificar.</strong></p>';
+		}
 		$body  .= '<p>Estado: <strong>' . esc_html( $labels[ (string) Settings::get( 'uploads_verified' ) ] ?? '' ) . '</strong>' . ( Settings::get( 'uploads_checked_at' ) ? ' · ' . esc_html( (string) Settings::get( 'uploads_checked_at' ) ) : '' ) . '</p>';
 		$body  .= '<p class="description">La carga de comprobantes solo se habilita si el servidor no deja descargar los archivos con una URL directa. Lo más seguro es definir <code>MO_BOOKING_PRIVATE_DIR</code> en wp-config.php con una carpeta fuera de public_html.</p>';
 		$body  .= Ui::formOpen( 'verify_storage' ) . Ui::button( 'Verificar almacenamiento privado', 'button-secondary' ) . '</form>';
@@ -91,6 +111,13 @@ final class SettingsPage {
 	}
 
 	public static function save( array $p ): void {
+		$wantsDelete = ! empty( $p['delete_on_uninstall'] );
+		$current     = Settings::all();
+		$keepCurrent = $wantsDelete && $current['delete_on_uninstall'] && $current['delete_confirm_path'] === PrivateStorage::canonical( PrivateStorage::dir() );
+		$deleteOk    = $wantsDelete && ( $keepCurrent || 'BORRAR' === trim( (string) ( $p['delete_confirm'] ?? '' ) ) );
+		if ( $wantsDelete && ! $deleteOk ) {
+			throw new DomainException( 'confirm_required', 'Para activar el borrado al desinstalar escribe BORRAR en la confirmación. No se guardaron los ajustes.' );
+		}
 		$tz = sanitize_text_field( (string) ( $p['timezone'] ?? 'America/Ciudad_Juarez' ) );
 		TimeZoneResolver::resolve( $tz );
 		$num = static function ( $key, float $min, float $max ) use ( $p ) {
@@ -125,7 +152,8 @@ final class SettingsPage {
 				'privacy_url'         => esc_url_raw( (string) ( $p['privacy_url'] ?? '' ) ),
 				'booking_page_id'     => (int) ( $p['booking_page_id'] ?? 0 ),
 				'portal_page_id'      => (int) ( $p['portal_page_id'] ?? 0 ),
-				'delete_on_uninstall' => ! empty( $p['delete_on_uninstall'] ),
+				'delete_on_uninstall' => $deleteOk,
+				'delete_confirm_path' => $deleteOk ? PrivateStorage::canonical( PrivateStorage::dir() ) : '',
 			)
 		);
 		update_option( Clients::FREQUENT_THRESHOLD_OPTION, max( 1, (int) ( $p['frequent_threshold'] ?? 3 ) ), false );

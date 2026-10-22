@@ -36,6 +36,9 @@ final class Settings {
 			'delete_on_uninstall'  => false,
 			'uploads_verified'     => '',   // '' | ok | public | error
 			'uploads_checked_at'   => '',
+			'uploads_verified_path' => '',  // SEG-01: ruta canónica que se verificó.
+			'uploads_reason'       => '',
+			'delete_confirm_path'  => '',   // SEG-02: ruta exacta confirmada para borrar al desinstalar.
 		);
 	}
 

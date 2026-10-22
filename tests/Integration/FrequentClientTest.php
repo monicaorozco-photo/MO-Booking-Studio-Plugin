@@ -19,91 +19,62 @@ final class FrequentClientTest extends IntegrationTestCase {
 		return Clients::create( array( 'name' => 'Rosa María López', 'email' => 'rosa@example.com', 'phone' => '656 222 3344', 'historic_sessions' => $sessions ) );
 	}
 
-	public function test_frequent_client_found_by_email_or_phone_with_name_support(): void {
-		$this->frequentClient( 3 );
-		$byEmail = FrequentCheck::identify( array( 'name' => 'rosa lopez', 'contact' => 'ROSA@example.com' ) );
-		$this->assertTrue( $byEmail['frequent'] );
-		$this->assertSame( 64, strlen( $byEmail['token'] ) );
-		$byPhone = FrequentCheck::identify( array( 'name' => 'Rosa', 'contact' => '(656) 222-3344' ) );
-		$this->assertTrue( $byPhone['frequent'] );
-		// La respuesta no expone datos del expediente.
-		$this->assertArrayNotHasKey( 'sessions', $byEmail );
-		$this->assertStringNotContainsString( 'López', json_encode( $byEmail ) );
+	/** SEG-04 / Salida B: identificarse nunca concede precio ni revela si el expediente existe. */
+	public function test_identify_is_only_a_review_request(): void {
+		$this->frequentClient( 9 );
+		$known   = FrequentCheck::identify( array( 'name' => 'Rosa López', 'contact' => 'rosa@example.com' ) );
+		$unknown = FrequentCheck::identify( array( 'name' => 'Nadie', 'contact' => 'nadie@example.com' ) );
+		$this->assertSame( $known, $unknown, 'Misma respuesta exista o no la persona.' );
+		$this->assertFalse( $known['frequent'] );
+		$this->assertTrue( $known['review'] );
+		$this->assertArrayNotHasKey( 'token', $known );
+		$this->assertFalse( FrequentCheck::automaticEnabled() );
 	}
 
-	public function test_not_confirmed_cases_share_one_message(): void {
-		$this->frequentClient( 2 ); // Menos sesiones que el umbral.
-		$few      = FrequentCheck::identify( array( 'name' => 'Rosa', 'contact' => 'rosa@example.com' ) );
-		$unknown  = FrequentCheck::identify( array( 'name' => 'Nadie', 'contact' => 'nadie@example.com' ) );
-		$wrongNm  = FrequentCheck::identify( array( 'name' => 'Pedro', 'contact' => 'rosa@example.com' ) );
-		foreach ( array( $few, $unknown, $wrongNm ) as $r ) {
-			$this->assertFalse( $r['frequent'] );
-			$this->assertArrayNotHasKey( 'token', $r );
-			$this->assertSame( FrequentCheck::NOT_CONFIRMED, $r['message'] );
-		}
-	}
-
-	public function test_manual_category_counts_and_shared_contact_is_not_resolved(): void {
-		Clients::create( array( 'name' => 'Ana Uno', 'email' => 'ana1@example.com', 'phone' => '656 999 0000', 'manual_category' => 'frequent' ) );
-		$this->assertTrue( FrequentCheck::identify( array( 'name' => 'Ana', 'contact' => 'ana1@example.com' ) )['frequent'] );
-		Clients::create( array( 'name' => 'Ana Dos', 'email' => 'ana2@example.com', 'phone' => '656 999 0000', 'historic_sessions' => 9 ) );
-		$this->assertFalse( FrequentCheck::identify( array( 'name' => 'Ana', 'contact' => '6569990000' ) )['frequent'] );
-	}
-
-	public function test_frequent_presale_price_end_to_end_with_single_link(): void {
+	/** Ni un token ni la cabecera de frecuente cambian el precio en calendario, cotización o reserva. */
+	public function test_public_price_is_always_general(): void {
 		$service = $this->christmasTableService();
-		$clientId = $this->frequentClient( 3 );
-		$check    = FrequentCheck::identify( array( 'name' => 'Rosa', 'contact' => 'rosa@example.com' ) );
+		$this->frequentClient( 9 );
+		$token   = str_repeat( 'a', 64 );
+		set_transient( 'mo_fv_' . substr( hash( 'sha256', $token ), 0, 40 ), array( 'client_id' => 1, 'email' => 'rosa@example.com', 'phone' => null ), HOUR_IN_SECONDS );
+		$this->assertSame( 'general', FrequentCheck::category( $token ) );
 
-		$general  = Catalog::availability( $service, '2026-11-01', '2026-11-30' );
-		$frequent = Catalog::availability( $service, '2026-11-01', '2026-11-30', FrequentCheck::category( $check['token'] ) );
-		$g        = array_column( $general['days'], null, 'date' )['2026-11-20'];
-		$f        = array_column( $frequent['days'], null, 'date' )['2026-11-20'];
-		$this->assertSame( 140000, $g['price'] );
-		$this->assertSame( 120000, $f['price'] );
-		$this->assertSame( 'presale', $g['price_type'] );
-		$this->assertTrue( $g['special'] );
-		$this->assertStringContainsString( 'Preventa hasta el sábado 31 de octubre de 2026, 23:59', $general['presale_txt'] );
-
-		$quote   = Catalog::quote( $service, array( 'start' => self::NOV20, 'participants' => 6, 'frequent_token' => $check['token'] ) );
-		$this->assertSame( 120000, $quote['total'] );
-		$booking = Bookings::create( $service, array_merge( $this->contact( array( 'name' => 'Rosa López', 'email' => 'rosa@example.com', 'phone' => '656 000 0000' ) ), array( 'quote_id' => $quote['quote_id'], 'idempotency_key' => wp_generate_uuid4(), 'frequent_token' => $check['token'], 'frequent_claim' => true ) ) )['booking'];
-		$this->assertSame( 'frequent', $booking['client_category'] );
-		$this->assertSame( 120000, $booking['total_cents'] );
-		$this->assertSame( $clientId, $booking['client_id'] );
-		$this->assertSame( 'verified_by_contact', $booking['quote']['frequent_check'] );
-
-		// Después de la fecha límite, el mismo enlace muestra precios regulares.
-		$this->clock->advance( '+12 days' );
-		$after = array_column( Catalog::availability( $service, '2026-11-01', '2026-11-30' )['days'], null, 'date' )['2026-11-25'];
-		$this->assertSame( 160000, $after['price'] );
-		$this->assertSame( 'regular', $after['price_type'] );
-		$afterF = array_column( Catalog::availability( $service, '2026-11-01', '2026-11-30', 'frequent' )['days'], null, 'date' )['2026-11-25'];
-		$this->assertSame( 140000, $afterF['price'] );
+		$quote = Catalog::quote( $service, array( 'start' => self::NOV20, 'participants' => 6, 'frequent_token' => $token ) );
+		$this->assertSame( 140000, $quote['total'], 'Precio general de preventa.' );
+		$booking = Bookings::create( $service, array_merge( $this->contact( array( 'name' => 'Rosa López', 'email' => 'rosa@example.com' ) ), array( 'quote_id' => $quote['quote_id'], 'idempotency_key' => wp_generate_uuid4(), 'frequent_token' => $token, 'frequent_claim' => true ) ) )['booking'];
+		$this->assertSame( 'general', $booking['client_category'] );
+		$this->assertSame( 140000, $booking['total_cents'] );
+		$this->assertSame( 1, $booking['frequent_claim'], 'Queda como solicitud de revisión.' );
 	}
 
-	public function test_frequent_price_requires_same_contact_and_valid_token(): void {
+	/** La administradora aplica la tarifa frecuente con una acción auditada, conservando la fecha de solicitud (preventa). */
+	public function test_admin_applies_frequent_price_with_audit(): void {
 		$service = $this->christmasTableService();
-		$this->frequentClient( 3 );
-		$check = FrequentCheck::identify( array( 'name' => 'Rosa', 'contact' => 'rosa@example.com' ) );
-		$quote = Catalog::quote( $service, array( 'start' => self::NOV20, 'participants' => 6, 'frequent_token' => $check['token'] ) );
+		$booking = $this->book( $service, self::NOV20, array( 'frequent_claim' => true ) )['booking'];
+		$this->clock->advance( '+12 days' ); // Ya terminó la preventa.
 		try {
-			Bookings::create( $service, array_merge( $this->contact( array( 'email' => 'otra@example.com', 'phone' => '656 000 0001' ) ), array( 'quote_id' => $quote['quote_id'], 'idempotency_key' => wp_generate_uuid4(), 'frequent_token' => $check['token'] ) ) );
-			$this->fail( 'Se esperaba rechazo por contacto distinto.' );
+			Bookings::recalculate( $booking['id'], 'frequent', '', $booking['version'] );
+			$this->fail( 'Exige motivo.' );
 		} catch ( DomainException $e ) {
-			$this->assertSame( 'frequent_contact_mismatch', $e->errorCode() );
+			$this->assertSame( 'reason_required', $e->errorCode() );
 		}
-		// Un token inventado no da precio de frecuente.
-		$fake = Catalog::quote( $service, array( 'start' => self::NOV20, 'participants' => 6, 'frequent_token' => str_repeat( 'a', 64 ) ) );
-		$this->assertSame( 140000, $fake['total'] );
+		$after = Bookings::recalculate( $booking['id'], 'frequent', 'Verifiqué 4 sesiones en mi registro', $booking['version'] );
+		$this->assertSame( 'frequent', $after['client_category'] );
+		$this->assertSame( 120000, $after['total_cents'], 'Frecuente con preventa: se respeta la fecha de la solicitud.' );
+		$audit = array_column( \MOBookingStudio\Infrastructure\Audit::forEntity( 'booking', $booking['id'] ), 'action' );
+		$this->assertContains( 'recalculated', $audit );
+
+		// Después de la preventa, el mismo enlace muestra los precios regulares.
+		$later = array_column( Catalog::availability( $service, '2026-11-01', '2026-11-30' )['days'], null, 'date' )['2026-11-25'];
+		$this->assertSame( 160000, $later['price'] );
+		$this->assertSame( 'regular', $later['price_type'] );
 	}
 
 	public function test_test_data_uses_price_table(): void {
 		TestData::load();
 		$service = \MOBookingStudio\Application\Services::findBySlug( 'prueba-minis-navidenas-2026' );
 		$this->assertCount( 2, $service['price_table']['rows'] );
-		$this->assertTrue( FrequentCheck::identify( array( 'name' => 'Frecuente', 'contact' => 'frecuente3@example.com' ) )['frequent'] );
-		$this->assertFalse( FrequentCheck::identify( array( 'name' => 'Beneficio', 'contact' => 'pendiente@example.com' ) )['frequent'] );
+		$this->assertFalse( FrequentCheck::identify( array( 'name' => 'Frecuente', 'contact' => 'frecuente3@example.com' ) )['frequent'], 'Salida B.' );
 		$days = Catalog::availability( $service, '2026-11-01', '2026-12-31' );
 		$this->assertSame( 150, array_sum( array_column( $days['days'], 'available' ) ) );
 		TestData::clear();

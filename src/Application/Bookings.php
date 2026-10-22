@@ -58,6 +58,12 @@ final class Bookings {
 		foreach ( array( 'id', 'service_id', 'service_version', 'client_id', 'resource_id', 'participants', 'pets', 'total_cents', 'deposit_cents', 'version', 'frequent_claim', 'session_counted', 'is_test' ) as $key ) {
 			$row[ $key ] = (int) $row[ $key ];
 		}
+		foreach ( array( 'children', 'adults', 'contract_id', 'contract_version' ) as $key ) {
+			$row[ $key ] = isset( $row[ $key ] ) && null !== $row[ $key ] ? (int) $row[ $key ] : null;
+		}
+		$row['invite_override'] = (int) ( $row['invite_override'] ?? 0 );
+		$row['important_info']  = (string) ( $row['important_info'] ?? '' );
+		$row['archived']        = ! empty( $row['archived_at'] );
 		$row['start']   = Db::fromSql( $row['start_utc'] );
 		$row['end']     = Db::fromSql( $row['end_utc'] );
 		$row['expires'] = Db::fromSql( $row['expires_at'] );
@@ -135,6 +141,43 @@ final class Bookings {
 			}
 		}
 		return Ledger::summarize( self::movements( $booking['id'] ), $booking['total_cents'], $booking['deposit_cents'], $pending );
+	}
+
+	/**
+	 * SEG-03: el evento del cliente (invitación de Google) depende de una condición
+	 * independiente del estado: anticipo aprobado, anticipo configurado en cero o la acción
+	 * explícita "Invitar al cliente sin anticipo". Una cita ya invitada conserva su evento.
+	 */
+	public static function inviteAllowed( array $booking ): bool {
+		if ( BookingStatus::CONFIRMED !== $booking['status'] ) {
+			return false;
+		}
+		if ( 0 === (int) $booking['deposit_cents'] || ! empty( $booking['invite_override'] ) ) {
+			return true;
+		}
+		return self::summary( $booking )['deposit_covered'];
+	}
+
+	/** SEG-03: acción explícita, con motivo, para invitar a una cita confirmada sin anticipo cubierto. */
+	public static function inviteWithoutDeposit( int $bookingId, string $reason ): array {
+		$reason = trim( sanitize_textarea_field( $reason ) );
+		if ( '' === $reason ) {
+			throw new DomainException( 'reason_required', 'Escribe el motivo para invitar sin anticipo.' );
+		}
+		Db::transaction(
+			static function () use ( $bookingId, $reason ) {
+				$booking = self::get( $bookingId, true );
+				if ( BookingStatus::CONFIRMED !== $booking['status'] ) {
+					throw new DomainException( 'invalid_transition', 'Solo se puede invitar a una cita confirmada.', 409 );
+				}
+				if ( ! empty( $booking['invite_override'] ) ) {
+					return;
+				}
+				self::update( $booking, array( 'invite_override' => 1 ) );
+				Audit::log( 'booking', $bookingId, 'invite_without_deposit', array( 'reason' => $reason ) );
+			}
+		);
+		return self::get( $bookingId );
 	}
 
 	// ----- Creación -----
@@ -592,6 +635,8 @@ final class Bookings {
 					Audit::log( 'booking', $bookingId, 'reconciliation_needed', array( 'reason' => 'Pago registrado en una reserva que ya no está activa. El horario no se recupera.' ) );
 					$event = null;
 				}
+				// El pago puede habilitar la invitación de una cita ya confirmada (SEG-03).
+				CalendarSync::enqueue( $bookingId );
 				return array( 'payment_id' => $paymentId, 'event' => $event );
 			}
 		);
@@ -766,6 +811,10 @@ final class Bookings {
 				}
 				self::transition( $booking, BookingStatus::CONFIRMED, '' !== trim( $override ) ? 'Excepción: ' . $override : 'Cita aprobada.', array( 'expires_at' => null, 'correction_until' => null ) );
 				self::holdIndefinitely( $bookingId );
+				if ( ! $summary['deposit_covered'] ) {
+					// SEG-03: la excepción queda auditada y NO invita al cliente.
+					Audit::log( 'booking', $bookingId, 'confirmed_by_exception', array( 'reason' => sanitize_textarea_field( $override ), 'deposit_missing' => $summary['deposit_missing'] ) );
+				}
 			}
 		);
 		$booking = self::get( $bookingId );

@@ -8,7 +8,7 @@ final class Installer {
 	public const CRON_HOOK = 'mo_booking_process_queue';
 
 	public static function activate(): void {
-		if ( version_compare( PHP_VERSION, MO_BOOKING_MIN_PHP, '<' ) ) {
+		if ( mo_booking_missing_requirements() ) {
 			mo_booking_reject_activation();
 			return;
 		}

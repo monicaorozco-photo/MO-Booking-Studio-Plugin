@@ -60,8 +60,24 @@ final class Proofs {
 		$hash = hash_file( 'sha256', $tmp );
 		$now  = Plugin::clock()->now();
 
-		$result = Db::transaction(
-			static function () use ( $bookingId, $tmp, $ext, $hash, $size, $file, $now ) {
+		$stored = null;
+		try {
+			$result = self::storeAndRegister( $bookingId, $tmp, $ext, $hash, $size, $file, $now, $stored );
+		} catch ( \Throwable $e ) {
+			// 8.4: si el registro falló después de guardar el archivo, no se deja un huérfano.
+			if ( $stored ) {
+				PrivateStorage::remove( $stored );
+			}
+			throw $e;
+		}
+		Notifications::bookingEvent( 'proof_received', Bookings::get( $bookingId ), array( 'proof_id' => $result['proof_id'] ) );
+		return $result;
+	}
+
+	/** @param string|null $stored Recibe el nombre interno en cuanto el archivo se guarda. */
+	private static function storeAndRegister( int $bookingId, string $tmp, string $ext, string $hash, int $size, array $file, \DateTimeImmutable $now, ?string &$stored ): array {
+		return Db::transaction(
+			static function () use ( $bookingId, $tmp, $ext, $hash, $size, $file, $now, &$stored ) {
 				$booking = Bookings::get( $bookingId, true );
 				$service = Services::find( $booking['service_id'] );
 				// Mismos bloqueos que una reserva nueva: si la retención vence en este instante
@@ -112,6 +128,8 @@ final class Proofs {
 					'proof_insert'
 				);
 				$proofId = (int) $wpdb->insert_id;
+				// 7.3: la versión anterior queda marcada como sustituida y deja de presentarse como vigente.
+				$wpdb->query( $wpdb->prepare( "UPDATE $table SET status = 'replaced' WHERE booking_id = %d AND id <> %d AND status IN ('pending', 'correction')", $bookingId, $proofId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 				// DEC-02: recibido a tiempo, la reserva no vence mientras está en revisión.
 				Bookings::transition( $booking, BookingStatus::PAYMENT_REVIEW, 1 === $version ? 'Comprobante recibido a tiempo.' : 'Comprobante sustituto recibido a tiempo.', array( 'expires_at' => null, 'correction_until' => null ) );
@@ -136,8 +154,6 @@ final class Proofs {
 				);
 			}
 		);
-		Notifications::bookingEvent( 'proof_received', Bookings::get( $bookingId ), array( 'proof_id' => $result['proof_id'] ) );
-		return $result;
 	}
 
 	public const LATE_MESSAGE = 'Pasaste el tiempo límite para enviar tu anticipo. Realiza de nuevo tu reserva.';

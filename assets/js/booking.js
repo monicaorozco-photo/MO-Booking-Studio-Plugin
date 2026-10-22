@@ -217,70 +217,9 @@
 			html += '<button type="button" class="mo-booking__choice" data-action="new-client"><span class="mo-booking__choice-title">' + esc(t('new_title', 'Soy cliente nuevo')) + '</span>' + sub(t('new_text', 'Ver fechas y precios', true)) + '</button>';
 			html += '<button type="button" class="mo-booking__choice" data-action="returning"><span class="mo-booking__choice-title">' + esc(t('returning_title', 'Ya me he tomado fotos con ustedes')) + '</span>' + sub(t('returning_text', 'Revisamos si aplica tu precio de cliente frecuente', true)) + '</button>';
 			html += '</div>';
-		} else if (s.welcome === 'identify') {
-			html += '<form data-form="identify" novalidate>';
-			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>' + esc(t('identify_title', '¡Qué gusto verte de nuevo!')) + '</h3>';
-			var identifyText = t('identify_text', 'Escribe tu nombre y el correo o teléfono con el que reservaste antes.', true);
-			if (identifyText) { html += '<p>' + esc(identifyText) + '</p>'; }
-			html += this.field('name', 'Nombre', '<input class="mo-booking__input" type="text" id="mo-f-name" name="name" autocomplete="name" value="' + esc(s.form.name) + '" required>');
-			html += '<div class="mo-booking__field"><label class="mo-booking__label" for="mo-f-contact">Correo o teléfono</label><div class="mo-booking__phone">' +
-				'<select class="mo-booking__input mo-booking__country" name="phone_country" aria-label="País del teléfono"><option value="MX">México +52</option><option value="US"' + (s.form.phone_country === 'US' ? ' selected' : '') + '>EE. UU. +1</option></select>' +
-				'<input class="mo-booking__input" type="text" id="mo-f-contact" name="contact" autocomplete="email" value="' + esc(s.identifyContact || '') + '" required></div>' +
-				'<p class="mo-booking__help">El país solo se usa si escribes un teléfono.</p><p class="mo-booking__field-error" data-error-for="contact" role="alert"></p></div>';
-			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="welcome-back">Atrás</button><button type="submit" class="mo-booking__button mo-booking__button--primary">Revisar</button></div>';
-			html += '</form>';
-		} else if (s.welcome === 'not-found') {
-			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>No pudimos confirmarlo</h3>';
-			html += '<p>' + esc(s.identifyMessage) + '</p>';
-			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="returning">Intentar con otros datos</button><button type="button" class="mo-booking__button mo-booking__button--primary" data-action="continue-general">Continuar</button></div>';
 		}
 		html += '</section>';
 		return html;
-	};
-
-	App.prototype.submitIdentify = function (form) {
-		var self = this;
-		var s = this.state;
-		var data = new window.FormData(form);
-		s.form.name = String(data.get('name') || '');
-		s.identifyContact = String(data.get('contact') || '');
-		s.form.phone_country = String(data.get('phone_country') || 'MX');
-		if (s.form.name.trim().length < 2) { this.showFieldError('name', 'Escribe tu nombre.'); return; }
-		if (s.identifyContact.trim().length < 5) { this.showFieldError('contact', 'Escribe tu correo o teléfono.'); return; }
-		if (this.config.preview) { s.frequentToken = null; s.form.frequent_claim = true; this.openCalendar(); return; }
-		var button = form.querySelector('button[type=submit]');
-		button.disabled = true;
-		button.textContent = 'Revisando…';
-		this.api('services/' + encodeURIComponent(this.config.service) + '/identify', {
-			body: { name: s.form.name, contact: s.identifyContact, phone_country: s.form.phone_country }
-		}).then(function (res) {
-			button.disabled = false;
-			button.textContent = 'Revisar';
-			if (!res.ok) {
-				var field = M.errorField(res);
-				if (!field || !self.showFieldError(field, M.errorMessage(res))) {
-					s.message = M.errorMessage(res); s.messageOk = false;
-					self.render();
-				}
-				return;
-			}
-			s.form.frequent_claim = true;
-			if (res.data.frequent) {
-				s.frequentToken = res.data.token;
-				s.verifiedEmail = res.data.email || '';
-				s.verifiedPhone = res.data.phone || '';
-				if (s.verifiedEmail) { s.form.email = s.verifiedEmail; }
-				if (s.verifiedPhone) { s.form.phone = s.verifiedPhone; }
-				self.openCalendar();
-				s.message = res.data.message;
-				s.messageOk = true;
-				return;
-			}
-			s.frequentToken = null;
-			s.identifyMessage = res.data.message;
-			s.welcome = 'not-found';
-			self.render();
-		});
 	};
 
 	App.prototype.renderCalendar = function () {
@@ -717,9 +656,16 @@
 			this.openCalendar();
 			return;
 		}
-		if (name === 'returning') { s.welcome = 'identify'; this.setStep(0); return; }
-		if (name === 'welcome-back') { s.welcome = 'choose'; s.frequentToken = null; this.setStep(0); return; }
-		if (name === 'continue-general') { s.frequentToken = null; s.form.frequent_claim = true; this.openCalendar(); return; }
+		if (name === 'returning') {
+			// Salida B (SEG-04): solicitud de revisión, siempre con precios para público general.
+			s.frequentToken = null;
+			s.form.frequent_claim = true;
+			this.openCalendar();
+			s.message = this.config.frequentReview || '';
+			s.messageOk = true;
+			return;
+		}
+		if (name === 'welcome-back') { s.welcome = 'choose'; s.form.frequent_claim = false; this.setStep(0); return; }
 		if (name === 'to-details') { if (s.selectedSlot) { this.setStep(2); } return; }
 		if (name === 'to-calendar') { this.setStep(1); return; }
 		if (name === 'copy-link' && s.result) {

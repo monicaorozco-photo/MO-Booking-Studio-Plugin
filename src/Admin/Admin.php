@@ -48,6 +48,7 @@ final class Admin {
 		'add_movement'        => Cap::PAYMENTS,
 		'proof_file'          => Cap::PAYMENTS,
 		'confirm'             => Cap::BOOKINGS,
+		'invite_without_deposit' => Cap::BOOKINGS,
 		'reject'              => Cap::BOOKINGS,
 		'cancel'              => Cap::BOOKINGS,
 		'reschedule'          => Cap::BOOKINGS,
@@ -250,9 +251,9 @@ final class Admin {
 				$messages = array(
 					'ok'     => array( 'success', 'Almacenamiento privado verificado: los comprobantes no se pueden abrir con una URL directa. La carga de comprobantes quedó habilitada.' ),
 					'public' => array( 'error', 'Los archivos de la carpeta privada SE PUEDEN descargar por URL. La carga queda deshabilitada. Define MO_BOOKING_PRIVATE_DIR en wp-config.php con una carpeta fuera de public_html (ver README).' ),
-					'error'  => array( 'warning', 'No se pudo completar la verificación (el servidor no respondió a sí mismo o la carpeta no se puede escribir). La carga queda deshabilitada; revisa el README.' ),
+					'error'  => array( 'warning', 'No se pudo confirmar que la carpeta sea privada. La carga queda deshabilitada.' ),
 				);
-				Ui::flash( $messages[ $r ][0], $messages[ $r ][1] );
+				Ui::flash( $messages[ $r ][0], $messages[ $r ][1] . ' Detalle: ' . (string) Settings::get( 'uploads_reason' ) );
 				return $redirect;
 
 			case 'create_pages':
@@ -404,6 +405,11 @@ final class Admin {
 			case 'confirm':
 				Bookings::confirm( $bookingId, (string) ( $p['override'] ?? '' ) );
 				Ui::flash( 'success', 'Cita confirmada.' );
+				return $bookingUrl;
+
+			case 'invite_without_deposit':
+				Bookings::inviteWithoutDeposit( $bookingId, (string) ( $p['reason'] ?? '' ) );
+				Ui::flash( 'success', 'Se registró la invitación sin anticipo; se enviará al sincronizar con Google.' );
 				return $bookingUrl;
 
 			case 'reject':

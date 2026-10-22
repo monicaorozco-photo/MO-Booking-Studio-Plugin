@@ -199,10 +199,11 @@ final class Bookings {
 		}
 		$contact = self::validateContact( $input );
 		$answers = self::validateAnswers( $service, (array) ( $input['answers'] ?? array() ) );
+		$info    = self::validateImportantInfo( $input['important_info'] ?? '' );
 		if ( ! $isAdmin && empty( $input['accept_terms'] ) ) {
 			throw new DomainException( 'terms_required', 'Para reservar debes aceptar las condiciones y políticas.', 400, array( 'field' => 'accept_terms' ) );
 		}
-		$requestHash = hash( 'sha256', Db::json( array( $input['quote_id'] ?? ( $input['start'] ?? '' ), $contact, $answers ) ) );
+		$requestHash = hash( 'sha256', Db::json( array( $input['quote_id'] ?? ( $input['start'] ?? '' ), $contact, $answers, $info ) ) );
 
 		// Reintento de la misma solicitud: devolver la reserva existente sin duplicar efectos.
 		$existing = self::findByIdempotency( $key );
@@ -251,7 +252,7 @@ final class Bookings {
 		// El servidor recalcula; si el precio cambió desde la cotización, se pide revisar.
 		$rules   = Services::rules( (int) $service['id'] );
 		$context = Catalog::pricingContext( $pricingInput, $start, $requestedAt, $category );
-		$result  = ( new Pricing( Settings::timezone() ) )->quote( $service, $rules, $context );
+		$result  = ( new Pricing( Settings::timezone() ) )->quote( Services::forPricing( $service ), $rules, $context );
 		if ( ! $isAdmin ) {
 			$accepted = $quote['payload']['result'];
 			if ( $accepted['total_cents'] !== $result['total_cents'] || $accepted['deposit_cents'] !== $result['deposit_cents'] || $quote['pricing_hash'] !== Services::pricingHash( $service, $rules ) ) {
@@ -281,7 +282,7 @@ final class Bookings {
 		$extrasInput = $context['extras'];
 
 		$created = Db::transaction(
-			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput, $verifiedId, $externalBusy, $googleOverride ) {
+			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $info, $context, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput, $verifiedId, $externalBusy, $googleOverride ) {
 				$resource = (int) $service['resource_id'];
 				self::lockDays( $resource, $occupy->utcDays() );
 
@@ -319,6 +320,9 @@ final class Bookings {
 					'timezone'         => Settings::timezoneInfo()['requested'],
 					'participants'     => $result['participants'],
 					'pets'             => $result['pets'],
+					'children'         => $context['children'],
+					'adults'           => $context['adults'],
+					'important_info'   => $info,
 					'client_category'  => $category,
 					'frequent_claim'   => ! empty( $input['frequent_claim'] ) ? 1 : 0,
 					'total_cents'      => $result['total_cents'],
@@ -418,7 +422,8 @@ final class Bookings {
 	}
 
 	public static function validateContact( array $input ): array {
-		$name = trim( sanitize_text_field( (string) ( $input['name'] ?? '' ) ) );
+		// 6.3 campo 7: sin espacios repetidos ni exteriores; ortografía y acentos intactos.
+		$name = trim( (string) preg_replace( '/\s+/u', ' ', sanitize_text_field( (string) ( $input['name'] ?? '' ) ) ) );
 		if ( mb_strlen( $name ) < 2 ) {
 			throw new DomainException( 'invalid_name', 'Escribe tu nombre completo.', 400, array( 'field' => 'name' ) );
 		}
@@ -435,14 +440,27 @@ final class Bookings {
 		if ( ! $phone ) {
 			throw new DomainException( 'invalid_phone', 'Revisa tu teléfono: escribe 10 dígitos o incluye el código de país con "+".', 400, array( 'field' => 'phone' ) );
 		}
+		// 6.3 campo 8: se busca por el correo normalizado, pero se conserva como lo escribió.
+		$emailShown = trim( sanitize_email( (string) ( $input['email'] ?? '' ) ) );
 		return array(
 			'name'          => mb_substr( $name, 0, 190 ),
-			'email'         => $email,
+			'email'         => '' !== $emailShown ? $emailShown : $email,
 			'email_norm'    => $email,
 			'phone'         => mb_substr( $phoneRaw, 0, 40 ),
 			'phone_country' => $country,
 			'phone_e164'    => $phone,
 		);
+	}
+
+	public const IMPORTANT_INFO_MAX = 2000;
+
+	/** 6.3 campo 6: texto plano opcional, máximo 2,000 caracteres. */
+	public static function validateImportantInfo( $value ): string {
+		$text = trim( sanitize_textarea_field( is_scalar( $value ) ? (string) $value : '' ) );
+		if ( mb_strlen( $text ) > self::IMPORTANT_INFO_MAX ) {
+			throw new DomainException( 'info_too_long', 'La información importante puede tener hasta 2,000 caracteres.', 400, array( 'field' => 'important_info' ) );
+		}
+		return $text;
 	}
 
 	public static function validateAnswers( array $service, array $answers ): array {
@@ -478,9 +496,12 @@ final class Bookings {
 				default:
 					$value = sanitize_text_field( $value );
 			}
+			// 6.4: instantánea de la pregunta; editarla o retirarla después no cambia esta respuesta.
 			$out[ $q['key'] ] = array(
-				'label' => $q['label'],
-				'value' => mb_substr( $value, 0, 2000 ),
+				'label'   => $q['label'],
+				'type'    => $q['type'],
+				'options' => (array) ( $q['options'] ?? array() ),
+				'value'   => mb_substr( $value, 0, 2000 ),
 			);
 		}
 		return $out;
@@ -993,7 +1014,7 @@ final class Bookings {
 		}
 		$requestedAt = new \DateTimeImmutable( (string) ( $booking['quote']['requested_at'] ?? $booking['created_at'] ) );
 		$newQuote    = ( new Pricing( Settings::timezone() ) )->quote(
-			$service,
+			Services::forPricing( $service, $booking['quote'] ),
 			Services::rules( (int) $service['id'] ),
 			array(
 				'start'        => $newStart,
@@ -1093,7 +1114,7 @@ final class Bookings {
 		$service = Services::get( $booking['service_id'] );
 		$requestedAt = new \DateTimeImmutable( (string) ( $booking['quote']['requested_at'] ?? $booking['created_at'] ) );
 		return ( new Pricing( Settings::timezone() ) )->quote(
-			$service,
+			Services::forPricing( $service, $booking['quote'] ),
 			Services::rules( (int) $service['id'] ),
 			array(
 				'start'        => $booking['start'],

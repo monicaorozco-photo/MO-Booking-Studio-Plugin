@@ -15,6 +15,49 @@ use MOBookingStudio\Plugin;
  * Servicios, sus reglas de precio y sus políticas.
  */
 final class Services {
+	/** Clave reservada del extra de entrega rápida. */
+	public const FAST_KEY = 'entrega-rapida';
+
+	/**
+	 * Servicio listo para cotizar: agrega la entrega rápida como un extra más (con su
+	 * nombre y precio actuales). La cotización congela ambos en la reserva.
+	 */
+	public static function forPricing( array $service, ?array $frozenQuote = null ): array {
+		$service['extras'] = (array) ( $service['extras'] ?? array() );
+		$fast              = (array) ( $service['fast_delivery'] ?? array() );
+		if ( ! empty( $fast['enabled'] ) ) {
+			$service['extras'][] = array(
+				'key'         => self::FAST_KEY,
+				'label'       => (string) $fast['label'],
+				'price_cents' => (int) $fast['price_cents'],
+				'max_qty'     => 1,
+				'description' => '',
+			);
+		}
+		// Al recotizar una reserva existente, los extras ya contratados conservan su nombre y precio.
+		foreach ( (array) ( $frozenQuote['lines'] ?? array() ) as $line ) {
+			if ( 'extra' !== ( $line['kind'] ?? '' ) || empty( $line['key'] ) ) {
+				continue;
+			}
+			$frozen = array(
+				'key'         => (string) $line['key'],
+				'label'       => (string) $line['label'],
+				'price_cents' => (int) $line['unit'],
+				'max_qty'     => max( 1, (int) $line['quantity'] ),
+				'description' => '',
+			);
+			foreach ( $service['extras'] as $i => $extra ) {
+				if ( $extra['key'] === $frozen['key'] ) {
+					$frozen['max_qty'] = max( $frozen['max_qty'], (int) $extra['max_qty'] );
+					unset( $service['extras'][ $i ] );
+				}
+			}
+			$service['extras'][] = $frozen;
+		}
+		$service['extras'] = array_values( $service['extras'] );
+		return $service;
+	}
+
 	public static function defaultConfig(): array {
 		return array(
 			'description'                => '',
@@ -47,6 +90,15 @@ final class Services {
 			'sale_until'                 => '',
 			'date_notices'               => array(),
 			'terms_text'                 => '',
+			'contract_id'                => 0, // 6.5: plantilla de contrato publicada.
+			// 6.3 campo 10: extra con precio, siempre al final del formulario.
+			'fast_delivery'              => array(
+				'enabled'      => false,
+				'label'        => 'Entrega rápida',
+				'price_cents'  => 0,
+				'question'     => '¿Deseas agregar entrega rápida de 2 días hábiles a tu sesión?',
+				'regular_text' => 'Entrega regular de 5 a 7 días hábiles.',
+			),
 			'price_table'                => array( 'presale_until' => '', 'rows' => array() ),
 		);
 	}
@@ -212,7 +264,7 @@ final class Services {
 				continue;
 			}
 			$key = sanitize_key( (string) ( $extra['key'] ?? '' ) ?: $label );
-			if ( isset( $keys[ $key ] ) ) {
+			if ( isset( $keys[ $key ] ) || self::FAST_KEY === $key ) {
 				$key .= '-' . ( count( $keys ) + 1 );
 			}
 			$keys[ $key ] = true;
@@ -225,6 +277,16 @@ final class Services {
 			);
 		}
 		$c['extras'] = $extras;
+
+		$fast               = array_merge( self::defaultConfig()['fast_delivery'], (array) $c['fast_delivery'] );
+		$c['fast_delivery'] = array(
+			'enabled'      => ! empty( $fast['enabled'] ),
+			'label'        => trim( sanitize_text_field( (string) $fast['label'] ) ) ?: 'Entrega rápida',
+			'price_cents'  => $int( $fast['price_cents'] ),
+			'question'     => trim( sanitize_text_field( (string) $fast['question'] ) ) ?: self::defaultConfig()['fast_delivery']['question'],
+			'regular_text' => trim( sanitize_text_field( (string) $fast['regular_text'] ) ),
+		);
+		$c['contract_id']   = $int( $c['contract_id'] );
 
 		$questions = array();
 		$qkeys     = array();
@@ -425,7 +487,7 @@ final class Services {
 
 	/** Huella de la configuración de precios; si cambia, una cotización deja de ser válida. */
 	public static function pricingHash( array $service, array $rules ): string {
-		$keys = array( 'price_cents', 'participants_included', 'participants_max', 'extra_participant_cents', 'pets_allowed', 'pets_max', 'pet_fee_cents', 'pets_count_as_participants', 'extras', 'deposit_type', 'deposit_value', 'price_table' );
+		$keys = array( 'price_cents', 'participants_included', 'participants_max', 'extra_participant_cents', 'pets_allowed', 'pets_max', 'pet_fee_cents', 'pets_count_as_participants', 'extras', 'fast_delivery', 'deposit_type', 'deposit_value', 'price_table' );
 		return hash( 'sha256', Db::json( array( array_intersect_key( $service, array_flip( $keys ) ), $rules ) ) );
 	}
 

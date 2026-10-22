@@ -135,7 +135,7 @@ final class RatesPage {
 					throw new DomainException( 'invalid_date', 'Fechas no válidas.' );
 				}
 				$q = ( new Pricing( $zone ) )->quote(
-					$service,
+					Services::forPricing( $service ),
 					Services::rules( $service['id'] ),
 					array(
 						'start'        => $start->setTimezone( new \DateTimeZone( 'UTC' ) ),

@@ -35,7 +35,15 @@ final class Catalog {
 			'extra_participant_txt' => Money::format( (int) $s['extra_participant_cents'] ),
 			'pets_allowed'          => (bool) $s['pets_allowed'],
 			'pets_max'              => (int) $s['pets_max'],
-			'pets_note'             => $s['pets_allowed'] ? ( $s['pets_count_as_participants'] ? 'Las mascotas cuentan como participantes.' : 'Las mascotas no cuentan como participantes.' ) : '',
+			// 6.3 campo 5: sin la leyenda sobre si cuentan; el texto público es "Pet friendly".
+			'pet_friendly'          => (bool) $s['pets_allowed'],
+			'fast_delivery'         => ! empty( $s['fast_delivery']['enabled'] ) ? array(
+				'label'        => (string) $s['fast_delivery']['label'],
+				'price'        => (int) $s['fast_delivery']['price_cents'],
+				'price_txt'    => Money::format( (int) $s['fast_delivery']['price_cents'] ),
+				'question'     => (string) $s['fast_delivery']['question'],
+				'regular_text' => (string) $s['fast_delivery']['regular_text'],
+			) : null,
 			'extras'                => array_map(
 				static function ( $e ) {
 					return array(
@@ -217,13 +225,15 @@ final class Catalog {
 		}
 		$category = FrequentCheck::category( isset( $input['frequent_token'] ) ? (string) $input['frequent_token'] : null );
 		$context  = self::pricingContext( $input, $start, $now, $category );
-		$result   = ( new Pricing( Settings::timezone() ) )->quote( $service, Services::rules( (int) $service['id'] ), $context );
+		$result   = ( new Pricing( Settings::timezone() ) )->quote( Services::forPricing( $service ), Services::rules( (int) $service['id'] ), $context );
 		$key     = bin2hex( random_bytes( 16 ) );
 		$expires = $now->modify( '+' . self::QUOTE_MINUTES . ' minutes' );
 		$payload = array(
 			'input'  => array(
 				'start'        => $start->format( 'Y-m-d\TH:i:s\Z' ),
 				'participants' => $context['participants'],
+				'children'     => $context['children'],
+				'adults'       => $context['adults'],
 				'pets'         => $context['pets'],
 				'extras'       => $context['extras'],
 				'category'     => $category,
@@ -353,17 +363,51 @@ final class Catalog {
 				$extras[ $key ] = (int) $qty;
 			}
 		}
-		$participants = $input['participants'] ?? 1;
-		$pets         = $input['pets'] ?? 0;
-		if ( ! is_numeric( $participants ) || ! is_numeric( $pets ) ) {
-			throw new DomainException( 'invalid_participants', 'Indica cantidades con números.', 400, array( 'field' => 'participants' ) );
+		if ( ! empty( $input['fast_delivery'] ) ) {
+			$extras[ Services::FAST_KEY ] = 1;
+		} elseif ( array_key_exists( 'fast_delivery', $input ) ) {
+			unset( $extras[ Services::FAST_KEY ] );
 		}
+		// 6.3: niños y adultos son enteros >= 0, sin decimales ni texto; asistentes = niños + adultos.
+		$whole = static function ( $value, string $field, string $label ): int {
+			if ( null === $value || '' === $value ) {
+				return 0;
+			}
+			if ( is_int( $value ) ) {
+				$ok = $value >= 0;
+			} else {
+				$ok = is_string( $value ) && 1 === preg_match( '/^\d{1,3}$/', trim( $value ) );
+			}
+			if ( ! $ok ) {
+				throw new DomainException( 'invalid_' . $field, sprintf( '%s: escribe un número entero, 0 o mayor.', $label ), 400, array( 'field' => $field ) );
+			}
+			return (int) $value;
+		};
+		$children = null;
+		$adults   = null;
+		if ( isset( $input['children'] ) || isset( $input['adults'] ) ) {
+			$children     = $whole( $input['children'] ?? null, 'children', 'Niños' );
+			$adults       = $whole( $input['adults'] ?? null, 'adults', 'Adultos' );
+			$participants = $children + $adults;
+			if ( $participants < 1 ) {
+				throw new DomainException( 'invalid_participants', 'Indica al menos un asistente entre niños y adultos.', 400, array( 'field' => 'adults' ) );
+			}
+		} else {
+			$participants = $input['participants'] ?? 1;
+			if ( ! is_numeric( $participants ) ) {
+				throw new DomainException( 'invalid_participants', 'Indica cantidades con números.', 400, array( 'field' => 'participants' ) );
+			}
+			$participants = (int) $participants;
+		}
+		$pets = $whole( $input['pets'] ?? 0, 'pets', 'Mascotas' );
 		return array(
 			'start'        => $start,
 			'requested_at' => $requestedAt,
 			'category'     => $category,
-			'participants' => (int) $participants,
-			'pets'         => (int) $pets,
+			'participants' => $participants,
+			'children'     => $children,
+			'adults'       => $adults,
+			'pets'         => $pets,
 			'extras'       => $extras,
 		);
 	}

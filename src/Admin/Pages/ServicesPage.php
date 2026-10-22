@@ -102,7 +102,7 @@ final class ServicesPage {
 		$people  = Ui::row( 'Personas incluidas', Ui::input( 'participants_included', $v( 'participants_included' ), 'number', array( 'min' => 1 ) ), '', 'participants_included' );
 		$people .= Ui::row( 'Máximo de personas', Ui::input( 'participants_max', $v( 'participants_max' ), 'number', array( 'min' => 1 ) ), '', 'participants_max' );
 		$people .= Ui::row( 'Costo por persona adicional ($)', Ui::input( 'extra_participant', Money::toInput( (int) $v( 'extra_participant_cents', 0 ) ), 'text', array( 'inputmode' => 'decimal' ) ), '', 'extra_participant' );
-		$people .= Ui::row( 'Mascotas', Ui::checkbox( 'pets_allowed', (bool) $v( 'pets_allowed' ), 'Se admiten mascotas' ) . '<br>' . Ui::checkbox( 'pets_count_as_participants', (bool) $v( 'pets_count_as_participants' ), 'Las mascotas cuentan como personas' ) );
+		$people .= Ui::row( 'Mascotas', Ui::checkbox( 'pets_allowed', (bool) $v( 'pets_allowed' ), 'Pet friendly (se admiten mascotas)' ) . '<br>' . Ui::checkbox( 'pets_count_as_participants', (bool) $v( 'pets_count_as_participants' ), 'Las mascotas cuentan como asistentes (para el límite y el precio)' ), 'En el formulario la clienta ve "Pet friendly" y un campo de mascotas aparte; el renglón "Número de asistentes" solo suma personas.' );
 		$people .= Ui::row( 'Máximo de mascotas', Ui::input( 'pets_max', $v( 'pets_max' ), 'number', array( 'min' => 0 ) ), '0 = sin límite.', 'pets_max' );
 		$people .= Ui::row( 'Costo por mascota ($)', Ui::input( 'pet_fee', Money::toInput( (int) $v( 'pet_fee_cents', 0 ) ), 'text', array( 'inputmode' => 'decimal' ) ), '', 'pet_fee' );
 		echo Ui::card( 'Personas y mascotas', $people ); // phpcs:ignore WordPress.Security.EscapeOutput
@@ -157,12 +157,21 @@ final class ServicesPage {
 		$types     = array( 'text' => 'Texto corto', 'textarea' => 'Texto largo', 'select' => 'Selección', 'number' => 'Número', 'yesno' => 'Sí / No' );
 		foreach ( array_merge( $questions, array( array(), array() ) ) as $i => $q ) {
 			$options = isset( $q['options'] ) ? ( is_array( $q['options'] ) ? implode( "\n", $q['options'] ) : (string) $q['options'] ) : '';
-			$rows   .= '<tr><td>' . Ui::input( "questions[$i][label]", $q['label'] ?? '', 'text', array( 'placeholder' => 'Pregunta', 'aria-label' => 'Pregunta' ) ) . Ui::input( "questions[$i][key]", $q['key'] ?? '', 'hidden' ) . '</td>' .
+			$rows   .= '<tr><td>' . Ui::input( "questions[$i][order]", (string) ( $i + 1 ), 'number', array( 'class' => 'small-text', 'min' => 1, 'aria-label' => 'Orden' ) ) . '</td><td>' . Ui::input( "questions[$i][label]", $q['label'] ?? '', 'text', array( 'placeholder' => 'Pregunta', 'aria-label' => 'Pregunta' ) ) . Ui::input( "questions[$i][key]", $q['key'] ?? '', 'hidden' ) . '</td>' .
 				'<td>' . Ui::select( "questions[$i][type]", $types, $q['type'] ?? 'text', array( 'aria-label' => 'Tipo' ) ) . '</td>' .
 				'<td>' . Ui::checkbox( "questions[$i][required]", ! empty( $q['required'] ), 'Obligatoria' ) . '</td>' .
 				'<td>' . Ui::textarea( "questions[$i][options]", $options, 2, array( 'placeholder' => 'Opciones, una por línea (solo selección)', 'aria-label' => 'Opciones' ) ) . '</td></tr>';
 		}
-		echo Ui::card( 'Preguntas adicionales', '<p class="description">Las respuestas se guardan como texto; no pueden ejecutar código.</p><table class="widefat mo-repeat"><thead><tr><th>Pregunta</th><th>Tipo</th><th></th><th>Opciones</th></tr></thead><tbody>' . $rows . '</tbody></table><p><button type="button" class="button" data-mo-add-row>Agregar fila</button></p>' ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo Ui::card( 'Preguntas adicionales', '<p class="description">Aparecen después de los datos de contacto y antes de la entrega rápida, en el orden indicado. Deja la pregunta vacía para retirarla; las reservas ya hechas conservan la pregunta y la respuesta tal como estaban. Las respuestas se guardan como texto.</p><table class="widefat mo-repeat"><thead><tr><th>Orden</th><th>Pregunta</th><th>Tipo</th><th></th><th>Opciones</th></tr></thead><tbody>' . $rows . '</tbody></table><p><button type="button" class="button" data-mo-add-row>Agregar fila</button></p>' ); // phpcs:ignore WordPress.Security.EscapeOutput
+
+		// 6.3 campo 10: entrega rápida (extra con precio; se congela en cada reserva).
+		$fast  = (array) $v( 'fast_delivery', array() );
+		$fbody = Ui::row( 'Ofrecer', Ui::checkbox( 'fast_delivery[enabled]', ! empty( $fast['enabled'] ), 'Mostrar la entrega rápida al final del formulario (sin marcar de inicio)' ) );
+		$fbody .= Ui::row( 'Nombre', Ui::input( 'fast_delivery[label]', $fast['label'] ?? 'Entrega rápida', 'text', array( 'class' => 'regular-text' ) ) );
+		$fbody .= Ui::row( 'Precio ($)', Ui::input( 'fast_delivery[price]', Money::toInput( (int) ( $fast['price_cents'] ?? 0 ) ), 'text', array( 'class' => 'small-text', 'inputmode' => 'decimal' ) ) );
+		$fbody .= Ui::row( 'Pregunta (plazo rápido)', Ui::input( 'fast_delivery[question]', $fast['question'] ?? '', 'text', array( 'class' => 'large-text' ) ) );
+		$fbody .= Ui::row( 'Texto inferior (plazo regular)', Ui::input( 'fast_delivery[regular_text]', $fast['regular_text'] ?? '', 'text', array( 'class' => 'large-text' ) ) );
+		echo Ui::card( 'Entrega rápida', $fbody . '<p class="description">Cambiar el precio no altera las reservas existentes: cada una guarda el nombre y el precio contratados.</p>' ); // phpcs:ignore WordPress.Security.EscapeOutput
 
 		// Avisos por fecha.
 		$notices = (array) $v( 'date_notices', array() );
@@ -205,7 +214,19 @@ final class ServicesPage {
 			);
 		}
 		$questions = array();
-		foreach ( (array) ( $p['questions'] ?? array() ) as $q ) {
+		$rawQ      = array_values( (array) ( $p['questions'] ?? array() ) );
+		// Orden indicado por la administradora; empates conservan el orden de las filas.
+		$position = array();
+		foreach ( $rawQ as $i => $q ) {
+			$position[ $i ] = array( (int) ( $q['order'] ?? ( $i + 1 ) ), $i );
+		}
+		uksort(
+			$rawQ,
+			static function ( $a, $b ) use ( $position ) {
+				return $position[ $a ] <=> $position[ $b ];
+			}
+		);
+		foreach ( $rawQ as $q ) {
 			if ( '' === trim( (string) ( $q['label'] ?? '' ) ) ) {
 				continue;
 			}
@@ -270,6 +291,13 @@ final class ServicesPage {
 				'confirmation_mode'          => sanitize_key( (string) ( $p['confirmation_mode'] ?? 'manual' ) ),
 				'extras'                     => $extras,
 				'questions'                  => $questions,
+				'fast_delivery'              => array(
+					'enabled'      => ! empty( $p['fast_delivery']['enabled'] ),
+					'label'        => (string) ( $p['fast_delivery']['label'] ?? '' ),
+					'price_cents'  => Money::parse( (string) ( $p['fast_delivery']['price'] ?? '0' ) ),
+					'question'     => (string) ( $p['fast_delivery']['question'] ?? '' ),
+					'regular_text' => (string) ( $p['fast_delivery']['regular_text'] ?? '' ),
+				),
 				'date_notices'               => $notices,
 				'terms_text'                 => sanitize_textarea_field( (string) ( $p['terms_text'] ?? '' ) ),
 				'price_table'                => self::parsePriceTable( (array) ( $p['price_table'] ?? array() ), $money ),

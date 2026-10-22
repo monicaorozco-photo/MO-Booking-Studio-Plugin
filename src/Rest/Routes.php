@@ -123,6 +123,11 @@ final class Routes {
 	public function quote( \WP_REST_Request $r ): array {
 		RateLimit::hit( 'quote', 60, 600 );
 		$body = (array) $r->get_json_params();
+		// 6.3: en línea los asistentes siempre salen de niños + adultos, nunca de un número suelto.
+		unset( $body['participants'] );
+		if ( ! array_key_exists( 'children', $body ) && ! array_key_exists( 'adults', $body ) ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'invalid_participants', 'Indica cuántos niños y adultos asistirán.', 400, array( 'field' => 'adults' ) );
+		}
 		return Catalog::quote( Services::findPublished( (string) $r['slug'] ), $body );
 	}
 

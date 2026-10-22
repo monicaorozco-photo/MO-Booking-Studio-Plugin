@@ -43,8 +43,16 @@ abstract class IntegrationTestCase extends TestCase {
 		Plugin::setClock( null );
 	}
 
+	/** Plantilla de contrato publicada para los servicios de prueba. */
+	protected function contractId(): int {
+		global $wpdb;
+		$found = (int) $wpdb->get_var( 'SELECT id FROM ' . Schema::table( 'contracts' ) . " WHERE name = 'Contrato de prueba' LIMIT 1" );
+		return $found ?: \MOBookingStudio\Application\Contracts::save( null, 'Contrato de prueba', 'Contrato de minis', '<p>Acepto las condiciones de la sesión.</p>', true );
+	}
+
 	/** Crea el servicio de minis navideñas con la agenda y la matriz de tarifas. */
 	protected function christmasService( array $overrides = array() ): array {
+		$overrides += array( 'contract_id' => $this->contractId() );
 		$resource = Schedules::defaultResourceId();
 		$id       = Services::save(
 			array_merge(
@@ -76,6 +84,7 @@ abstract class IntegrationTestCase extends TestCase {
 	/** Mismo servicio pero con la tabla de precios por temporada (forma simple del panel). */
 	protected function christmasTableService(): array {
 		$resource = Schedules::defaultResourceId();
+		$contract = $this->contractId();
 		$id       = Services::save(
 			array_merge(
 				array(
@@ -85,6 +94,7 @@ abstract class IntegrationTestCase extends TestCase {
 					'min_notice_hours' => 0,
 					'horizon_days'     => 0,
 					'price_table'      => Christmas::priceTable(),
+					'contract_id'      => $contract,
 				),
 				Christmas::service()
 			)

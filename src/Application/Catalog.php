@@ -62,7 +62,7 @@ final class Catalog {
 			'hold_hours'            => Services::holdHours( $s ),
 			'timezone'              => Settings::timezoneInfo()['requested'],
 			'policies'              => self::policyTexts( (int) $s['id'] ),
-			'terms_text'            => trim( $s['terms_text'] . "\n" . (string) Settings::get( 'terms_text' ) ),
+			'contract'              => Contracts::publicView( Contracts::forService( $s ) ),
 			'privacy_url'           => (string) Settings::get( 'privacy_url' ),
 		);
 	}

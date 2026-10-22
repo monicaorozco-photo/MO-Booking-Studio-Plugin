@@ -26,6 +26,8 @@ final class Migrations {
 			'2_correction_hours'              => array( self::class, 'correctionHours' ),
 			// Antes de que la administradora agregue MO_BOOKING_SECRET para Google: los enlaces ya enviados siguen igual.
 			'2_token_key_source'              => array( self::class, 'pinTokenKey' ),
+			// Esquema 3 (0.2.0-beta.2): las condiciones existentes pasan a ser la versión 1 de un contrato por servicio.
+			'3_contracts_from_terms'          => array( \MOBookingStudio\Application\Contracts::class, 'migrateTerms' ),
 		);
 	}
 

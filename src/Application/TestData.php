@@ -26,8 +26,17 @@ final class TestData {
 		$resource = (int) $wpdb->insert_id;
 		$category = Services::saveCategory( 'Minis (PRUEBA)', null, true );
 
+		$contract  = Contracts::save( null, 'PRUEBA – Contrato de minis', 'Contrato de servicio fotográfico (PRUEBA)', '<h3>Reservación</h3><p>El anticipo aparta tu horario y no es reembolsable en caso de cancelación definitiva.</p><h3>Puntualidad</h3><p>Llega 10 minutos antes; la sesión termina a la hora programada.</p><h3>Entrega</h3><p>Entrega regular de 5 a 7 días hábiles; con entrega rápida, 2 días hábiles.</p>', true, true );
 		$serviceId = Services::save(
 			array(
+				'contract_id'                => $contract,
+				'fast_delivery'              => array(
+					'enabled'      => true,
+					'label'        => 'Entrega rápida',
+					'price_cents'  => 30000,
+					'question'     => '¿Deseas agregar entrega rápida de 2 días hábiles a tu sesión?',
+					'regular_text' => 'Entrega regular de 5 a 7 días hábiles.',
+				),
 				'title'                      => 'PRUEBA – Minis navideñas 2026',
 				'slug'                       => 'prueba-minis-navidenas-2026',
 				'brand'                      => 'Clics con Amor Fotografía',
@@ -117,7 +126,8 @@ final class TestData {
 				} catch ( \Throwable $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
 				}
 			}
-			foreach ( array( 'occupancies', 'payments', 'proofs', 'access_tokens', 'portal_sessions', 'notifications' ) as $t ) {
+			self::removeGoogleEvents( $bookings );
+			foreach ( array( 'occupancies', 'payments', 'proofs', 'access_tokens', 'portal_sessions', 'notifications', 'calendar_events', 'sync_jobs', 'conflicts' ) as $t ) {
 				$wpdb->query( 'DELETE FROM ' . Schema::table( $t ) . " WHERE booking_id IN ($in)" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			}
 			$wpdb->query( 'DELETE FROM ' . Schema::table( 'audit' ) . " WHERE entity = 'booking' AND entity_id IN ($in)" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -129,9 +139,30 @@ final class TestData {
 			$wpdb->query( 'DELETE FROM ' . Schema::table( 'price_rules' ) . " WHERE service_id IN ($in)" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			$wpdb->query( 'DELETE FROM ' . Schema::table( 'policies' ) . " WHERE service_id IN ($in)" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		}
-		foreach ( array( 'services', 'clients', 'availability', 'categories', 'resources' ) as $t ) {
+		$contracts = array_map( 'intval', $wpdb->get_col( 'SELECT id FROM ' . Schema::table( 'contracts' ) . ' WHERE is_test = 1' ) ?: array() ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( $contracts ) {
+			$wpdb->query( 'DELETE FROM ' . Schema::table( 'contract_versions' ) . ' WHERE contract_id IN (' . implode( ',', $contracts ) . ')' ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		}
+		foreach ( array( 'services', 'clients', 'availability', 'categories', 'resources', 'contracts' ) as $t ) {
 			$wpdb->query( 'DELETE FROM ' . Schema::table( $t ) . ' WHERE is_test = 1' ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		}
 		$wpdb->query( 'DELETE FROM ' . Schema::table( 'calendar_locks' ) . ' WHERE resource_id NOT IN (SELECT id FROM ' . Schema::table( 'resources' ) . ')' ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/** Retira de Google los eventos propios de las reservas de prueba antes de borrar sus registros. */
+	private static function removeGoogleEvents( array $bookingIds ): void {
+		if ( ! \MOBookingStudio\Integrations\Google\Connection::isActive() ) {
+			return;
+		}
+		$wpdb = Db::wpdb();
+		$rows = $wpdb->get_results( 'SELECT * FROM ' . Schema::table( 'calendar_events' ) . " WHERE state = 'active' AND booking_id IN (" . implode( ',', array_map( 'intval', $bookingIds ) ) . ')', ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$api  = new \MOBookingStudio\Integrations\Google\Api();
+		foreach ( $rows as $row ) {
+			try {
+				$api->deleteEvent( $row['calendar_id'], $row['event_id'], 'client' === $row['kind'] ? 'all' : 'none' );
+			} catch ( \MOBookingStudio\Integrations\Google\GoogleException $e ) {
+				\MOBookingStudio\Infrastructure\Logger::error( 'No se pudo retirar un evento de prueba de Google', array( 'http' => $e->http ) );
+			}
+		}
 	}
 }

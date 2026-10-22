@@ -200,6 +200,10 @@ final class Bookings {
 		$contact = self::validateContact( $input );
 		$answers = self::validateAnswers( $service, (array) ( $input['answers'] ?? array() ) );
 		$info    = self::validateImportantInfo( $input['important_info'] ?? '' );
+		// 6.5: copia inmutable del contrato vigente; en línea es obligatorio aceptarlo.
+		$contract = $isAdmin
+			? ( Contracts::forService( $service ) ? Contracts::snapshotFor( $service, null ) : array() )
+			: Contracts::snapshotFor( $service, $input['contract_version'] ?? null );
 		if ( ! $isAdmin && empty( $input['accept_terms'] ) ) {
 			throw new DomainException( 'terms_required', 'Para reservar debes aceptar las condiciones y políticas.', 400, array( 'field' => 'accept_terms' ) );
 		}
@@ -282,7 +286,7 @@ final class Bookings {
 		$extrasInput = $context['extras'];
 
 		$created = Db::transaction(
-			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $info, $context, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput, $verifiedId, $externalBusy, $googleOverride ) {
+			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $info, $contract, $isAdmin, $context, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput, $verifiedId, $externalBusy, $googleOverride ) {
 				$resource = (int) $service['resource_id'];
 				self::lockDays( $resource, $occupy->utcDays() );
 
@@ -323,6 +327,12 @@ final class Bookings {
 					'children'         => $context['children'],
 					'adults'           => $context['adults'],
 					'important_info'   => $info,
+					'contract_id'      => $contract['contract_id'] ?? null,
+					'contract_version' => $contract['contract_version'] ?? null,
+					'contract_title'   => $contract['contract_title'] ?? '',
+					'contract_body'    => $contract['contract_body'] ?? null,
+					'contract_hash'    => $contract['contract_hash'] ?? '',
+					'contract_accepted_at' => ( $contract && ! $isAdmin ) ? Db::toSql( $now ) : null,
 					'client_category'  => $category,
 					'frequent_claim'   => ! empty( $input['frequent_claim'] ) ? 1 : 0,
 					'total_cents'      => $result['total_cents'],
@@ -348,7 +358,7 @@ final class Bookings {
 							'terms'          => ! empty( $input['accept_terms'] ) || 'admin' === $source,
 							'whatsapp'       => ! empty( $input['whatsapp_consent'] ),
 							'at'             => $now->format( 'c' ),
-							'terms_version'  => md5( (string) Settings::get( 'terms_text' ) . $service['terms_text'] ),
+							'contract'       => $contract ? $contract['contract_title'] . ' v' . $contract['contract_version'] : '',
 						)
 					),
 					'expires_at'       => Db::toSql( $holdUntil ),

@@ -29,7 +29,7 @@ final class ServicesPage {
 			echo '<td data-label="Precio base">' . Ui::money( (int) $s['price_cents'] ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput
 			echo '<td data-label="Duración">' . (int) $s['duration'] . ' min</td>';
 			echo '<td data-label="Shortcode"><code>[mo_booking service="' . esc_html( $s['slug'] ) . '"]</code></td>';
-			echo '<td><a class="button" href="' . esc_url( Ui::url( 'mo-booking-services', array( 'service' => $s['id'] ) ) ) . '">Editar</a> <a class="button" href="' . esc_url( Ui::url( 'mo-booking-rates', array( 'service' => $s['id'] ) ) ) . '">Tarifas</a> <a class="button" href="' . esc_url( Ui::url( 'mo-booking-policies', array( 'service' => $s['id'] ) ) ) . '">Políticas</a></td></tr>';
+			echo '<td><a class="button" href="' . esc_url( Ui::url( 'mo-booking-services', array( 'service' => $s['id'] ) ) ) . '">Editar</a> <a class="button" href="' . esc_url( Ui::url( 'mo-booking-rates', array( 'service' => $s['id'] ) ) ) . '">Tarifas</a> <a class="button" href="' . esc_url( Ui::url( 'mo-booking-policies', array( 'service' => $s['id'] ) ) ) . '">Reglas de cancelación</a></td></tr>';
 		}
 		echo '</tbody></table>';
 		Ui::footer();
@@ -181,7 +181,20 @@ final class ServicesPage {
 		}
 		echo Ui::card( 'Avisos por fecha', '<p class="description">Se muestran al elegir esas fechas. Ejemplo: "Las sesiones del 19 y 20 de diciembre se entregan después de Navidad".</p><table class="widefat mo-repeat"><thead><tr><th>Desde</th><th>Hasta</th><th>Aviso</th></tr></thead><tbody>' . $rows . '</tbody></table><p><button type="button" class="button" data-mo-add-row>Agregar fila</button></p>' ); // phpcs:ignore WordPress.Security.EscapeOutput
 
-		echo Ui::card( 'Condiciones del servicio', Ui::textarea( 'terms_text', $v( 'terms_text' ), 4 ) . '<p class="description">La persona debe aceptarlas al reservar. Las políticas de cambios y cancelación se editan en "Políticas".</p>' ); // phpcs:ignore WordPress.Security.EscapeOutput
+		// 6.5: el servicio elige una plantilla de contrato publicada.
+		$contracts = array( 0 => '— Sin contrato (no acepta reservas en línea) —' );
+		foreach ( \MOBookingStudio\Application\Contracts::all() as $c ) {
+			if ( (int) $c['current_version'] > 0 ) {
+				$contracts[ $c['id'] ] = $c['name'] . ' (versión ' . (int) $c['current_version'] . ')';
+			}
+		}
+		$cbody = Ui::row( 'Plantilla', Ui::select( 'contract_id', $contracts, (string) (int) $v( 'contract_id' ) ), 'La persona lo lee en un acordeón debajo del formulario y debe aceptarlo. Se edita en <a href="' . esc_url( Ui::url( 'mo-booking-contracts' ) ) . '">Contratos</a>.', 'contract_id' );
+		if ( ! (int) $v( 'contract_id' ) ) {
+			$cbody .= '<div class="notice notice-warning inline"><p>Sin contrato publicado este servicio no acepta reservas en línea.</p></div>';
+		}
+		// Texto anterior de condiciones: se conserva sin cambios (ya se migró a contrato).
+		$cbody .= Ui::input( 'terms_text', (string) $v( 'terms_text' ), 'hidden' );
+		echo Ui::card( 'Contrato', $cbody ); // phpcs:ignore WordPress.Security.EscapeOutput
 
 		echo '<p class="mo-sticky-actions">' . Ui::button( 'Guardar servicio' ) . '</p></form>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		Ui::footer();
@@ -300,6 +313,7 @@ final class ServicesPage {
 				),
 				'date_notices'               => $notices,
 				'terms_text'                 => sanitize_textarea_field( (string) ( $p['terms_text'] ?? '' ) ),
+				'contract_id'                => (int) ( $p['contract_id'] ?? 0 ),
 				'price_table'                => self::parsePriceTable( (array) ( $p['price_table'] ?? array() ), $money ),
 			),
 			$id

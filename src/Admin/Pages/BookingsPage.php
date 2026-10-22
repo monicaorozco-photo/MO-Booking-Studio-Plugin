@@ -101,7 +101,15 @@ final class BookingsPage {
 		$body  = '<dl class="mo-dl">';
 		$body .= '<dt>Servicio</dt><dd>' . esc_html( $service ? $service['title'] : (string) ( $b['quote']['service_title'] ?? '' ) ) . '</dd>';
 		$body .= '<dt>Fecha</dt><dd>' . esc_html( Catalog::dateText( $local ) ) . ', ' . esc_html( $local->format( 'H:i' ) ) . ' h <span class="description">(' . esc_html( $b['timezone'] ) . ')</span></dd>';
-		$body .= '<dt>Personas</dt><dd>' . (int) $b['participants'] . ( $b['pets'] ? ' y ' . (int) $b['pets'] . ' mascota(s)' : '' ) . '</dd>';
+		if ( null !== $b['children'] || null !== $b['adults'] ) {
+			$body .= '<dt>Asistentes</dt><dd>' . (int) $b['participants'] . ' (niños ' . (int) $b['children'] . ', adultos ' . (int) $b['adults'] . ')' . '</dd>';
+		} else {
+			$body .= '<dt>Personas</dt><dd>' . (int) $b['participants'] . ' <span class="description">(reserva anterior, sin desglose)</span></dd>';
+		}
+		$body .= '<dt>Mascotas</dt><dd>' . (int) $b['pets'] . '</dd>';
+		if ( '' !== $b['important_info'] ) {
+			$body .= '<dt>Información importante</dt><dd>' . nl2br( esc_html( $b['important_info'] ) ) . '</dd>';
+		}
 		if ( BookingStatus::PENDING_PAYMENT === $b['status'] && $b['expires_at'] ) {
 			$body .= '<dt>Retención vence</dt><dd><strong>' . esc_html( Ui::localDateTime( $b['expires_at'], 'd/m/Y H:i' ) ) . '</strong></dd>';
 		}
@@ -114,6 +122,17 @@ final class BookingsPage {
 		}
 		$body .= '</dl>';
 		echo Ui::card( 'Cita', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
+
+		// 6.5: copia exacta del contrato aceptado.
+		if ( $b['contract_version'] ) {
+			$body  = '<p><strong>' . esc_html( $b['contract_title'] ) . '</strong> · versión ' . (int) $b['contract_version'] . '</p>';
+			$body .= '<p>' . ( $b['contract_accepted_at'] ? 'Aceptado en línea el ' . esc_html( Ui::localDateTime( $b['contract_accepted_at'], 'd/m/Y H:i:s' ) ) : 'Reserva registrada en el panel (la aceptación no fue en línea)' ) . '</p>';
+			$body .= '<p class="description">Hash SHA-256: <code>' . esc_html( $b['contract_hash'] ) . '</code>' . ( hash_equals( (string) $b['contract_hash'], \MOBookingStudio\Application\Contracts::hash( (string) $b['contract_title'], (string) $b['contract_body'] ) ) ? ' · copia íntegra' : ' · <strong>la copia no coincide con su hash</strong>' ) . '</p>';
+			$body .= '<details class="mo-details"><summary>Ver el contrato exacto</summary><div class="mo-contract-copy">' . \MOBookingStudio\Application\Contracts::sanitize( (string) $b['contract_body'] ) . '</div></details>';
+		} else {
+			$body = '<p>' . ( ! empty( $b['consent']['terms'] ) ? 'Aceptó las condiciones vigentes en una versión anterior del plugin (no se guardó copia del texto).' : 'Sin contrato registrado.' ) . '</p>';
+		}
+		echo Ui::card( 'Contrato', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
 
 		// Cliente.
 		$body  = '<dl class="mo-dl">';

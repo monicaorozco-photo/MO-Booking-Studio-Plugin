@@ -16,7 +16,8 @@ final class PoliciesPage {
 	public static function render(): void {
 		$services  = Services::all();
 		$serviceId = isset( $_GET['service'] ) ? (int) $_GET['service'] : 0; // phpcs:ignore WordPress.Security.NonceVerification
-		Ui::header( 'Políticas' );
+		Ui::header( 'Contratos' );
+		echo ContractsPage::tabs( 'mo-booking-policies' ); // phpcs:ignore WordPress.Security.EscapeOutput
 		$opts = array( 0 => 'Generales (se heredan en todos los servicios)' );
 		foreach ( $services as $s ) {
 			$opts[ $s['id'] ] = 'Servicio: ' . $s['title'];

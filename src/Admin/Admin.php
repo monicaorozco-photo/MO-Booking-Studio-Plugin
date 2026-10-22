@@ -49,6 +49,9 @@ final class Admin {
 		'proof_file'          => Cap::PAYMENTS,
 		'confirm'             => Cap::BOOKINGS,
 		'invite_without_deposit' => Cap::BOOKINGS,
+		'save_contract'       => Cap::SETTINGS,
+		'archive_contract'    => Cap::SETTINGS,
+		'restore_contract'    => Cap::SETTINGS,
 		'reject'              => Cap::BOOKINGS,
 		'cancel'              => Cap::BOOKINGS,
 		'reschedule'          => Cap::BOOKINGS,
@@ -82,6 +85,17 @@ final class Admin {
 		add_action( 'admin_post_mo_booking_confirm_backup', array( $this, 'confirmBackup' ) );
 		add_action( 'admin_post_mo_booking_google_callback', array( $this, 'googleCallback' ) );
 		add_action( 'admin_page_access_denied', array( $this, 'redirectDuringUpgrade' ) );
+		add_filter( 'submenu_file', array( $this, 'highlightSubmenu' ), 10, 2 );
+	}
+
+	/** "Reglas de cancelación y cambios" es una pestaña de Contratos: se resalta Contratos en el menú. */
+	public function highlightSubmenu( $submenuFile, $parentFile ) {
+		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
+		if ( 'mo-booking-policies' === $page ) {
+			$GLOBALS['parent_file'] = 'mo-booking'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+			return 'mo-booking-contracts';
+		}
+		return $submenuFile;
 	}
 
 	/** Mientras se espera el respaldo, cualquier pantalla del plugin lleva al aviso de actualización. */
@@ -108,7 +122,9 @@ final class Admin {
 		add_submenu_page( 'mo-booking', 'Clientes', 'Clientes', Cap::CLIENTS, 'mo-booking-clients', array( Pages\ClientsPage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Pagos y recibos', 'Pagos y recibos', Cap::PAYMENTS, 'mo-booking-payments', array( Pages\PaymentsPage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Tarifas y descuentos', 'Tarifas y descuentos', Cap::SETTINGS, 'mo-booking-rates', array( Pages\RatesPage::class, 'render' ) );
-		add_submenu_page( 'mo-booking', 'Políticas', 'Políticas', Cap::SETTINGS, 'mo-booking-policies', array( Pages\PoliciesPage::class, 'render' ) );
+		// 6.5: "Políticas" se renombra "Contratos"; las reglas económicas quedan como pestaña.
+		add_submenu_page( 'mo-booking', 'Contratos', 'Contratos', Cap::SETTINGS, 'mo-booking-contracts', array( Pages\ContractsPage::class, 'render' ) );
+		add_submenu_page( '', 'Reglas de cancelación y cambios', 'Reglas de cancelación y cambios', Cap::SETTINGS, 'mo-booking-policies', array( Pages\PoliciesPage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Notificaciones', 'Notificaciones', Cap::SETTINGS, 'mo-booking-notifications', array( Pages\NotificationsPage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Google Calendar', 'Google Calendar', Cap::GOOGLE, 'mo-booking-google', array( Pages\GooglePage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Finanzas (próximamente)', 'Finanzas · próx.', Cap::FINANCE, 'mo-booking-finance', array( Pages\UpcomingPage::class, 'finance' ) );
@@ -406,6 +422,17 @@ final class Admin {
 				Bookings::confirm( $bookingId, (string) ( $p['override'] ?? '' ) );
 				Ui::flash( 'success', 'Cita confirmada.' );
 				return $bookingUrl;
+
+			case 'save_contract':
+				$contractId = \MOBookingStudio\Application\Contracts::save( (int) ( $p['contract_id'] ?? 0 ) ?: null, (string) ( $p['name'] ?? '' ), (string) ( $p['title'] ?? '' ), (string) ( $p['body'] ?? '' ), ! empty( $p['publish'] ) );
+				Ui::flash( 'success', ! empty( $p['publish'] ) ? 'Contrato publicado como versión nueva. Las reservas anteriores conservan la versión que aceptaron.' : 'Borrador guardado. Aún no lo ve nadie.' );
+				return Ui::url( 'mo-booking-contracts', array( 'contract' => $contractId ) );
+
+			case 'archive_contract':
+			case 'restore_contract':
+				\MOBookingStudio\Application\Contracts::setArchived( (int) $p['contract_id'], 'archive_contract' === $do );
+				Ui::flash( 'success', 'archive_contract' === $do ? 'Plantilla archivada.' : 'Plantilla restaurada.' );
+				return Ui::url( 'mo-booking-contracts' );
 
 			case 'invite_without_deposit':
 				Bookings::inviteWithoutDeposit( $bookingId, (string) ( $p['reason'] ?? '' ) );

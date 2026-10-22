@@ -44,7 +44,8 @@ final class SettingsPage {
 		$body .= Ui::row( 'Enlace privado vence (días después de la cita)', Ui::input( 'token_days_after', $s['token_days_after'], 'number', array( 'min' => 1 ) ), 'Propuesta: 90 días.', 'token_days_after' );
 		echo Ui::card( 'Comunicaciones', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
 
-		$body  = Ui::row( 'Condiciones generales', Ui::textarea( 'terms_text', $s['terms_text'], 5 ), 'Se muestran y deben aceptarse en cada reserva, junto con las del servicio.', 'terms_text' );
+		// 6.5: las condiciones viven ahora en Contratos; el texto anterior se conserva sin mostrarse.
+		$body  = Ui::row( 'Condiciones y contrato', '<a href="' . esc_url( Ui::url( 'mo-booking-contracts' ) ) . '">Editar en Contratos</a>' . Ui::input( 'terms_text', (string) $s['terms_text'], 'hidden' ), 'Las condiciones generales anteriores se copiaron a la versión 1 del contrato de cada servicio al actualizar.' );
 		$body .= Ui::row( 'URL del aviso de privacidad', Ui::input( 'privacy_url', $s['privacy_url'], 'url', array( 'class' => 'regular-text' ) ), '', 'privacy_url' );
 		$pages = array( 0 => '— Sin seleccionar —' );
 		foreach ( get_pages( array( 'post_status' => array( 'publish', 'draft', 'private' ) ) ) as $page ) {

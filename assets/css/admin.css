@@ -83,3 +83,12 @@
 @media (max-width: 782px) {
 	.mo-admin .mo-list-filters { float: none; display: flex; flex-wrap: wrap; gap: 6px; }
 }
+.mo-editor { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
+.mo-codes { background: #f6f7f7; border: 1px solid #dcdcde; border-radius: 4px; padding: 8px 10px; max-height: 320px; overflow: auto; font-size: 12px; }
+.mo-codes__title { margin: 0 0 6px; font-weight: 600; }
+.mo-codes ul { margin: 0; }
+.mo-codes li { margin: 0 0 4px; }
+.mo-code code { background: #fff; }
+.mo-code-warning { color: #8a2424; background: #fcf0f1; border-left: 3px solid #d63638; padding: 4px 8px; margin: 4px 0; }
+.mo-preview-text, .mo-message-text { white-space: pre-wrap; background: #fff; border: 1px solid #dcdcde; padding: 8px; max-width: 640px; font-family: inherit; }
+@media (max-width: 960px) { .mo-editor { grid-template-columns: 1fr; } }

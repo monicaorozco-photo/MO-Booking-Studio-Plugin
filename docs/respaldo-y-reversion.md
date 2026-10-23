@@ -1,6 +1,17 @@
 # Respaldo, actualización y reversión
 
-Versión actual: **0.2.0-beta.2** (esquema de datos **3**). Aplica al actualizar desde 0.2.0-beta.1 (esquema 2) o desde 0.1.x (esquema 1).
+Versión actual: **0.2.0-beta.3** (esquema de datos **4**). Aplica al actualizar desde 0.2.0-beta.2 (esquema 3), 0.2.0-beta.1 (esquema 2) o 0.1.x (esquema 1).
+
+## De beta.2 a beta.3
+
+La actualización solo agrega una tabla (contactos adicionales) y columnas (papelera, origen del comprobante, frecuente automático). No cambia reservas, pagos ni comprobantes. Pide confirmar el respaldo igual que antes.
+
+**Volver a beta.2** (ensayado con los ZIP reales en PHP 7.4: beta.2 → beta.3 → beta.2 → beta.3 sin pérdida): sube el ZIP de la beta.2, confirma el respaldo y listo. Mientras uses la beta.2:
+- lo que esté en la papelera vuelve a verse como normal (clientes, reservas, servicios y contratos), incluidos los duplicados ya fusionados (sin reservas);
+- no hay precio frecuente automático (vuelve la Salida B), ni contactos adicionales, ni plantillas propias, ni botón de WhatsApp para el comprobante, ni página para imprimir;
+- lo que eliminaste definitivamente no regresa.
+Al reinstalar la beta.3 todo lo anterior vuelve como estaba.
+
 
 ## Antes de actualizar
 

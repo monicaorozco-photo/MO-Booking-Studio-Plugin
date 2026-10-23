@@ -35,6 +35,101 @@ final class Proofs {
 	 * @return array{proof_id:int,late:bool,status:string}
 	 */
 	public static function upload( int $bookingId, array $file, bool $requireUploaded = true ): array {
+		list( $tmp, $ext, $hash, $size ) = self::validateFile( $file, $requireUploaded );
+		$now    = Plugin::clock()->now();
+		$stored = null;
+		try {
+			$result = self::storeAndRegister( $bookingId, $tmp, $ext, $hash, $size, $file, $now, $stored );
+		} catch ( \Throwable $e ) {
+			// 8.4: si el registro falló después de guardar el archivo, no se deja un huérfano.
+			if ( $stored ) {
+				PrivateStorage::remove( $stored );
+			}
+			throw $e;
+		}
+		Notifications::bookingEvent( 'proof_received', Bookings::get( $bookingId ), array( 'proof_id' => $result['proof_id'] ) );
+		return $result;
+	}
+
+	/**
+	 * Comprobante que la administradora recibió por otro medio (WhatsApp, correo) y adjunta
+	 * desde el panel. Mismas validaciones de archivo y almacenamiento privado; queda
+	 * registrado quién lo subió. No depende del plazo de carga de la persona: si la reserva
+	 * esperaba el pago, pasa a "Comprobante recibido" y el horario sigue apartado; en otros
+	 * estados solo se adjunta como evidencia.
+	 *
+	 * @return array{proof_id:int,version:int,status:string}
+	 */
+	public static function uploadByAdmin( int $bookingId, array $file, string $note = '', bool $requireUploaded = true ): array {
+		list( $tmp, $ext, $hash, $size ) = self::validateFile( $file, $requireUploaded );
+		$now    = Plugin::clock()->now();
+		$stored = null;
+		try {
+			return Db::transaction(
+				static function () use ( $bookingId, $tmp, $ext, $hash, $size, $file, $now, $note, &$stored ) {
+					$booking = Bookings::get( $bookingId, true );
+					$wpdb    = Db::wpdb();
+					$table   = Schema::table( 'proofs' );
+					$version = 1 + (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $table WHERE booking_id = %d", $bookingId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					$user    = wp_get_current_user();
+					$stored  = PrivateStorage::store( $tmp, $ext );
+					Db::check(
+						$wpdb->insert(
+							$table,
+							array(
+								'booking_id'    => $bookingId,
+								'stored_name'   => $stored,
+								'original_name' => mb_substr( sanitize_file_name( (string) ( $file['name'] ?? 'comprobante.' . $ext ) ), 0, 190 ),
+								'mime'          => self::TYPES[ $ext ][0],
+								'size_bytes'    => $size,
+								'sha256'        => $hash,
+								'status'        => 'pending',
+								'review_note'   => mb_substr( trim( sanitize_text_field( $note ) ), 0, 255 ),
+								'received_late' => 0,
+								'version'       => $version,
+								'source'        => 'admin',
+								'uploaded_by'   => get_current_user_id(),
+								'created_at'    => Db::toSql( $now ),
+							)
+						),
+						'proof_insert'
+					);
+					$proofId = (int) $wpdb->insert_id;
+					$status  = $booking['status'];
+					if ( in_array( $status, array( BookingStatus::PENDING_PAYMENT, BookingStatus::CORRECTION_REQUESTED ), true ) ) {
+						$wpdb->query( $wpdb->prepare( "UPDATE $table SET status = 'replaced' WHERE booking_id = %d AND id <> %d AND status IN ('pending', 'correction')", $bookingId, $proofId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+						Bookings::transition( $booking, BookingStatus::PAYMENT_REVIEW, 'Comprobante adjuntado desde el panel.', array( 'expires_at' => null, 'correction_until' => null ) );
+						Bookings::holdIndefinitely( $bookingId );
+						$status = BookingStatus::PAYMENT_REVIEW;
+					}
+					Audit::log(
+						'booking',
+						$bookingId,
+						'proof_uploaded_admin',
+						array(
+							'proof_id' => $proofId,
+							'version'  => $version,
+							'by'       => $user && $user->exists() ? $user->display_name : '',
+							'note'     => $note,
+						)
+					);
+					return array( 'proof_id' => $proofId, 'version' => $version, 'status' => $status );
+				}
+			);
+		} catch ( \Throwable $e ) {
+			if ( $stored ) {
+				PrivateStorage::remove( $stored );
+			}
+			throw $e;
+		}
+	}
+
+	/**
+	 * Validaciones comunes del archivo: almacenamiento privado verificado, tamaño y tipo real.
+	 *
+	 * @return array{0:string,1:string,2:string,3:int} ruta temporal, extensión, sha256 y tamaño.
+	 */
+	private static function validateFile( array $file, bool $requireUploaded ): array {
 		if ( ! PrivateStorage::uploadsEnabled() ) {
 			throw new DomainException( 'uploads_disabled', 'Por ahora no podemos recibir archivos aquí. Envíanos tu comprobante por WhatsApp o correo indicando tu número de reserva.', 503 );
 		}
@@ -56,22 +151,8 @@ final class Proofs {
 		if ( $size > self::maxBytes() ) {
 			throw new DomainException( 'file_too_large', self::sizeMessage(), 413 );
 		}
-		$ext  = self::detectType( $tmp, (string) ( $file['name'] ?? '' ) );
-		$hash = hash_file( 'sha256', $tmp );
-		$now  = Plugin::clock()->now();
-
-		$stored = null;
-		try {
-			$result = self::storeAndRegister( $bookingId, $tmp, $ext, $hash, $size, $file, $now, $stored );
-		} catch ( \Throwable $e ) {
-			// 8.4: si el registro falló después de guardar el archivo, no se deja un huérfano.
-			if ( $stored ) {
-				PrivateStorage::remove( $stored );
-			}
-			throw $e;
-		}
-		Notifications::bookingEvent( 'proof_received', Bookings::get( $bookingId ), array( 'proof_id' => $result['proof_id'] ) );
-		return $result;
+		$ext = self::detectType( $tmp, (string) ( $file['name'] ?? '' ) );
+		return array( $tmp, $ext, (string) hash_file( 'sha256', $tmp ), $size );
 	}
 
 	/** @param string|null $stored Recibe el nombre interno en cuanto el archivo se guarda. */

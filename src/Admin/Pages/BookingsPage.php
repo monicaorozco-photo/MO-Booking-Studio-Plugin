@@ -195,7 +195,8 @@ final class BookingsPage {
 		$canFix  = (int) $b['corrections_used'] < 1;
 		if ( $proofs ) {
 			foreach ( $proofs as $p ) {
-				$html .= '<div class="mo-proof"><p><strong>Versión ' . (int) $p['version'] . ' · ' . esc_html( $labels[ $p['status'] ] ?? $p['status'] ) . '</strong> · subido ' . esc_html( Ui::localDateTime( $p['created_at'], 'd/m/Y H:i' ) ) . ' · ' . esc_html( strtoupper( pathinfo( $p['stored_name'], PATHINFO_EXTENSION ) ) ) . ' ' . esc_html( size_format( (int) $p['size_bytes'] ) ) .
+				$uploader = 'admin' === ( $p['source'] ?? 'client' ) ? get_userdata( (int) $p['uploaded_by'] ) : null;
+				$html .= '<div class="mo-proof"><p><strong>Versión ' . (int) $p['version'] . ' · ' . esc_html( $labels[ $p['status'] ] ?? $p['status'] ) . '</strong> · subido ' . esc_html( Ui::localDateTime( $p['created_at'], 'd/m/Y H:i' ) ) . ( 'admin' === ( $p['source'] ?? 'client' ) ? ' · <span class="mo-pill">Desde el panel' . ( $uploader ? ' por ' . esc_html( $uploader->display_name ) : '' ) . '</span>' : '' ) . ' · ' . esc_html( strtoupper( pathinfo( $p['stored_name'], PATHINFO_EXTENSION ) ) ) . ' ' . esc_html( size_format( (int) $p['size_bytes'] ) ) .
 					( $p['received_late'] ? ' · <span class="mo-pill mo-pill--expired">Llegó tarde: conciliación manual</span>' : '' ) . '</p>';
 				if ( $p['client_reason'] ) {
 					$html .= '<p class="description">Motivo enviado: ' . esc_html( $p['client_reason'] ) . '</p>';
@@ -230,6 +231,14 @@ final class BookingsPage {
 			$html .= '<p>Aún no hay comprobantes.</p>';
 		}
 
+		$html .= '<details class="mo-details"><summary>Adjuntar un comprobante que recibiste por WhatsApp o correo</summary>' .
+			( \MOBookingStudio\Infrastructure\PrivateStorage::uploadsEnabled()
+				? Ui::formOpen( 'upload_proof', $hidden, '', true ) .
+					Ui::row( 'Archivo', '<input type="file" name="proof_file" id="mo-proof_file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" required>', 'JPG, PNG o PDF, máximo ' . (float) Settings::get( 'proof_max_mb' ) . ' MB. Se guarda en la carpeta privada y queda registrado que lo subiste tú.', 'proof_file' ) .
+					Ui::row( 'Nota interna', Ui::input( 'note', '', 'text', array( 'class' => 'regular-text', 'placeholder' => 'Por ejemplo: lo envió por WhatsApp el martes' ) ), '', 'note' ) .
+					Ui::button( 'Adjuntar comprobante', 'button-secondary' ) . '</form>'
+				: '<p>La carga de archivos está deshabilitada hasta verificar la carpeta privada (Ajustes → Almacenamiento privado).</p>' ) .
+			'</details>';
 		$html .= '<details class="mo-details"><summary>Registrar pago sin comprobante (efectivo, saldo el día de la sesión…)</summary>' .
 			Ui::formOpen( 'approve_payment', $hidden ) .
 			Ui::row( 'Importe', Ui::input( 'amount', Money::toInput( max( 0, $summary['balance_cents'] ) ), 'text', array( 'class' => 'small-text', 'inputmode' => 'decimal', 'required' => 'required' ) ) ) .
@@ -499,6 +508,20 @@ final class BookingsPage {
 			'booking_rescheduled'  => 'Cambio de fecha',
 			'booking_cancelled'    => 'Cancelación',
 		);
+		$emailTemplates = array();
+		foreach ( Notifications::customTemplates() as $cid => $t ) {
+			if ( ! $t['enabled'] ) {
+				continue;
+			}
+			if ( 'whatsapp' === $t['channel'] ) {
+				$events[ 'custom_' . $cid ] = $t['name'];
+			} elseif ( 'manual' === $t['trigger'] ) {
+				$emailTemplates[ $cid ] = $t['name'];
+			}
+		}
+		if ( $emailTemplates && is_email( (string) ( $b['contact']['email'] ?? '' ) ) ) {
+			$html .= '<h3>Enviar un correo con una plantilla</h3>' . Ui::formOpen( 'send_template', $hidden, 'mo-inline-form' ) . Ui::select( 'template_id', $emailTemplates, '', array( 'aria-label' => 'Plantilla de correo' ) ) . ' ' . Ui::button( 'Enviar correo', 'button-secondary', '¿Enviar este correo a ' . (string) $b['contact']['email'] . '?' ) . '</form>';
+		}
 		if ( 'off' !== Settings::get( 'whatsapp_mode' ) && ! empty( $b['contact']['phone_e164'] ) ) {
 			$html .= '<h3>WhatsApp manual</h3><p class="description">Abre el chat con el texto listo. Abrir el chat no significa que se envió: márcalo después de enviarlo.</p>' . str_replace( '<form ', '<form target="_blank" rel="noopener noreferrer" ', Ui::formOpen( 'whatsapp_open', $hidden, 'mo-inline-form' ) ) . Ui::select( 'event', $events, 'booking_created' ) . ' ' . Ui::button( 'Abrir WhatsApp', 'button-secondary' ) . '</form>';
 		}
@@ -514,7 +537,7 @@ final class BookingsPage {
 					$action = Ui::formOpen( 'retry_notification', array( 'notification_id' => $n['id'] ), 'mo-inline-form' ) . Ui::button( 'Reintentar', 'button-link' ) . '</form>';
 				}
 				$channel = array( 'email' => 'Correo', 'whatsapp' => 'WhatsApp automático', 'whatsapp_manual' => 'WhatsApp manual' );
-				$html   .= '<tr><td>' . esc_html( Ui::localDateTime( 'pending' === $n['status'] ? $n['send_after'] : $n['updated_at'], 'd/m H:i' ) ) . '</td><td>' . esc_html( $labels[ $n['event'] ]['label'] ?? $n['event'] ) . '<br><span class="description">' . esc_html( $n['recipient'] ) . '</span></td><td>' . esc_html( $channel[ $n['channel'] ] ?? $n['channel'] ) . '</td><td>' . esc_html( Notifications::STATUS_LABELS[ $n['status'] ] ?? $n['status'] ) . ( $n['last_error'] && 'failed' === $n['status'] ? '<br><span class="description">' . esc_html( $n['last_error'] ) . '</span>' : '' ) . '</td><td>' . $action . '</td></tr>';
+				$html   .= '<tr><td>' . esc_html( Ui::localDateTime( 'pending' === $n['status'] ? $n['send_after'] : $n['updated_at'], 'd/m H:i' ) ) . '</td><td>' . esc_html( Notifications::eventLabel( $n['event'] ) ) . '<br><span class="description">' . esc_html( $n['recipient'] ) . '</span>' . NotificationsPage::storedText( $n ) . '</td><td>' . esc_html( $channel[ $n['channel'] ] ?? $n['channel'] ) . '</td><td>' . esc_html( Notifications::STATUS_LABELS[ $n['status'] ] ?? $n['status'] ) . ( $n['last_error'] && 'failed' === $n['status'] ? '<br><span class="description">' . esc_html( $n['last_error'] ) . '</span>' : '' ) . '</td><td>' . $action . '</td></tr>';
 			}
 			$html .= '</tbody></table>';
 		}

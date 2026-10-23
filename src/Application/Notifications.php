@@ -148,6 +148,161 @@ final class Notifications {
 		);
 	}
 
+	// ----- Plantillas propias (beta.3) -----
+
+	public const CUSTOM_OPTION = 'mo_booking_custom_templates';
+
+	public const CHANNELS = array(
+		'email'    => 'Correo',
+		'whatsapp' => 'WhatsApp (se abre con el texto listo)',
+	);
+
+	/**
+	 * Plantillas que crea la administradora. Un correo puede enviarse solo con un evento
+	 * (además del aviso del sistema) o a mano desde la reserva; una de WhatsApp se usa al
+	 * abrir el chat desde la reserva.
+	 *
+	 * @return array<string,array{name:string,channel:string,trigger:string,subject:string,body:string,enabled:bool}>
+	 */
+	public static function customTemplates(): array {
+		$out = array();
+		foreach ( (array) get_option( self::CUSTOM_OPTION, array() ) as $id => $t ) {
+			if ( is_array( $t ) && preg_match( '/^c[a-f0-9]{8}$/', (string) $id ) ) {
+				$out[ $id ] = array_merge( array( 'name' => '', 'channel' => 'email', 'trigger' => 'manual', 'subject' => '', 'body' => '', 'enabled' => true ), $t );
+			}
+		}
+		return $out;
+	}
+
+	/** Crea o actualiza una plantilla propia. Devuelve su id y los códigos que no se reconocen. */
+	public static function saveCustom( ?string $id, array $data ): array {
+		$name    = trim( sanitize_text_field( (string) ( $data['name'] ?? '' ) ) );
+		$channel = isset( self::CHANNELS[ $data['channel'] ?? '' ] ) ? (string) $data['channel'] : 'email';
+		$trigger = (string) ( $data['trigger'] ?? 'manual' );
+		$trigger = 'email' === $channel && isset( self::events()[ $trigger ] ) ? $trigger : 'manual';
+		$subject = sanitize_text_field( (string) ( $data['subject'] ?? '' ) );
+		$body    = sanitize_textarea_field( (string) ( $data['body'] ?? '' ) );
+		if ( '' === $name ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'invalid_template', 'Ponle un nombre a la plantilla.', 400, array( 'field' => 'name' ) );
+		}
+		if ( '' === trim( $body ) ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'invalid_template', 'Escribe el texto del mensaje.', 400, array( 'field' => 'body' ) );
+		}
+		if ( 'email' === $channel && '' === trim( $subject ) ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'invalid_template', 'Un correo necesita asunto.', 400, array( 'field' => 'subject' ) );
+		}
+		$all = self::customTemplates();
+		$id  = $id && isset( $all[ $id ] ) ? $id : 'c' . bin2hex( random_bytes( 4 ) );
+		$all[ $id ] = array(
+			'name'    => $name,
+			'channel' => $channel,
+			'trigger' => $trigger,
+			'subject' => $subject,
+			'body'    => $body,
+			'enabled' => ! empty( $data['enabled'] ),
+		);
+		update_option( self::CUSTOM_OPTION, $all, false );
+		\MOBookingStudio\Infrastructure\Audit::log( 'template', 0, 'saved', array( 'id' => $id, 'name' => $name ) );
+		return array( 'id' => $id, 'unknown' => self::unknownCodes( $subject . "\n" . $body ) );
+	}
+
+	/** Quitar una plantilla propia. Los mensajes ya enviados conservan su texto. */
+	public static function deleteCustom( string $id ): void {
+		$all = self::customTemplates();
+		if ( ! isset( $all[ $id ] ) ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'not_found', 'La plantilla no existe.', 404 );
+		}
+		unset( $all[ $id ] );
+		update_option( self::CUSTOM_OPTION, $all, false );
+		\MOBookingStudio\Infrastructure\Audit::log( 'template', 0, 'deleted', array( 'id' => $id ) );
+	}
+
+	/**
+	 * Códigos escritos que no existen: {{desconocido}} o {nombre} con una sola llave.
+	 *
+	 * @return string[] Texto tal como se escribió.
+	 */
+	public static function unknownCodes( string $text ): array {
+		$known = self::variables();
+		$out   = array();
+		if ( preg_match_all( '/\{\{\s*([^{}\s]+)\s*\}\}/u', $text, $m ) ) {
+			foreach ( $m[1] as $i => $code ) {
+				if ( ! isset( $known[ $code ] ) ) {
+					$out[] = $m[0][ $i ];
+				}
+			}
+		}
+		// Una sola llave ({nombre}) no se reemplaza en estas plantillas.
+		if ( preg_match_all( '/(?<!\{)\{([a-z_]+)\}(?!\})/u', $text, $m ) ) {
+			foreach ( $m[0] as $single ) {
+				$out[] = $single;
+			}
+		}
+		return array_values( array_unique( $out ) );
+	}
+
+	/** Datos de ejemplo para la vista previa. */
+	public static function sampleVars(): array {
+		return array(
+			'nombre'             => 'Ana López',
+			'negocio'            => (string) Settings::get( 'business_name' ),
+			'servicio'           => 'Minis navideñas',
+			'referencia'         => 'MO-AB12CD',
+			'fecha'              => 'sábado 21 de noviembre de 2026',
+			'hora'               => '10:30',
+			'zona'               => 'America/Ciudad_Juarez',
+			'ubicacion'          => 'Estudio MO, Av. Ejemplo 123',
+			'instrucciones'      => 'Llega 10 minutos antes.',
+			'total'              => '$1,400.00 MXN',
+			'anticipo'           => '$500.00 MXN',
+			'saldo'              => '$900.00 MXN',
+			'vencimiento'        => 'viernes 20 de noviembre, 22:30 (America/Ciudad_Juarez)',
+			'instrucciones_pago' => trim( (string) Settings::get( 'bank_instructions' ) ) ?: 'Banco Ejemplo · CLABE 000000000000000000',
+			'enlace'             => home_url( '/mi-reserva/#acceso=…' ),
+			'motivo'             => 'El comprobante no se lee completo.',
+			'importe'            => '$500.00 MXN',
+		);
+	}
+
+	/** Plantilla propia por id de evento de la cola ("custom_c1a2b3c4"), o null. */
+	private static function customFor( string $event ): ?array {
+		if ( 0 !== strpos( $event, 'custom_' ) ) {
+			return null;
+		}
+		$all = self::customTemplates();
+		$id  = substr( $event, 7 );
+		return isset( $all[ $id ] ) ? array( 'enabled' => $all[ $id ]['enabled'], 'subject' => $all[ $id ]['subject'], 'body' => $all[ $id ]['body'], 'admin' => '', 'name' => $all[ $id ]['name'] ) : null;
+	}
+
+	/** Etiqueta legible de un evento de la cola, incluidas las plantillas propias. */
+	public static function eventLabel( string $event ): string {
+		$events = self::events();
+		if ( isset( $events[ $event ] ) ) {
+			return $events[ $event ]['label'];
+		}
+		$custom = self::customFor( $event );
+		if ( $custom ) {
+			return $custom['name'];
+		}
+		return 0 === strpos( $event, 'custom_' ) ? 'Plantilla propia (ya eliminada)' : $event;
+	}
+
+	/** Envía ahora, a mano, un correo con una plantilla propia. */
+	public static function sendCustomNow( array $booking, string $templateId ): void {
+		$all = self::customTemplates();
+		if ( ! isset( $all[ $templateId ] ) || 'email' !== $all[ $templateId ]['channel'] ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'not_found', 'Elige una plantilla de correo.', 404 );
+		}
+		$to = (string) ( $booking['contact']['email'] ?? '' );
+		if ( ! is_email( $to ) ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'no_email', 'La reserva no tiene un correo válido.' );
+		}
+		$id = self::enqueue( 'custom_' . $templateId, 'email', $booking['id'], $to, 'client', Plugin::clock()->now(), null, 'manual:' . $templateId . ':' . $booking['id'] . ':' . bin2hex( random_bytes( 4 ) ) );
+		if ( $id ) {
+			self::processOne( $id );
+		}
+	}
+
 	public static function templates(): array {
 		$stored = get_option( self::TEMPLATES_OPTION, array() );
 		$out    = self::defaultTemplates();
@@ -159,21 +314,34 @@ final class Notifications {
 		return $out;
 	}
 
-	public static function saveTemplates( array $templates ): void {
-		$clean = array();
+	/**
+	 * Guarda los avisos del sistema. Devuelve los códigos que no se reconocen para avisar
+	 * (se guarda igual: el código desconocido simplemente queda vacío al enviar).
+	 *
+	 * @return string[]
+	 */
+	public static function saveTemplates( array $templates ): array {
+		$clean   = array();
+		$unknown = array();
 		foreach ( self::defaultTemplates() as $event => $default ) {
 			if ( ! isset( $templates[ $event ] ) ) {
 				continue;
 			}
-			$t               = $templates[ $event ];
+			$t = $templates[ $event ];
+			if ( ! empty( $t['reset'] ) ) {
+				$clean[ $event ] = array_merge( $default, array( 'enabled' => ! empty( $t['enabled'] ) ) );
+				continue;
+			}
 			$clean[ $event ] = array(
 				'enabled' => ! empty( $t['enabled'] ),
 				'subject' => sanitize_text_field( (string) ( $t['subject'] ?? $default['subject'] ) ),
 				'body'    => sanitize_textarea_field( (string) ( $t['body'] ?? $default['body'] ) ),
 				'admin'   => sanitize_textarea_field( (string) ( $t['admin'] ?? $default['admin'] ) ),
 			);
+			$unknown = array_merge( $unknown, self::unknownCodes( implode( "\n", array( $clean[ $event ]['subject'], $clean[ $event ]['body'], $clean[ $event ]['admin'] ) ) ) );
 		}
 		update_option( self::TEMPLATES_OPTION, $clean, false );
+		return array_values( array_unique( $unknown ) );
 	}
 
 	/**
@@ -226,12 +394,9 @@ final class Notifications {
 			return;
 		}
 		$tpl = self::templates()[ $event ] ?? null;
-		if ( ! $tpl || empty( $tpl['enabled'] ) ) {
-			return;
-		}
 		$now = Plugin::clock()->now();
 		$ids = array();
-		foreach ( $events[ $event ]['to'] as $to ) {
+		foreach ( $tpl && ! empty( $tpl['enabled'] ) ? $events[ $event ]['to'] : array() as $to ) {
 			if ( 'admin' === $to && '' === trim( (string) $tpl['admin'] ) ) {
 				continue;
 			}
@@ -244,13 +409,19 @@ final class Notifications {
 			}
 			$ids[] = self::enqueue( $event, 'email', $booking['id'], $recipient, $to, $now, null, $event . ':' . $booking['id'] . ':' . $booking['version'] . ':' . $to, $extra );
 		}
-		if ( 'automatic' === Settings::get( 'whatsapp_mode' ) && in_array( 'client', $events[ $event ]['to'], true ) && ! empty( $booking['consent']['whatsapp'] ) ) {
+		if ( $tpl && ! empty( $tpl['enabled'] ) && 'automatic' === Settings::get( 'whatsapp_mode' ) && in_array( 'client', $events[ $event ]['to'], true ) && ! empty( $booking['consent']['whatsapp'] ) ) {
 			$phone = $booking['contact']['phone_e164'] ?? '';
 			if ( $phone ) {
 				self::enqueue( $event, 'whatsapp', $booking['id'], $phone, 'client', $now, null, $event . ':' . $booking['id'] . ':' . $booking['version'] . ':wa', $extra );
 			}
 		}
-		if ( 'booking_confirmed' === $event ) {
+		// Plantillas propias de correo ligadas a este evento.
+		foreach ( self::customTemplates() as $cid => $custom ) {
+			if ( $custom['enabled'] && 'email' === $custom['channel'] && $event === $custom['trigger'] && is_email( (string) ( $booking['contact']['email'] ?? '' ) ) ) {
+				$ids[] = self::enqueue( 'custom_' . $cid, 'email', $booking['id'], (string) $booking['contact']['email'], 'client', $now, null, 'custom_' . $cid . ':' . $booking['id'] . ':' . $booking['version'], $extra );
+			}
+		}
+		if ( 'booking_confirmed' === $event && $tpl && ! empty( $tpl['enabled'] ) ) {
 			self::scheduleReminder( $booking );
 		}
 		foreach ( array_filter( $ids ) as $id ) {
@@ -371,9 +542,9 @@ final class Notifications {
 
 		$payload  = (array) Db::decode( $row['payload'] );
 		$audience = $payload['audience'] ?? 'client';
-		$tpl      = self::templates()[ $row['event'] ] ?? null;
+		$tpl      = self::templates()[ $row['event'] ] ?? self::customFor( $row['event'] );
 		if ( ! $tpl ) {
-			$set( array( 'status' => 'skipped', 'last_error' => 'Plantilla inexistente.' ) );
+			$set( array( 'status' => 'skipped', 'last_error' => 'La plantilla ya no existe.' ) );
 			return false;
 		}
 		$vars    = self::varsFor( $booking, (array) ( $payload['extra'] ?? array() ) );
@@ -391,8 +562,10 @@ final class Notifications {
 	private static function deliver( array $row, string $subject, string $body, bool $isTest, string $audience, callable $set, array $payload = array() ): bool {
 		$id  = (int) $row['id'];
 		$now = Plugin::clock()->now();
+		// El registro conserva el texto exacto que se usó, aunque la plantilla cambie después.
+		$keep = Db::json( array_merge( $payload, array( 'subject' => $subject, 'text' => $body, 'preview' => mb_substr( $body, 0, 400 ) ) ) );
 		if ( $isTest || 'live' !== Settings::get( 'email_mode' ) ) {
-			$set( array( 'status' => 'simulated', 'payload' => Db::json( array_merge( $payload, array( 'subject' => $subject, 'preview' => mb_substr( $body, 0, 400 ) ) ) ) ) );
+			$set( array( 'status' => 'simulated', 'payload' => $keep ) );
 			return true;
 		}
 		$error   = '';
@@ -413,7 +586,7 @@ final class Notifications {
 		remove_action( 'wp_mail_failed', $capture );
 
 		if ( $ok ) {
-			$set( array( 'status' => 'accepted', 'last_error' => '' ) );
+			$set( array( 'status' => 'accepted', 'last_error' => '', 'payload' => $keep ) );
 			return true;
 		}
 		$attempts = (int) $row['attempts'];
@@ -437,8 +610,26 @@ final class Notifications {
 	// ----- WhatsApp manual -----
 
 	public static function whatsappText( array $booking, string $event ): string {
-		$tpl = self::templates()[ $event ] ?? self::templates()['booking_created'];
+		$tpl = self::templates()[ $event ] ?? self::customFor( $event ) ?? self::templates()['booking_created'];
 		return self::render( $tpl['body'], self::varsFor( $booking ) );
+	}
+
+	/** Mensajes que se pueden abrir por WhatsApp desde la reserva: avisos del sistema y plantillas propias de WhatsApp. */
+	public static function whatsappEventAllowed( string $event ): bool {
+		if ( isset( self::events()[ $event ] ) ) {
+			return true;
+		}
+		$custom = self::customTemplates()[ substr( $event, 7 ) ] ?? null;
+		return 0 === strpos( $event, 'custom_' ) && $custom && 'whatsapp' === $custom['channel'] && $custom['enabled'];
+	}
+
+	/** Texto guardado de un mensaje del registro (o null si se envió antes de guardarse). */
+	public static function storedText( array $row ): ?array {
+		$p = (array) Db::decode( $row['payload'] ?? '' );
+		if ( isset( $p['text'] ) ) {
+			return array( 'subject' => (string) ( $p['subject'] ?? '' ), 'text' => (string) $p['text'] );
+		}
+		return isset( $p['preview'] ) ? array( 'subject' => (string) ( $p['subject'] ?? '' ), 'text' => (string) $p['preview'] ) : null;
 	}
 
 	public static function whatsappUrl( array $booking, string $event ): ?string {
@@ -463,6 +654,7 @@ final class Notifications {
 				'attempts'   => 0,
 				'send_after' => Db::toSql( $now ),
 				'dedupe_key' => 'wam:' . $booking['id'] . ':' . $event . ':' . bin2hex( random_bytes( 6 ) ),
+				'payload'    => Db::json( array( 'audience' => 'client', 'text' => self::whatsappText( $booking, $event ) ) ),
 				'created_at' => Db::toSql( $now ),
 				'updated_at' => Db::toSql( $now ),
 			)

@@ -43,7 +43,23 @@ final class Settings {
 			'public_contact'       => '',
 			// 8.1: texto del portal junto a la carga del comprobante. {whatsapp} = número de WhatsApp del negocio.
 			'portal_proof_text'    => 'Sube aquí tu comprobante de anticipo o envíalo por WhatsApp con tu nombre o número de reserva al {whatsapp}.',
+			// beta.3: si no se pueden subir archivos, botón a WhatsApp del negocio con mensaje listo.
+			'whatsapp_proof_button'  => 'Da clic en este botón para enviar tu comprobante por WhatsApp',
+			'whatsapp_proof_message' => 'Hola! Hago el envío de mi comprobante de anticipo a nombre de {nombre} con número de reserva {referencia}',
 		);
+	}
+
+	/**
+	 * Enlace wa.me al WhatsApp del negocio con el mensaje del comprobante ({nombre} y
+	 * {referencia} se reemplazan). Null si no hay número válido.
+	 */
+	public static function proofWhatsappUrl( string $name, string $reference ): ?string {
+		$number = \MOBookingStudio\Domain\Contact::normalizePhone( (string) self::get( 'whatsapp_number' ), 'MX' );
+		if ( ! $number ) {
+			return null;
+		}
+		$text = strtr( (string) self::get( 'whatsapp_proof_message' ), array( '{nombre}' => $name, '{referencia}' => $reference ) );
+		return 'https://wa.me/' . ltrim( $number, '+' ) . '?text=' . rawurlencode( $text );
 	}
 
 	public static function all(): array {

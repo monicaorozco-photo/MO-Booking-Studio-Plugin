@@ -2,7 +2,7 @@
 
 Plugin de WordPress para reservas y administración de un estudio fotográfico: servicios, disponibilidad, tarifas, reservas con anticipo por transferencia, comprobantes privados, portal del cliente y panel de administración.
 
-**Versión 0.2.0-beta.2 (beta para preventa controlada; no lista para producción).** Lee primero [`docs/entrega-preventa-beta2.md`](docs/entrega-preventa-beta2.md) (alcance, criterios de aceptación y pruebas pendientes), [`docs/respaldo-y-reversion.md`](docs/respaldo-y-reversion.md) antes de actualizar y [`docs/guia-google-cloud.md`](docs/guia-google-cloud.md) para Google. Cambios en [`CHANGELOG.md`](CHANGELOG.md).
+**Versión 0.2.0-beta.3 (beta para preventa controlada; no lista para producción).** Lee primero [`docs/entrega-beta3.md`](docs/entrega-beta3.md) y [`docs/entrega-preventa-beta2.md`](docs/entrega-preventa-beta2.md) (alcance, criterios de aceptación y pruebas pendientes), [`docs/respaldo-y-reversion.md`](docs/respaldo-y-reversion.md) antes de actualizar y [`docs/guia-google-cloud.md`](docs/guia-google-cloud.md) para Google. Cambios en [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Requisitos
 
@@ -15,7 +15,7 @@ Plugin de WordPress para reservas y administración de un estudio fotográfico: 
 ## Instalación
 
 1. Haz un respaldo del sitio con UpdraftPlus. De preferencia, prueba primero en una copia (staging).
-2. En WordPress ve a *Plugins → Añadir nuevo → Subir plugin* y sube `mo-booking-studio-0.2.0-beta.2.zip`.
+2. En WordPress ve a *Plugins → Añadir nuevo → Subir plugin* y sube `mo-booking-studio-0.2.0-beta.3.zip`.
 3. Activa el plugin. Aparece el menú **Reservas**.
 
 El plugin se instala **vacío**. No crea servicios, horarios ni precios y no modifica la zona horaria general del sitio, otros plugins ni los formularios de Gravity Forms.

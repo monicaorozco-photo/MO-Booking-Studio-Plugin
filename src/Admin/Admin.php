@@ -29,6 +29,9 @@ final class Admin {
 		'load_test_data'      => Cap::SETTINGS,
 		'clear_test_data'     => Cap::SETTINGS,
 		'save_templates'      => Cap::SETTINGS,
+		'save_template'       => Cap::SETTINGS,
+		'delete_template'     => Cap::SETTINGS,
+		'send_template'       => Cap::BOOKINGS,
 		'save_service'        => Cap::SETTINGS,
 		'save_category'       => Cap::SETTINGS,
 		'save_rule'           => Cap::SETTINGS,
@@ -48,6 +51,7 @@ final class Admin {
 		'request_correction'  => Cap::PAYMENTS,
 		'add_movement'        => Cap::PAYMENTS,
 		'proof_file'          => Cap::PAYMENTS,
+		'upload_proof'        => Cap::PAYMENTS,
 		'confirm'             => Cap::BOOKINGS,
 		'invite_without_deposit' => Cap::BOOKINGS,
 		'duplicate_service'   => Cap::SETTINGS,
@@ -328,9 +332,30 @@ final class Admin {
 				return $redirect;
 
 			case 'save_templates':
-				Notifications::saveTemplates( (array) ( $p['tpl'] ?? array() ) );
-				Ui::flash( 'success', 'Plantillas guardadas.' );
+				$unknown = Notifications::saveTemplates( (array) ( $p['tpl'] ?? array() ) );
+				Ui::flash( 'success', 'Avisos guardados.' );
+				if ( $unknown ) {
+					Ui::flash( 'warning', 'Revisa estos códigos, no los reconocemos y saldrían vacíos: ' . implode( ' ', $unknown ) . '. Usa la guía de códigos (doble llave, por ejemplo {{nombre}}).' );
+				}
 				return $redirect;
+
+			case 'save_template':
+				$r = Notifications::saveCustom( (string) ( $p['template_id'] ?? '' ) ?: null, $p );
+				Ui::flash( 'success', 'Plantilla guardada.' );
+				if ( $r['unknown'] ) {
+					Ui::flash( 'warning', 'Revisa estos códigos, no los reconocemos y saldrían vacíos: ' . implode( ' ', $r['unknown'] ) . '. Usa la guía de códigos (doble llave, por ejemplo {{nombre}}).' );
+				}
+				return Ui::url( 'mo-booking-notifications', array( 'template' => $r['id'] ) ) . '#plantilla';
+
+			case 'delete_template':
+				Notifications::deleteCustom( sanitize_key( (string) ( $p['template_id'] ?? '' ) ) );
+				Ui::flash( 'success', 'Plantilla quitada. Los mensajes ya enviados conservan su texto.' );
+				return Ui::url( 'mo-booking-notifications' );
+
+			case 'send_template':
+				Notifications::sendCustomNow( Bookings::get( $bookingId ), sanitize_key( (string) ( $p['template_id'] ?? '' ) ) );
+				Ui::flash( 'success', 'Correo procesado. Revisa su estado en el registro de mensajes de la reserva.' );
+				return $bookingUrl;
 
 			case 'save_service':
 				$id = Pages\ServicesPage::save( $p );
@@ -457,6 +482,11 @@ final class Admin {
 				}
 				Proofs::stream( $proof, ! empty( $_REQUEST['download'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
 				return $redirect;
+
+			case 'upload_proof':
+				$r = Proofs::uploadByAdmin( $bookingId, (array) ( $_FILES['proof_file'] ?? array() ), (string) ( $p['note'] ?? '' ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+				Ui::flash( 'success', sprintf( 'Comprobante adjuntado (versión %d). Revísalo y aprueba el pago cuando confirmes el depósito.', $r['version'] ) );
+				return $bookingUrl;
 
 			case 'confirm':
 				Bookings::confirm( $bookingId, (string) ( $p['override'] ?? '' ) );
@@ -657,6 +687,9 @@ final class Admin {
 			case 'whatsapp_open':
 				$b   = Bookings::get( $bookingId );
 				$url = Notifications::whatsappUrl( $b, sanitize_key( (string) $p['event'] ) );
+				if ( ! Notifications::whatsappEventAllowed( sanitize_key( (string) $p['event'] ) ) ) {
+					throw new DomainException( 'not_found', 'Esa plantilla de WhatsApp ya no existe.' );
+				}
 				if ( ! $url ) {
 					throw new DomainException( 'no_phone', 'La reserva no tiene un teléfono válido.' );
 				}

@@ -89,7 +89,8 @@
 	/** Formulario de subida de comprobante compartido por la confirmación y el portal. */
 	function uploadForm(view, idPrefix) {
 		if (!view.can_upload) {
-			return view.uploads_note ? '<p class="mo-booking__note">' + esc(view.uploads_note) + '</p>' : '';
+			var wa = view.proof_whatsapp_url ? '<p><a class="mo-booking__button mo-booking__button--primary mo-booking__whatsapp" href="' + esc(view.proof_whatsapp_url) + '" target="_blank" rel="noopener noreferrer">' + esc(view.proof_whatsapp_label || 'Enviar mi comprobante por WhatsApp') + '</a></p>' : '';
+			return (view.uploads_note ? '<p class="mo-booking__note">' + esc(view.uploads_note) + '</p>' : '') + wa;
 		}
 		var id = idPrefix + '-file';
 		return (view.proof_text ? '<p class="mo-booking__note">' + esc(view.proof_text) + '</p>' : '') +

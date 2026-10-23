@@ -1,5 +1,51 @@
 # Cambios
 
+## 0.2.0-beta.3 — 23 de octubre de 2026 (beta para preventa controlada)
+
+Esquema de datos 4. Detalle y pruebas en `docs/entrega-beta3.md`.
+
+### Decisiones de la administradora que sustituyen reglas de la especificación de preventa
+- **Eliminar sí está permitido** (solo con acceso al panel; los clientes no pueden): pagos registrados por error, clientes duplicados o de prueba aunque tengan reservas o contratos. Sustituye las reglas de "no borrar" de la especificación.
+- **Precio frecuente automático por nombre y contacto** (como en la beta.1), sustituye la Salida B de la beta.2. Toda cita sigue pasando por la aprobación del anticipo.
+
+### Clientes
+- Correos y teléfonos adicionales por cliente; se usan para encontrarlo al reservar y para reconocer su tarifa frecuente.
+- Posibles duplicados (mismo correo o teléfono, nombre igual sin acentos o con faltas leves), con "No son la misma persona".
+- **Fusionar**: las reservas del duplicado pasan al principal con sus pagos, comprobantes y contratos; sus contactos quedan como adicionales; el duplicado va a la papelera. Sesiones previas: el mayor de los dos; completadas: se suman.
+
+### Cliente frecuente (decisión B)
+- "Ya me he tomado fotos con ustedes" pide nombre, correo y teléfono en campos separados.
+- Coincide si el correo O el teléfono es del cliente y el nombre se parece. Sin descuento si correo y teléfono apuntan a clientes distintos o un contacto lo comparten varios.
+- Muestra precios de cliente frecuente (y preventa). La reserva debe usar el contacto con el que se identificó. Límite de intentos por IP.
+- Panel: insignia "Frecuente reconocido por nombre y contacto", filtro, y "Regresar a precio general" con un clic.
+
+### Papelera y eliminación
+- Papelera con restaurar para clientes, servicios, reservas y contratos; "Eliminar permanentemente" desde la papelera (en las listas pide escribir ELIMINAR).
+- Eliminar un cliente con todo su historial (reservas, pagos, comprobantes con sus archivos, copias de contrato, enlaces, mensajes y eventos propios de Google) confirmando con su nombre. La bitácora conserva solo un registro sin datos personales.
+- Eliminar un movimiento de dinero (sin papelera) con motivo obligatorio; nota en el historial con quién, cuándo, importe y motivo; saldo recalculado; aviso si una cita confirmada pierde el anticipo cubierto. "Revertir" sigue disponible.
+- Una reserva vigente debe cancelarse antes de ir a la papelera.
+
+### Comprobantes
+- Si no se pueden subir archivos, el enlace privado y la pantalla final muestran el botón "Da clic en este botón para enviar tu comprobante por WhatsApp" al **número del negocio**, con el mensaje "Hola! Hago el envío de mi comprobante de anticipo a nombre de {nombre} con número de reserva {referencia}" (editables en Ajustes).
+- Adjuntar desde el panel un comprobante recibido por WhatsApp o correo (mismas validaciones, carpeta privada, registro de quién lo subió).
+
+### Contrato para la clienta
+- Botón "Descargar mi contrato y datos de la sesión" en el enlace privado: página lista para imprimir o guardar como PDF con el contrato exacto (versión, fecha de aceptación y huella) y los datos de la sesión, sin notas internas. Solo funciona con la sesión del enlace privado.
+
+### Listas estilo WordPress
+- Clientes, reservas, servicios y contratos: pestañas con conteo, casillas, acciones masivas y por fila, filtros, búsqueda, orden y paginación.
+
+### Notificaciones
+- Plantillas propias de correo (con un evento o a mano desde la reserva) y de WhatsApp (se abren con el texto listo); activar, desactivar y quitar.
+- Guía de códigos junto a cada texto (clic para insertar), aviso de códigos desconocidos o con una sola llave, vista previa con datos de ejemplo y "Restaurar el texto original" en los avisos del sistema.
+- El registro guarda el texto exacto de cada mensaje ("Ver texto"), aunque la plantilla cambie o se quite.
+
+### Herramienta aparte
+- `mo-cargar-clientes-1.0.0.zip`: carga única de la base de clientes desde CSV, con revisión previa y deshacer (`docs/cargar-clientes.md`).
+
+### Pruebas
+- 200 pruebas PHPUnit (PHP 7.4 y 8.3); recorridos de navegador `preventa.js`, `admin-preventa.js`, `b3-clients.js` y `b3-admin.js`; actualización y reversión con los ZIP reales.
+
 ## 0.2.0-beta.2 — 22 de octubre de 2026 (beta para preventa controlada)
 
 Alcance: P0 y P0 condicional de `Especificacion_Maestra_MO_Booking_Studio_Preventa.md`, con la **Salida B** para clientes frecuentes y CSV. Esquema de datos 3.

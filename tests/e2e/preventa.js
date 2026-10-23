@@ -81,11 +81,25 @@ async function fillDetails(page, email) {
   m.on('pageerror', e => consoleErrors.push(e.message));
   await m.goto(URL_);
   await m.waitForSelector('[data-action=returning]', { timeout: 15000 });
-  // Salida B: "Ya me he tomado fotos" es una solicitud de revisión con precio general.
+  // Decisión B (beta.3): nombre, correo y teléfono en campos separados; correo O teléfono + nombre parecido.
   await m.click('[data-action=returning]');
+  await m.waitForSelector('[data-form=identify]');
+  ok(await m.locator('#mo-f-id-name').count() === 1 && await m.locator('#mo-f-id-email').count() === 1 && await m.locator('#mo-f-id-phone').count() === 1, 'Identificación con nombre, correo y teléfono separados');
+  await m.screenshot({ path: SHOTS + '/p0-identificacion.png', fullPage: true });
+  await m.fill('#mo-f-id-name', 'Nadie Conocido');
+  await m.fill('#mo-f-id-email', 'nadie@example.com');
+  await m.click('[data-form=identify] button[type=submit]');
+  await m.waitForSelector('[data-action=continue-general]');
+  ok(/No pudimos confirmar/.test(await m.locator('.mo-booking__welcome').innerText()), 'Sin coincidencia: mensaje neutro y continuar con precio general');
+  await m.click('[data-action=returning]');
+  await m.fill('#mo-f-id-name', 'prueba frecuente tres');
+  await m.fill('#mo-f-id-email', 'frecuente3@example.com');
+  await m.fill('#mo-f-id-phone', '');
+  await m.click('[data-form=identify] button[type=submit]');
   await m.waitForSelector('.mo-booking__day--available', { timeout: 15000 });
   const badge = await m.locator('.mo-booking__who').innerText();
-  ok(/público general/.test(badge) && /Revisaremos/.test(badge), 'Cliente que regresa: precio general y revisión', badge.replace(/\s+/g, ' '));
+  ok(/cliente frecuente/.test(badge), 'Frecuente reconocido: precios de cliente frecuente', badge.replace(/\s+/g, ' '));
+  await m.screenshot({ path: SHOTS + '/p0-frecuente.png', fullPage: true });
   await m.goto(URL_);
   const slotTime = await toDetails(m);
 

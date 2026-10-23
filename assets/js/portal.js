@@ -85,7 +85,10 @@
 			b.proofs.forEach(function (p) { html += '<li>' + esc(p.date) + ': ' + esc(p.status) + (p.note ? ' — ' + esc(p.note) : '') + '</li>'; });
 			html += '</ul>';
 		}
-		html += '<div class="mo-booking__upload-wrap">' + (b.can_upload ? '<h3>Enviar comprobante</h3>' : '') + M.uploadForm(b, 'mo-portal') + '</div>';
+		html += '<div class="mo-booking__upload-wrap">' + (b.can_upload || b.proof_whatsapp_url ? '<h3>Enviar comprobante</h3>' : '') + M.uploadForm(b, 'mo-portal') + '</div>';
+		if (b.print_url) {
+			html += '<p class="mo-booking__print"><a class="mo-booking__button" href="' + esc(b.print_url) + '" target="_blank" rel="noopener">Descargar mi contrato y datos de la sesión</a></p>';
+		}
 		if (b.policies.length) {
 			html += '<details class="mo-booking__policies"><summary>Políticas que aceptaste</summary>';
 			b.policies.forEach(function (p) { html += '<h4>' + esc(p.title) + '</h4><p>' + M.lines(p.summary) + '</p>'; });

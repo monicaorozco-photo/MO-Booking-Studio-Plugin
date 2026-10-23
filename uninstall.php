@@ -45,7 +45,7 @@ if ( '' !== $mo_result['refused'] ) {
 
 \MOBookingStudio\Infrastructure\Schema::drop();
 \MOBookingStudio\Infrastructure\Capabilities::uninstall();
-foreach ( array( 'mo_booking_settings', 'mo_booking_templates', 'mo_booking_version', 'mo_booking_frequent_threshold', 'mo_booking_queue_last_run', 'mo_booking_google', 'mo_booking_site_key', 'mo_booking_token_key', 'mo_booking_migrations', 'mo_booking_backup_confirmed', 'mo_booking_schema_version' ) as $mo_option ) {
+foreach ( array( 'mo_booking_settings', 'mo_booking_templates', 'mo_booking_version', 'mo_booking_frequent_threshold', 'mo_booking_queue_last_run', 'mo_booking_google', 'mo_booking_site_key', 'mo_booking_token_key', 'mo_booking_migrations', 'mo_booking_backup_confirmed', 'mo_booking_schema_version', 'mo_booking_custom_templates', 'mo_booking_not_duplicates' ) as $mo_option ) {
 	delete_option( $mo_option );
 }
 wp_clear_scheduled_hook( 'mo_booking_process_queue' );

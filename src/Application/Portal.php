@@ -129,7 +129,10 @@ final class Portal {
 			'payment_ref'     => $paying ? (string) Settings::get( 'payment_reference' ) : '',
 			'proofs'          => $proofs,
 			'can_upload'      => $canUpload,
-			'uploads_note'    => ! PrivateStorage::uploadsEnabled() ? 'Por ahora no podemos recibir archivos aquí. Envíanos tu comprobante por WhatsApp o correo con tu número de reserva.' : ( 'late' === $window['reason'] ? $window['message'] : '' ),
+			'uploads_note'    => ! PrivateStorage::uploadsEnabled() ? ( $paying && Settings::proofWhatsappUrl( '', '' ) ? '' : 'Por ahora no podemos recibir archivos aquí. Envíanos tu comprobante por WhatsApp o correo con tu número de reserva.' ) : ( 'late' === $window['reason'] ? $window['message'] : '' ),
+			// beta.3: sin carga de archivos, botón al WhatsApp del negocio con el mensaje listo.
+			'proof_whatsapp_url'   => ! PrivateStorage::uploadsEnabled() && in_array( $status, BookingStatus::awaitingPayment(), true ) ? Settings::proofWhatsappUrl( (string) ( $booking['contact']['name'] ?? '' ), $booking['public_ref'] ) : null,
+			'proof_whatsapp_label' => (string) Settings::get( 'whatsapp_proof_button' ),
 			'max_mb'          => (float) Settings::get( 'proof_max_mb' ),
 			'policies'        => $policies,
 			'whatsapp_url'    => $waNumber ? 'https://wa.me/' . ltrim( $waNumber, '+' ) . '?text=' . rawurlencode( 'Hola, tengo una pregunta sobre mi reserva ' . $booking['public_ref'] ) : null,
@@ -137,6 +140,8 @@ final class Portal {
 			'proof_text'      => str_replace( '{whatsapp}', (string) Settings::get( 'whatsapp_number' ), (string) Settings::get( 'portal_proof_text' ) ),
 			// 16.1: durante la preventa, cambios y cancelaciones se piden por WhatsApp.
 			'change_url'      => $waNumber && BookingStatus::isOpen( $status ) ? 'https://wa.me/' . ltrim( $waNumber, '+' ) . '?text=' . rawurlencode( 'Hola, quiero hacer un cambio o cancelar mi reserva ' . $booking['public_ref'] ) : null,
+			// beta.3: página para imprimir o guardar como PDF (contrato exacto y datos de la sesión).
+			'print_url'       => \MOBookingStudio\Frontend\PrintView::url(),
 			'children'        => $booking['children'],
 			'adults'          => $booking['adults'],
 		);

@@ -51,6 +51,7 @@ final class Plugin {
 
 		( new Routes() )->register();
 		( new Frontend() )->register();
+		( new \MOBookingStudio\Frontend\PrintView() )->register();
 		if ( is_admin() ) {
 			( new Admin() )->register();
 		}

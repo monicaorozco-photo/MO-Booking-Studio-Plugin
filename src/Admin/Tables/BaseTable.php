@@ -190,6 +190,11 @@ abstract class BaseTable extends \WP_List_Table {
 		}
 	}
 
+	/** Las acciones van dentro de la columna principal (row_actions ya añade el botón móvil). */
+	protected function handle_row_actions( $item, $column_name, $primary ) {
+		return '';
+	}
+
 	public function no_items() {
 		echo 'trash' === $this->view() ? 'La papelera está vacía.' : 'No hay resultados con estos filtros.';
 	}

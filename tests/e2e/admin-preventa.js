@@ -25,15 +25,15 @@ const notice = async page => (await page.locator('.notice').allInnerTexts()).joi
   await Promise.all([page.waitForNavigation({ timeout: 90000 }), page.click('#wp-submit')]);
 
   // Reserva de prueba activa más reciente.
-  await page.goto(BASE + '/wp-admin/admin.php?page=mo-booking-bookings&status=active');
-  const href = await page.locator('tr:has(.mo-pill--test) td[data-label=Reserva] a').first().getAttribute('href');
+  await page.goto(BASE + '/wp-admin/admin.php?page=mo-booking-bookings');
+  const href = await page.locator('tr:has(.mo-pill--test) .column-ref a.row-title').first().getAttribute('href');
   await page.goto(href);
   const ref = (await page.locator('h1').innerText()).replace('Reserva ', '').trim().split(/\s/)[0];
   const before = (await page.locator('.mo-contract-copy').innerHTML());
 
   // AC-08: publicar una versión nueva de la plantilla.
   await page.goto(BASE + '/wp-admin/admin.php?page=mo-booking-contracts');
-  await page.click('td a >> nth=0');
+  await page.click('.column-name a.row-title >> nth=0');
   await page.waitForSelector('#mo_contract_body');
   // Editor visual de WordPress (TinyMCE); si no cargó, el área de texto.
   await page.evaluate(html => {
@@ -67,9 +67,9 @@ const notice = async page => (await page.locator('.notice').allInnerTexts()).joi
   // AC-13: archivar y restaurar.
   await Promise.all([page.waitForNavigation(), page.click('button:has-text("Archivar")')]);
   ok(/archivada/.test(await notice(page)), 'Reserva archivada');
-  await page.goto(BASE + '/wp-admin/admin.php?page=mo-booking-bookings&status=active&archived=0');
+  await page.goto(BASE + '/wp-admin/admin.php?page=mo-booking-bookings');
   ok((await page.locator('text=' + ref).count()) === 0, 'No aparece entre las no archivadas');
-  await page.goto(BASE + '/wp-admin/admin.php?page=mo-booking-bookings&status=active&archived=1');
+  await page.goto(BASE + '/wp-admin/admin.php?page=mo-booking-bookings&view=archived');
   ok((await page.locator('text=' + ref).count()) > 0, 'Aparece con el filtro de archivadas');
   await page.goto(href);
   await Promise.all([page.waitForNavigation(), page.click('button:has-text("Restaurar (quitar de archivadas)")')]);

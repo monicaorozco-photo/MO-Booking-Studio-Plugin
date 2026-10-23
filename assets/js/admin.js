@@ -83,4 +83,52 @@
 			clear.addEventListener('click', function () { input.value = ''; img.hidden = true; });
 		}
 	});
+
+	// Notificaciones: insertar códigos, avisar de códigos desconocidos y vista previa.
+	var sampleEl = document.getElementById('mo-sample-vars');
+	if (sampleEl) {
+		var sample = {};
+		try { sample = JSON.parse(sampleEl.textContent); } catch (e) { sample = {}; }
+		var unknownCodes = function (text) {
+			var out = [];
+			text.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, function (all, code) { if (!Object.prototype.hasOwnProperty.call(sample, code)) { out.push(all); } return all; });
+			text.replace(/(^|[^{])\{([a-z_]+)\}(?!\})/g, function (all, pre, code) { out.push('{' + code + '}'); return all; });
+			return out.filter(function (v, i, a) { return a.indexOf(v) === i; });
+		};
+		var check = function (field) {
+			var warn = document.querySelector('[data-warning-for="' + field.id + '"]');
+			if (!warn) { return; }
+			var bad = unknownCodes(field.value);
+			warn.hidden = !bad.length;
+			warn.textContent = bad.length ? 'No reconocemos: ' + bad.join(' ') + '. Usa doble llave y un código de la guía (por ejemplo {{nombre}}); si no, saldrá vacío.' : '';
+		};
+		document.querySelectorAll('[data-mo-codes]').forEach(function (field) {
+			check(field);
+			field.addEventListener('input', function () { check(field); });
+		});
+		document.addEventListener('click', function (ev) {
+			var btn = ev.target.closest('.mo-code');
+			if (btn) {
+				var target = document.getElementById(btn.getAttribute('data-target'));
+				if (!target) { return; }
+				var code = btn.getAttribute('data-insert');
+				var start = target.selectionStart || 0;
+				var end = target.selectionEnd || 0;
+				target.value = target.value.slice(0, start) + code + target.value.slice(end);
+				target.focus();
+				target.selectionStart = target.selectionEnd = start + code.length;
+				check(target);
+				return;
+			}
+			var prev = ev.target.closest('[data-mo-preview]');
+			if (prev) {
+				var id = prev.getAttribute('data-mo-preview');
+				var field = document.getElementById(id);
+				var out = document.querySelector('[data-preview-for="' + id + '"]');
+				if (!field || !out) { return; }
+				out.textContent = field.value.replace(/\{\{\s*([a-z_]+)\s*\}\}/g, function (all, code) { return Object.prototype.hasOwnProperty.call(sample, code) ? sample[code] : ''; });
+				out.hidden = false;
+			}
+		});
+	}
 })();

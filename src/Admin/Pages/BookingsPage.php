@@ -35,70 +35,21 @@ final class BookingsPage {
 
 	private static function listView( array $g ): void {
 		Ui::header( 'Reservas', ' <a class="page-title-action" href="' . esc_url( Ui::url( 'mo-booking-bookings', array( 'new' => 1 ) ) ) . '">Nueva reserva</a>' );
-		$statusOpts = array( '' => 'Todos los estados', 'active' => 'Activas' ) + BookingStatus::LABELS;
-		$services   = array( '' => 'Todos los servicios' );
-		foreach ( Services::all() as $s ) {
-			$services[ $s['id'] ] = $s['title'];
+		if ( ! empty( $g['client_id'] ) ) {
+			$client = Clients::find( (int) $g['client_id'] );
+			echo '<p>Reservas de <strong>' . esc_html( $client ? $client['name'] : '#' . (int) $g['client_id'] ) . '</strong> · <a href="' . esc_url( Ui::url( 'mo-booking-bookings' ) ) . '">Ver todas</a></p>';
 		}
-		$payOpts  = array( '' => 'Todos los pagos' ) + \MOBookingStudio\Domain\Ledger::LABELS;
-		$viewOpts = array( '0' => 'Solo no archivadas', '1' => 'Solo archivadas' );
-		echo '<form method="get" class="mo-filter"><input type="hidden" name="page" value="mo-booking-bookings">' .
-			Ui::select( 'status', $statusOpts, $g['status'] ?? 'active', array( 'aria-label' => 'Estado' ) ) . ' ' .
-			Ui::select( 'service_id', $services, $g['service_id'] ?? '', array( 'aria-label' => 'Servicio' ) ) . ' ' .
-			Ui::select( 'pay', $payOpts, $g['pay'] ?? '', array( 'aria-label' => 'Pago' ) ) . ' ' .
-			'<label>' . Ui::checkbox( 'conflict', ! empty( $g['conflict'] ), 'Con conflicto' ) . '</label> ' .
-			Ui::select( 'archived', $viewOpts, (string) ( $g['archived'] ?? '0' ), array( 'aria-label' => 'Archivadas' ) ) . ' ' .
-			'<label>Desde ' . Ui::input( 'from', $g['from'] ?? '', 'date' ) . '</label> <label>Hasta ' . Ui::input( 'to', $g['to'] ?? '', 'date' ) . '</label> ' .
-			Ui::input( 'search', $g['search'] ?? '', 'search', array( 'placeholder' => 'Referencia, nombre, correo o teléfono', 'aria-label' => 'Buscar' ) ) . ' <button class="button">Filtrar</button></form>'; // phpcs:ignore WordPress.Security.EscapeOutput
-
-		$status  = $g['status'] ?? 'active';
-		$filters = array(
-			'from'       => $g['from'] ?? '',
-			'to'         => $g['to'] ?? '',
-			'service_id' => $g['service_id'] ?? '',
-			'search'     => $g['search'] ?? '',
-			'archived'   => '1' === (string) ( $g['archived'] ?? '0' ),
-			'conflict'   => ! empty( $g['conflict'] ),
-			'limit'      => 200,
-		);
-		if ( 'active' === $status ) {
-			$filters['status'] = BookingStatus::active();
-		} elseif ( $status ) {
-			$filters['status'] = array( $status );
-		}
-		$pay  = (string) ( $g['pay'] ?? '' );
-		$rows = '';
-		foreach ( Bookings::list( $filters ) as $b ) {
-			$summary = Bookings::summary( $b );
-			if ( '' !== $pay && $summary['status'] !== $pay ) {
-				continue;
-			}
-			$url   = Ui::url( 'mo-booking-bookings', array( 'booking' => $b['id'] ) );
-			$sync  = array( 'none' => '—', 'pending' => 'Pendiente', 'retrying' => 'Reintentando', 'synced' => 'Sincronizada', 'error' => 'Error' );
-			$rows .= '<tr><td data-label="Reserva"><a href="' . esc_url( $url ) . '"><strong>' . esc_html( $b['public_ref'] ) . '</strong></a>' . ( $b['is_test'] ? ' <span class="mo-pill mo-pill--test">PRUEBA</span>' : '' ) . ( $b['archived'] ? ' <span class="mo-pill">Archivada</span>' : '' ) . '</td>' .
-				'<td data-label="Cliente">' . esc_html( (string) $b['client_name'] ) . ( $b['frequent_claim'] && 'frequent' !== $b['client_category'] ? ' <span class="mo-pill mo-pill--review">Frecuente por revisar</span>' : '' ) . '</td>' .
-				'<td data-label="Servicio">' . esc_html( (string) $b['service_title'] ) . '</td>' .
-				'<td data-label="Fecha y hora">' . esc_html( Ui::localDateTime( $b['start_utc'], 'D d/m/Y H:i' ) ) . '</td>' .
-				'<td data-label="Estado">' . Ui::statusPill( $b['status'] ) . '</td>' .
-				'<td data-label="Anticipo">' . Ui::financialPill( $summary['status'] ) . '</td>' .
-				'<td data-label="Total y saldo">' . Ui::money( $b['total_cents'] ) . '<br><span class="description">Saldo ' . Ui::money( $summary['balance_cents'] ) . '</span></td>' .
-				'<td data-label="Calendar">' . esc_html( $sync[ $b['sync_state'] ] ?? $b['sync_state'] ) . '</td>' .
-				'<td data-label="Conflicto">' . ( 'open' === $b['conflict_state'] ? '<span class="mo-pill mo-pill--review">Empalme</span>' : '—' ) . '</td>' .
-				'<td data-label="Acciones"><a class="button button-small" href="' . esc_url( $url ) . '">Ver</a> <a class="button button-small" href="' . esc_url( add_query_arg( 'edit', '1', $url ) . '#editar' ) . '">Editar</a></td></tr>';
-		}
-		if ( '' === $rows ) {
-			echo '<p>No hay reservas con estos filtros.</p>';
-			Ui::footer();
-			return;
-		}
-		echo '<table class="widefat striped mo-table"><thead><tr><th>Referencia</th><th>Cliente</th><th>Servicio</th><th>Fecha y hora</th><th>Estado</th><th>Anticipo</th><th>Total y saldo</th><th>Calendar</th><th>Conflicto</th><th>Acciones</th></tr></thead><tbody>' . $rows . '</tbody></table>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		( new \MOBookingStudio\Admin\Tables\BookingsTable() )->render( 'Buscar reservas' );
 		Ui::footer();
 	}
 
 	private static function detail( int $id, array $g ): void {
 		$b = Bookings::find( $id );
 		if ( ! $b ) {
-			wp_die( 'La reserva no existe.' );
+			Ui::header( 'Reserva' );
+			echo '<div class="notice notice-error"><p>La reserva no existe (quizá se eliminó definitivamente).</p></div><p><a href="' . esc_url( Ui::url( 'mo-booking-bookings' ) ) . '">Volver a reservas</a></p>';
+			Ui::footer();
+			return;
 		}
 		$service = Services::find( $b['service_id'] );
 		$client  = Clients::find( $b['client_id'] );
@@ -107,6 +58,10 @@ final class BookingsPage {
 		$canPay  = current_user_can( Cap::PAYMENTS );
 
 		Ui::header( 'Reserva ' . $b['public_ref'], ' <a class="page-title-action" href="' . esc_url( Ui::url( 'mo-booking-bookings' ) ) . '">Volver a reservas</a>' );
+		if ( $b['trashed'] ) {
+			echo '<div class="notice notice-warning"><p>Esta reserva está en la <strong>papelera</strong>. ' . Ui::formOpen( 'restore_booking_trash', $hidden, 'mo-inline-form' ) . Ui::button( 'Restaurar', 'button-secondary' ) . '</form></p>' . // phpcs:ignore WordPress.Security.EscapeOutput
+				Ui::formOpen( 'purge_booking', $hidden ) . '<p>Eliminar definitivamente borra la reserva con sus pagos, comprobantes (archivos incluidos), copia del contrato, enlace privado, mensajes y eventos propios de Google. La bitácora conserva un registro sin datos personales.</p><p><label>Escribe <strong>ELIMINAR</strong> para confirmar ' . Ui::input( 'confirm_text', '', 'text', array( 'autocomplete' => 'off', 'required' => 'required', 'class' => 'small-text' ) ) . '</label> ' . Ui::button( 'Eliminar definitivamente', 'button-link-delete', '¿Eliminar la reserva y todo lo que depende de ella? No se puede deshacer.' ) . '</p></form></div>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		}
 		echo '<p class="mo-detail-status">' . Ui::statusPill( $b['status'] ) . ' ' . Ui::financialPill( $summary['status'] ) . ( $b['is_test'] ? ' <span class="mo-pill mo-pill--test">PRUEBA</span>' : '' ) . ' · versión ' . (int) $b['version'] . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput
 
 		echo '<div class="mo-grid mo-grid--2">';
@@ -155,7 +110,11 @@ final class BookingsPage {
 		$body .= '<dt>Correo</dt><dd>' . esc_html( $b['contact']['email'] ?? '' ) . '</dd>';
 		$body .= '<dt>Teléfono</dt><dd>' . esc_html( $b['contact']['phone'] ?? '' ) . ' <span class="description">' . esc_html( $b['contact']['phone_e164'] ?? '' ) . '</span></dd>';
 		$body .= '<dt>WhatsApp</dt><dd>' . ( ! empty( $b['consent']['whatsapp'] ) ? 'Aceptó avisos' : 'No aceptó avisos automáticos' ) . '</dd>';
-		$body .= '<dt>Categoría aplicada</dt><dd>' . ( 'frequent' === $b['client_category'] ? 'Cliente frecuente' . ( ! empty( $b['quote']['frequent_check'] ) ? ' (verificado en línea por nombre y contacto)' : '' ) : 'Público general' ) . ( $b['frequent_claim'] && 'frequent' !== $b['client_category'] ? ' · <span class="mo-pill mo-pill--review">Dice que ya tuvo sesión: validar</span>' : '' ) . '</dd>';
+		$autoFrequent = \MOBookingStudio\Application\FrequentCheck::MATCH_AUTO === $b['frequent_match'] && 'frequent' === $b['client_category'];
+		$body .= '<dt>Categoría aplicada</dt><dd>' . ( 'frequent' === $b['client_category'] ? 'Cliente frecuente' : 'Público general' ) .
+			( $autoFrequent ? ' <span class="mo-pill mo-pill--auto">Frecuente reconocido por nombre y contacto</span>' . ( current_user_can( Cap::BOOKINGS ) && ! $b['trashed'] ? Ui::formOpen( 'revert_frequent', array( 'booking_id' => $b['id'], 'version' => $b['version'] ), 'mo-inline-form' ) . ' ' . Ui::button( 'Regresar a precio general', 'button-link', '¿Quitar la tarifa de cliente frecuente y recalcular con el precio general? El anticipo y el saldo se actualizan.' ) . '</form>' : '' ) : '' ) .
+			( 'reverted' === $b['frequent_match'] ? ' <span class="description">(se revirtió la tarifa frecuente reconocida automáticamente)</span>' : '' ) .
+			( $b['frequent_claim'] && 'frequent' !== $b['client_category'] && 'reverted' !== $b['frequent_match'] ? ' · <span class="mo-pill mo-pill--review">Dice que ya tuvo sesión: validar</span>' : '' ) . '</dd>';
 		if ( $client ) {
 			$body .= '<dt>Expediente</dt><dd><a href="' . esc_url( Ui::url( 'mo-booking-clients', array( 'client' => $client['id'] ) ) ) . '">' . esc_html( $client['name'] ) . '</a> · ' . Clients::sessions( $client ) . ' sesiones · categoría ' . ( 'frequent' === Clients::effectiveCategory( $client ) ? 'frecuente' : 'general' ) . ( $client['needs_review'] ? ' · <span class="mo-pill mo-pill--review">Revisar identidad</span>' : '' ) . '</dd>';
 		}
@@ -287,9 +246,14 @@ final class BookingsPage {
 					$reversed[ (int) $m['reverses_id'] ] = true;
 				}
 			}
-			$html .= '<h3>Movimientos</h3><table class="widefat striped"><thead><tr><th>Fecha</th><th>Tipo</th><th>Importe</th><th>Detalle</th></tr></thead><tbody>';
+			$html .= '<h3>Movimientos</h3><table class="widefat striped mo-movements"><thead><tr><th>Fecha</th><th>Tipo</th><th>Importe</th><th>Detalle</th><th><span class="screen-reader-text">Acciones</span></th></tr></thead><tbody>';
 			foreach ( $movements as $m ) {
-				$html .= '<tr' . ( isset( $reversed[ (int) $m['id'] ] ) ? ' class="mo-reversed"' : '' ) . '><td>' . esc_html( Ui::localDateTime( $m['received_at'] ?: $m['created_at'], 'd/m/Y' ) ) . '</td><td>' . esc_html( Ledger::TYPE_LABELS[ $m['type'] ] ?? $m['type'] ) . ( isset( $reversed[ (int) $m['id'] ] ) ? ' (revertido)' : '' ) . '</td><td>' . Ui::money( (int) $m['amount_cents'] ) . '</td><td>' . esc_html( trim( $m['method'] . ' ' . $m['reference'] . ' ' . $m['note'] ) ) . '</td></tr>';
+				$delete = Ui::formOpen( 'delete_movement', array_merge( $hidden, array( 'payment_id' => $m['id'] ) ) ) .
+					'<p class="description">Solo si se registró por error. No pasa por la papelera; queda una nota en el historial con quién, cuándo, importe y motivo.' . ( 'reversal' !== $m['type'] && isset( $reversed[ (int) $m['id'] ] ) ? ' También se elimina su reverso.' : '' ) . '</p>' .
+					Ui::input( 'reason', '', 'text', array( 'placeholder' => 'Motivo (obligatorio)', 'required' => 'required', 'class' => 'regular-text', 'aria-label' => 'Motivo para eliminar el movimiento' ) ) . ' ' .
+					Ui::button( 'Eliminar movimiento', 'button-link-delete', '¿Eliminar este movimiento? El saldo se recalcula.' ) . '</form>';
+				$html .= '<tr' . ( isset( $reversed[ (int) $m['id'] ] ) ? ' class="mo-reversed"' : '' ) . '><td>' . esc_html( Ui::localDateTime( $m['received_at'] ?: $m['created_at'], 'd/m/Y' ) ) . '</td><td>' . esc_html( Ledger::TYPE_LABELS[ $m['type'] ] ?? $m['type'] ) . ( isset( $reversed[ (int) $m['id'] ] ) ? ' (revertido)' : '' ) . '</td><td>' . Ui::money( (int) $m['amount_cents'] ) . '</td><td>' . esc_html( trim( $m['method'] . ' ' . $m['reference'] . ' ' . $m['note'] ) ) . '</td>' .
+					'<td><details class="mo-details mo-details--inline"><summary>Eliminar…</summary>' . $delete . '</details></td></tr>';
 			}
 			$html .= '</tbody></table>';
 			$options = array();
@@ -304,7 +268,7 @@ final class BookingsPage {
 				( $options ? Ui::row( 'Movimiento a revertir', Ui::select( 'reverses_id', array( '' => '—' ) + $options, '' ) ) : '' ) .
 				Ui::row( 'Referencia', Ui::input( 'reference', '', 'text' ) ) .
 				Ui::row( 'Motivo', Ui::input( 'note', '', 'text', array( 'required' => 'required', 'class' => 'regular-text' ) ) ) .
-				Ui::button( 'Registrar movimiento', 'button-secondary' ) . '</form><p class="description">Los movimientos no se borran ni se editan: se corrigen con un reverso. Una devolución solo cuenta como realizada cuando la registras aquí.</p></details>';
+				Ui::button( 'Registrar movimiento', 'button-secondary' ) . '</form><p class="description">Para corregir un movimiento puedes revertirlo (queda a la vista con su reverso) o eliminarlo con motivo (desde la tabla de movimientos). Una devolución solo cuenta como realizada cuando la registras aquí.</p></details>';
 		}
 		return $html;
 	}
@@ -379,7 +343,13 @@ final class BookingsPage {
 			$html .= self::editBlock( $b, $hiddenV, $g );
 		}
 		// 7.8: archivar es solo visibilidad.
-		$html .= '<p>' . Ui::formOpen( $b['archived'] ? 'restore_booking' : 'archive_booking', $hidden, 'mo-inline-form' ) . Ui::button( $b['archived'] ? 'Restaurar (quitar de archivadas)' : 'Archivar', 'button-secondary', $b['archived'] ? '' : '¿Archivar? No cambia el estado ni los pagos; puedes restaurarla después.' ) . '</form></p>';
+		$html .= '<p>' . Ui::formOpen( $b['archived'] ? 'restore_booking' : 'archive_booking', $hidden, 'mo-inline-form' ) . Ui::button( $b['archived'] ? 'Restaurar (quitar de archivadas)' : 'Archivar', 'button-secondary', $b['archived'] ? '' : '¿Archivar? No cambia el estado ni los pagos; puedes restaurarla después.' ) . '</form>';
+		if ( ! $b['trashed'] ) {
+			$html .= BookingStatus::isOpen( $s )
+				? ' <span class="description">Para enviarla a la papelera, primero cancélala o recházala.</span>'
+				: ' ' . Ui::formOpen( 'trash_booking', $hidden, 'mo-inline-form' ) . Ui::button( 'Mover a la papelera', 'button-link-delete', '¿Mover a la papelera? Puedes restaurarla después.' ) . '</form>';
+		}
+		$html .= '</p>';
 		if ( $b['is_test'] ) {
 			$blockers = Bookings::deleteBlockers( $b );
 			$html    .= '<details class="mo-details"><summary>Eliminar definitivamente (solo pruebas)</summary>';

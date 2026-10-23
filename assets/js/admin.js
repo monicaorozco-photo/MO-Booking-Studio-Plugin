@@ -10,6 +10,31 @@
 		}
 	});
 
+	// Eliminar permanentemente desde una lista: se escribe ELIMINAR (el servidor lo vuelve a comprobar).
+	var askTyped = function (message) {
+		var typed = window.prompt(message || 'Esta acción no se puede deshacer. Escribe ELIMINAR para confirmar.');
+		return typed === null ? null : typed.trim();
+	};
+	document.addEventListener('click', function (ev) {
+		var link = ev.target.closest('a[data-typed-confirm]');
+		if (!link) { return; }
+		ev.preventDefault();
+		var typed = askTyped(link.getAttribute('data-typed-confirm'));
+		if (typed !== null) { window.location.href = link.href + '&confirm_text=' + encodeURIComponent(typed); }
+	});
+	document.addEventListener('submit', function (ev) {
+		var form = ev.target;
+		if (!form.classList || !form.classList.contains('mo-list-form')) { return; }
+		var submitter = ev.submitter || document.activeElement;
+		var select = form.querySelector(submitter && submitter.id === 'doaction2' ? '[name=action2]' : '[name=action]');
+		if (!select || select.value !== 'purge' || (submitter && submitter.name === 'filter_action')) { return; }
+		var typed = askTyped('Se eliminarán definitivamente los elementos marcados, con todo lo que depende de ellos. Escribe ELIMINAR para confirmar.');
+		if (typed === null) { ev.preventDefault(); return; }
+		var field = form.querySelector('[name=confirm_text]') || document.createElement('input');
+		field.type = 'hidden'; field.name = 'confirm_text'; field.value = typed;
+		form.appendChild(field);
+	});
+
 	// Evitar doble envío.
 	document.addEventListener('submit', function (ev) {
 		var form = ev.target;

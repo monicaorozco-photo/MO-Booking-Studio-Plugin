@@ -137,11 +137,12 @@ final class Services {
 		'published' => 'Activo (publicado)',
 		'inactive'  => 'Desactivado',
 		'archived'  => 'Archivado',
+		'trash'     => 'En la papelera',
 	);
 
 	/** 13: cambia el estado sin tocar su configuración ni las reservas históricas. */
 	public static function setStatus( int $id, string $status ): void {
-		if ( ! isset( self::STATUS_LABELS[ $status ] ) ) {
+		if ( ! isset( self::STATUS_LABELS[ $status ] ) || Trash::SERVICE_TRASH === $status ) {
 			throw new DomainException( 'invalid_service', 'Estado no válido.' );
 		}
 		$service = self::get( $id );
@@ -199,7 +200,7 @@ final class Services {
 		$table = Schema::table( 'services' );
 		$rows  = $status
 			? $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $table WHERE status = %s ORDER BY title", $status ), ARRAY_A ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-			: $wpdb->get_results( "SELECT * FROM $table ORDER BY status = 'published' DESC, title", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			: $wpdb->get_results( "SELECT * FROM $table WHERE status <> 'trash' ORDER BY status = 'published' DESC, title", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		return array_map( array( self::class, 'hydrate' ), $rows ?: array() );
 	}
 

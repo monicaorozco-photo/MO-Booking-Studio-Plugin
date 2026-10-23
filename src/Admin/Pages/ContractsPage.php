@@ -36,22 +36,7 @@ final class ContractsPage {
 
 	private static function index(): void {
 		echo '<div class="mo-help"><p>Cada servicio elige una plantilla publicada. La persona la lee en un acordeón debajo del formulario y debe aceptarla para reservar. Cada reserva guarda una copia exacta de la versión que aceptó; publicar cambios crea una versión nueva y no altera reservas anteriores.</p></div>';
-		$rows = '';
-		foreach ( Contracts::all( true ) as $c ) {
-			$using    = Contracts::servicesUsing( (int) $c['id'] );
-			$archived = 'archived' === $c['status'];
-			$rows    .= '<tr><td><a href="' . esc_url( Ui::url( 'mo-booking-contracts', array( 'contract' => $c['id'] ) ) ) . '"><strong>' . esc_html( $c['name'] ) . '</strong></a>' . ( $archived ? ' <span class="mo-pill">Archivada</span>' : '' ) . '</td>' .
-				'<td>' . ( (int) $c['current_version'] ? 'Versión ' . (int) $c['current_version'] : '<em>Sin publicar</em>' ) . '</td>' .
-				'<td>' . esc_html( $using ? implode( ', ', array_column( $using, 'title' ) ) : '—' ) . '</td>' .
-				'<td>' . (int) Contracts::bookingsUsing( (int) $c['id'] ) . '</td>' .
-				'<td>' . ( $archived
-					? Ui::formOpen( 'restore_contract', array( 'contract_id' => $c['id'] ), 'mo-inline-form' ) . Ui::button( 'Restaurar', 'button-link' ) . '</form>'
-					: Ui::formOpen( 'archive_contract', array( 'contract_id' => $c['id'] ), 'mo-inline-form' ) . Ui::button( 'Archivar', 'button-link', '¿Archivar la plantilla? Las versiones y las copias aceptadas se conservan.' ) . '</form>' ) . '</td></tr>';
-		}
-		if ( '' === $rows ) {
-			$rows = '<tr><td colspan="5">Todavía no hay plantillas. Crea una con "Nueva plantilla".</td></tr>';
-		}
-		echo Ui::card( 'Plantillas', '<table class="widefat striped mo-table"><thead><tr><th>Plantilla</th><th>Vigente</th><th>Servicios</th><th>Reservas que la aceptaron</th><th>Acciones</th></tr></thead><tbody>' . $rows . '</tbody></table>' ); // phpcs:ignore WordPress.Security.EscapeOutput
+		( new \MOBookingStudio\Admin\Tables\ContractsTable() )->render( 'Buscar plantillas' );
 	}
 
 	private static function edit( ?int $id ): void {

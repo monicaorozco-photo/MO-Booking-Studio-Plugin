@@ -9,6 +9,7 @@ use MOBookingStudio\Application\Proofs;
 use MOBookingStudio\Application\Schedules;
 use MOBookingStudio\Application\Services;
 use MOBookingStudio\Application\TestData;
+use MOBookingStudio\Application\Trash;
 use MOBookingStudio\Domain\DomainException;
 use MOBookingStudio\Domain\Money;
 use MOBookingStudio\Infrastructure\Capabilities as Cap;
@@ -55,6 +56,20 @@ final class Admin {
 		'archive_client'      => Cap::CLIENTS,
 		'restore_client'      => Cap::CLIENTS,
 		'delete_client'       => Cap::CLIENTS,
+		'trash_client'        => Cap::CLIENTS,
+		'restore_client_trash' => Cap::CLIENTS,
+		'purge_client'        => Cap::CLIENTS,
+		'add_contact'         => Cap::CLIENTS,
+		'remove_contact'      => Cap::CLIENTS,
+		'merge_clients'       => Cap::CLIENTS,
+		'dismiss_duplicate'   => Cap::CLIENTS,
+		'delete_movement'     => Cap::PAYMENTS,
+		'revert_frequent'     => Cap::BOOKINGS,
+		'trash_booking'       => Cap::BOOKINGS,
+		'restore_booking_trash' => Cap::BOOKINGS,
+		'purge_booking'       => Cap::BOOKINGS,
+		'trash_service'       => Cap::SETTINGS,
+		'trash_contract'      => Cap::SETTINGS,
 		'archive_booking'     => Cap::BOOKINGS,
 		'restore_booking'     => Cap::BOOKINGS,
 		'delete_booking'      => Cap::BOOKINGS,
@@ -127,14 +142,15 @@ final class Admin {
 		add_menu_page( 'MO Booking Studio', 'Reservas', Cap::AGENDA, 'mo-booking', array( Pages\Dashboard::class, 'render' ), $icon, 26 );
 		add_submenu_page( 'mo-booking', 'Inicio', 'Inicio', Cap::AGENDA, 'mo-booking', array( Pages\Dashboard::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Agenda', 'Agenda', Cap::AGENDA, 'mo-booking-agenda', array( Pages\Agenda::class, 'render' ) );
-		add_submenu_page( 'mo-booking', 'Reservas', 'Reservas', Cap::BOOKINGS, 'mo-booking-bookings', array( Pages\BookingsPage::class, 'render' ) );
-		add_submenu_page( 'mo-booking', 'Servicios', 'Servicios', Cap::SETTINGS, 'mo-booking-services', array( Pages\ServicesPage::class, 'render' ) );
+		$lists   = array();
+		$lists[ Tables\BookingsTable::class ] = add_submenu_page( 'mo-booking', 'Reservas', 'Reservas', Cap::BOOKINGS, 'mo-booking-bookings', array( Pages\BookingsPage::class, 'render' ) );
+		$lists[ Tables\ServicesTable::class ] = add_submenu_page( 'mo-booking', 'Servicios', 'Servicios', Cap::SETTINGS, 'mo-booking-services', array( Pages\ServicesPage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Disponibilidad', 'Disponibilidad', Cap::SETTINGS, 'mo-booking-availability', array( Pages\AvailabilityPage::class, 'render' ) );
-		add_submenu_page( 'mo-booking', 'Clientes', 'Clientes', Cap::CLIENTS, 'mo-booking-clients', array( Pages\ClientsPage::class, 'render' ) );
+		$lists[ Tables\ClientsTable::class ] = add_submenu_page( 'mo-booking', 'Clientes', 'Clientes', Cap::CLIENTS, 'mo-booking-clients', array( Pages\ClientsPage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Pagos y recibos', 'Pagos y recibos', Cap::PAYMENTS, 'mo-booking-payments', array( Pages\PaymentsPage::class, 'render' ) );
 		add_submenu_page( 'mo-booking', 'Tarifas y descuentos', 'Tarifas y descuentos', Cap::SETTINGS, 'mo-booking-rates', array( Pages\RatesPage::class, 'render' ) );
 		// 6.5: "Políticas" se renombra "Contratos"; las reglas económicas quedan como pestaña.
-		add_submenu_page( 'mo-booking', 'Contratos', 'Contratos', Cap::SETTINGS, 'mo-booking-contracts', array( Pages\ContractsPage::class, 'render' ) );
+		$lists[ Tables\ContractsTable::class ] = add_submenu_page( 'mo-booking', 'Contratos', 'Contratos', Cap::SETTINGS, 'mo-booking-contracts', array( Pages\ContractsPage::class, 'render' ) );
 		$hook = add_submenu_page( '', 'Reglas de cancelación y cambios', 'Reglas de cancelación y cambios', Cap::SETTINGS, 'mo-booking-policies', array( Pages\PoliciesPage::class, 'render' ) );
 		// Las páginas ocultas no tienen título en el menú; se fija para la cabecera de WordPress.
 		add_action(
@@ -148,6 +164,12 @@ final class Admin {
 		add_submenu_page( 'mo-booking', 'Finanzas (próximamente)', 'Finanzas · próx.', Cap::FINANCE, 'mo-booking-finance', array( Pages\UpcomingPage::class, 'finance' ) );
 		add_submenu_page( 'mo-booking', 'Galerías (próximamente)', 'Galerías · próx.', Cap::GALLERIES, 'mo-booking-galleries', array( Pages\UpcomingPage::class, 'galleries' ) );
 		add_submenu_page( 'mo-booking', 'Ajustes', 'Ajustes', Cap::SETTINGS, 'mo-booking-settings', array( Pages\SettingsPage::class, 'render' ) );
+		// Acciones masivas y por fila de las listas: se procesan antes de imprimir la página.
+		foreach ( $lists as $table => $hook ) {
+			if ( $hook ) {
+				add_action( 'load-' . $hook, array( $table, 'process' ) );
+			}
+		}
 	}
 
 	public function assets( string $hook ): void {
@@ -487,6 +509,82 @@ final class Admin {
 				\MOBookingStudio\Application\Clients::delete( (int) $p['client_id'] );
 				Ui::flash( 'success', 'Cliente eliminado.' );
 				return Ui::url( 'mo-booking-clients' );
+
+			case 'trash_client':
+				Trash::trashClient( (int) $p['client_id'] );
+				Ui::flash( 'success', 'Cliente enviado a la papelera. Puedes restaurarlo desde Clientes → Papelera.' );
+				return Ui::url( 'mo-booking-clients' );
+
+			case 'restore_client_trash':
+				Trash::restoreClient( (int) $p['client_id'] );
+				Ui::flash( 'success', 'Cliente restaurado.' );
+				return Ui::url( 'mo-booking-clients', array( 'client' => (int) $p['client_id'] ) );
+
+			case 'purge_client':
+				$r = Trash::purgeClient( (int) $p['client_id'], (string) ( $p['confirm_name'] ?? '' ) );
+				Ui::flash( 'success', sprintf( 'Cliente eliminado definitivamente junto con %d reserva(s), %d movimiento(s) y %d comprobante(s).', $r['bookings'], $r['payments'], $r['proofs'] ) );
+				return Ui::url( 'mo-booking-clients' );
+
+			case 'add_contact':
+				$added = Clients::addContact( (int) $p['client_id'], sanitize_key( (string) ( $p['contact_kind'] ?? '' ) ), sanitize_text_field( (string) ( $p['contact_value'] ?? '' ) ), sanitize_key( (string) ( $p['contact_country'] ?? 'MX' ) ), (string) ( $p['contact_label'] ?? '' ) );
+				Ui::flash( 'success', $added ? 'Contacto agregado.' : 'Ese contacto ya estaba registrado para este cliente.' );
+				return Ui::url( 'mo-booking-clients', array( 'client' => (int) $p['client_id'] ) );
+
+			case 'remove_contact':
+				Clients::removeContact( (int) $p['client_id'], (int) $p['contact_id'] );
+				Ui::flash( 'success', 'Contacto quitado.' );
+				return Ui::url( 'mo-booking-clients', array( 'client' => (int) $p['client_id'] ) );
+
+			case 'merge_clients':
+				$r = Clients::merge( (int) $p['principal_id'], (int) $p['duplicate_id'] );
+				Ui::flash( 'success', sprintf( 'Clientes fusionados: %d reserva(s) movidas. El duplicado quedó en la papelera.', $r['bookings'] ) );
+				return Ui::url( 'mo-booking-clients', array( 'client' => (int) $p['principal_id'] ) );
+
+			case 'dismiss_duplicate':
+				Clients::dismissDuplicate( (int) $p['a'], (int) $p['b'] );
+				Ui::flash( 'success', 'Listo: ya no se sugerirán como duplicados.' );
+				return $redirect;
+
+			case 'delete_movement':
+				$r = Trash::deleteMovement( $bookingId, (int) $p['payment_id'], (string) ( $p['reason'] ?? '' ) );
+				Ui::flash( 'success', sprintf( 'Movimiento eliminado (%s). Saldo antes: %s · ahora: %s.', Money::format( $r['amount'] ), Money::format( $r['before']['balance_cents'] ), Money::format( $r['after']['balance_cents'] ) ) );
+				if ( $r['warning'] ) {
+					Ui::flash( 'warning', $r['warning'] );
+				}
+				return $bookingUrl;
+
+			case 'revert_frequent':
+				Bookings::revertFrequent( $bookingId, (int) $p['version'] );
+				Ui::flash( 'success', 'Se regresó al precio para público general. Revisa el anticipo y el saldo.' );
+				return $bookingUrl;
+
+			case 'trash_booking':
+				Trash::trashBooking( $bookingId );
+				Ui::flash( 'success', 'Reserva enviada a la papelera. Puedes restaurarla desde Reservas → Papelera.' );
+				return Ui::url( 'mo-booking-bookings' );
+
+			case 'restore_booking_trash':
+				Trash::restoreBooking( $bookingId );
+				Ui::flash( 'success', 'Reserva restaurada.' );
+				return $bookingUrl;
+
+			case 'purge_booking':
+				if ( 'ELIMINAR' !== strtoupper( trim( (string) ( $p['confirm_text'] ?? '' ) ) ) ) {
+					throw new DomainException( 'confirm_required', 'Para eliminar definitivamente escribe ELIMINAR.' );
+				}
+				Trash::purgeBooking( $bookingId );
+				Ui::flash( 'success', 'Reserva eliminada definitivamente con sus pagos y comprobantes.' );
+				return Ui::url( 'mo-booking-bookings', array( 'view' => 'trash' ) );
+
+			case 'trash_service':
+				Trash::trashService( (int) $p['service_id'] );
+				Ui::flash( 'success', 'Servicio enviado a la papelera: ya no se ofrece. Las reservas existentes no cambian.' );
+				return Ui::url( 'mo-booking-services' );
+
+			case 'trash_contract':
+				Trash::trashContract( (int) $p['contract_id'] );
+				Ui::flash( 'success', 'Contrato enviado a la papelera. Las reservas conservan su copia aceptada.' );
+				return Ui::url( 'mo-booking-contracts' );
 
 			case 'archive_booking':
 			case 'restore_booking':

@@ -15,43 +15,7 @@ final class ServicesPage {
 			return;
 		}
 		Ui::header( 'Servicios', ' <a class="page-title-action" href="' . esc_url( Ui::url( 'mo-booking-services', array( 'service' => 'new' ) ) ) . '">Agregar servicio</a>' );
-		$services = Services::all();
-		if ( ! $services ) {
-			echo '<div class="mo-empty"><p>Todavía no hay servicios. Crea el primero para empezar a recibir reservas.</p><p><a class="button button-primary" href="' . esc_url( Ui::url( 'mo-booking-services', array( 'service' => 'new' ) ) ) . '">Agregar servicio</a></p></div>';
-			Ui::footer();
-			return;
-		}
-		$showArchived = ! empty( $_GET['archived'] ); // phpcs:ignore WordPress.Security.NonceVerification
-		echo '<p><a href="' . esc_url( Ui::url( 'mo-booking-services', $showArchived ? array() : array( 'archived' => 1 ) ) ) . '">' . ( $showArchived ? 'Ver servicios activos y borradores' : 'Ver archivados' ) . '</a></p>';
-		echo '<table class="widefat striped mo-table"><thead><tr><th>Servicio</th><th>Estado</th><th>Precio base</th><th>Duración</th><th>Shortcode</th><th>Acciones</th></tr></thead><tbody>';
-		foreach ( $services as $s ) {
-			if ( ( 'archived' === $s['status'] ) !== $showArchived ) {
-				continue;
-			}
-			$sid   = array( 'service_id' => $s['id'] );
-			$used  = Services::usageCount( (int) $s['id'] );
-			$acts  = '<a class="button" href="' . esc_url( Ui::url( 'mo-booking-services', array( 'service' => $s['id'] ) ) ) . '">Editar</a> ';
-			$acts .= Ui::formOpen( 'duplicate_service', $sid, 'mo-inline-form' ) . Ui::button( 'Duplicar', 'button-secondary' ) . '</form> ';
-			if ( 'published' === $s['status'] ) {
-				$acts .= Ui::formOpen( 'service_status', $sid + array( 'status' => 'inactive' ), 'mo-inline-form' ) . Ui::button( 'Desactivar', 'button-secondary', '¿Desactivar? Deja de aceptar reservas nuevas; las existentes no cambian.' ) . '</form> ';
-			} elseif ( 'archived' !== $s['status'] ) {
-				$acts .= Ui::formOpen( 'service_status', $sid + array( 'status' => 'published' ), 'mo-inline-form' ) . Ui::button( 'Activar', 'button-secondary' ) . '</form> ';
-			}
-			$acts .= 'archived' === $s['status']
-				? Ui::formOpen( 'service_status', $sid + array( 'status' => 'inactive' ), 'mo-inline-form' ) . Ui::button( 'Restaurar', 'button-secondary' ) . '</form> '
-				: Ui::formOpen( 'service_status', $sid + array( 'status' => 'archived' ), 'mo-inline-form' ) . Ui::button( 'Archivar', 'button-link', '¿Archivar? Deja de aparecer para reservas nuevas y conserva su historial.' ) . '</form> ';
-			$acts .= $used
-				? '<span class="description">Con ' . (int) $used . ' reserva(s): no se puede eliminar.</span>'
-				: Ui::formOpen( 'delete_service', $sid, 'mo-inline-form' ) . Ui::button( 'Eliminar', 'button-link-delete', '¿Eliminar definitivamente? Nunca se usó.' ) . '</form>';
-			$acts .= ' <a href="' . esc_url( Ui::url( 'mo-booking-rates', array( 'service' => $s['id'] ) ) ) . '">Tarifas</a> · <a href="' . esc_url( Ui::url( 'mo-booking-policies', array( 'service' => $s['id'] ) ) ) . '">Reglas de cancelación</a>';
-			echo '<tr><td data-label="Servicio"><strong>' . esc_html( $s['title'] ) . '</strong>' . ( $s['is_test'] ? ' <span class="mo-pill mo-pill--test">PRUEBA</span>' : '' ) . '<br><span class="description">' . esc_html( $s['brand'] ) . '</span>' . ( empty( $s['contract_id'] ) ? '<br><span class="mo-pill mo-pill--review">Sin contrato</span>' : '' ) . '</td>';
-			echo '<td data-label="Estado">' . esc_html( Services::STATUS_LABELS[ $s['status'] ] ?? $s['status'] ) . '</td>';
-			echo '<td data-label="Precio base">' . Ui::money( (int) $s['price_cents'] ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput
-			echo '<td data-label="Duración">' . (int) $s['duration'] . ' min</td>';
-			echo '<td data-label="Shortcode"><code>[mo_booking service="' . esc_html( $s['slug'] ) . '"]</code></td>';
-			echo '<td data-label="Acciones">' . $acts . '</td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
-		}
-		echo '</tbody></table>';
+		( new \MOBookingStudio\Admin\Tables\ServicesTable() )->render( 'Buscar servicios' );
 		Ui::footer();
 	}
 

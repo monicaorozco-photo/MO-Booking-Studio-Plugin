@@ -64,6 +64,7 @@ final class Bookings {
 		$row['invite_override'] = (int) ( $row['invite_override'] ?? 0 );
 		$row['important_info']  = (string) ( $row['important_info'] ?? '' );
 		$row['archived']        = ! empty( $row['archived_at'] );
+		$row['trashed']         = ! empty( $row['trashed_at'] );
 		$row['start']   = Db::fromSql( $row['start_utc'] );
 		$row['end']     = Db::fromSql( $row['end_utc'] );
 		$row['expires'] = Db::fromSql( $row['expires_at'] );
@@ -74,6 +75,30 @@ final class Bookings {
 	 * @param array $filters status, from, to (fechas locales), service_id, client_id, search, limit, offset
 	 */
 	public static function list( array $filters = array() ): array {
+		$wpdb               = Db::wpdb();
+		list( $where, $params ) = self::listWhere( $filters );
+		$order    = ( $filters['order'] ?? 'asc' ) === 'desc' ? 'DESC' : 'ASC';
+		$columns  = array( 'start' => 'b.start_utc', 'created' => 'b.created_at', 'total' => 'b.total_cents', 'ref' => 'b.public_ref', 'client' => 'c.name' );
+		$orderBy  = $columns[ $filters['order_by'] ?? 'start' ] ?? 'b.start_utc';
+		$limit    = max( 1, min( 500, (int) ( $filters['limit'] ?? 100 ) ) );
+		$offset   = max( 0, (int) ( $filters['offset'] ?? 0 ) );
+		$params[] = $limit;
+		$params[] = $offset;
+		$sql      = 'SELECT b.*, c.name AS client_name, c.email AS client_email, c.phone AS client_phone, s.title AS service_title FROM ' . Schema::table( 'bookings' ) . ' b LEFT JOIN ' . Schema::table( 'clients' ) . ' c ON c.id = b.client_id LEFT JOIN ' . Schema::table( 'services' ) . ' s ON s.id = b.service_id WHERE ' . $where . " ORDER BY $orderBy $order, b.id $order LIMIT %d OFFSET %d";
+		$rows     = $wpdb->get_results( $wpdb->prepare( $sql, $params ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		return array_map( array( self::class, 'hydrate' ), $rows );
+	}
+
+	/** Total con los mismos filtros que list() (para paginar). */
+	public static function count( array $filters = array() ): int {
+		$wpdb               = Db::wpdb();
+		list( $where, $params ) = self::listWhere( $filters );
+		$sql = 'SELECT COUNT(*) FROM ' . Schema::table( 'bookings' ) . ' b LEFT JOIN ' . Schema::table( 'clients' ) . ' c ON c.id = b.client_id WHERE ' . $where;
+		return (int) $wpdb->get_var( $params ? $wpdb->prepare( $sql, $params ) : $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	}
+
+	/** @return array{0:string,1:array} */
+	private static function listWhere( array $filters ): array {
 		$wpdb   = Db::wpdb();
 		$where  = array( '1=1' );
 		$params = array();
@@ -111,22 +136,20 @@ final class Bookings {
 		if ( isset( $filters['archived'] ) ) {
 			$where[] = $filters['archived'] ? 'b.archived_at IS NOT NULL' : 'b.archived_at IS NULL';
 		}
+		// Papelera: fuera de las listas salvo que se pida.
+		$where[] = ! empty( $filters['trash'] ) ? 'b.trashed_at IS NOT NULL' : 'b.trashed_at IS NULL';
 		if ( ! empty( $filters['conflict'] ) ) {
 			$where[] = "b.conflict_state = 'open'";
+		}
+		if ( ! empty( $filters['frequent_auto'] ) ) {
+			$where[]  = 'b.frequent_match = %s';
+			$params[] = FrequentCheck::MATCH_AUTO;
 		}
 		if ( isset( $filters['is_test'] ) ) {
 			$where[]  = 'b.is_test = %d';
 			$params[] = (int) $filters['is_test'];
 		}
-		$order    = ( $filters['order'] ?? 'asc' ) === 'desc' ? 'DESC' : 'ASC';
-		$orderBy  = ( $filters['order_by'] ?? 'start' ) === 'created' ? 'b.created_at' : 'b.start_utc';
-		$limit    = max( 1, min( 500, (int) ( $filters['limit'] ?? 100 ) ) );
-		$offset   = max( 0, (int) ( $filters['offset'] ?? 0 ) );
-		$params[] = $limit;
-		$params[] = $offset;
-		$sql      = 'SELECT b.*, c.name AS client_name, c.email AS client_email, c.phone AS client_phone, s.title AS service_title FROM ' . Schema::table( 'bookings' ) . ' b LEFT JOIN ' . Schema::table( 'clients' ) . ' c ON c.id = b.client_id LEFT JOIN ' . Schema::table( 'services' ) . ' s ON s.id = b.service_id WHERE ' . implode( ' AND ', $where ) . " ORDER BY $orderBy $order LIMIT %d OFFSET %d";
-		$rows     = $wpdb->get_results( $wpdb->prepare( $sql, $params ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		return array_map( array( self::class, 'hydrate' ), $rows );
+		return array( implode( ' AND ', $where ), $params );
 	}
 
 	public static function movements( int $bookingId ): array {
@@ -340,7 +363,8 @@ final class Bookings {
 					'contract_hash'    => $contract['contract_hash'] ?? '',
 					'contract_accepted_at' => ( $contract && ! $isAdmin ) ? Db::toSql( $now ) : null,
 					'client_category'  => $category,
-					'frequent_claim'   => ! empty( $input['frequent_claim'] ) ? 1 : 0,
+					'frequent_claim'   => ! empty( $input['frequent_claim'] ) || $verifiedId ? 1 : 0,
+					'frequent_match'   => $verifiedId ? FrequentCheck::MATCH_AUTO : '',
 					'total_cents'      => $result['total_cents'],
 					'deposit_cents'    => $result['deposit_cents'],
 					'quote'            => Db::json(
@@ -1059,20 +1083,7 @@ final class Bookings {
 			throw new DomainException( 'confirm_required', 'Para eliminar escribe la referencia exacta de la reserva (' . $booking['public_ref'] . ').' );
 		}
 		$wpdb = Db::wpdb();
-		if ( \MOBookingStudio\Integrations\Google\Connection::isActive() ) {
-			foreach ( \MOBookingStudio\Integrations\Google\SyncWorker::eventsFor( $bookingId ) as $row ) {
-				if ( 'active' !== $row['state'] ) {
-					continue;
-				}
-				try {
-					( new \MOBookingStudio\Integrations\Google\Api() )->deleteEvent( $row['calendar_id'], $row['event_id'], 'client' === $row['kind'] ? 'all' : 'none' );
-				} catch ( \MOBookingStudio\Integrations\Google\GoogleException $e ) {
-					if ( ! in_array( $e->type, array( 'not_found', 'gone' ), true ) ) {
-						throw new DomainException( 'google_unavailable', 'No se pudo retirar su evento de Google; intenta de nuevo. No se eliminó nada.', 503 );
-					}
-				}
-			}
-		}
+		self::removeGoogleEvents( $bookingId );
 		Db::transaction(
 			static function () use ( $wpdb, $bookingId, $booking ) {
 				foreach ( array( 'occupancies', 'access_tokens', 'portal_sessions', 'notifications', 'calendar_events', 'sync_jobs', 'conflicts' ) as $t ) {
@@ -1082,6 +1093,28 @@ final class Bookings {
 				Audit::log( 'booking', $bookingId, 'deleted', array( 'ref' => $booking['public_ref'], 'is_test' => true ) );
 			}
 		);
+	}
+
+	/**
+	 * Retira de Google los eventos propios de la reserva (interno y del cliente). Si Google
+	 * falla por otra razón que "ya no existe", no se borra nada en el sitio.
+	 */
+	public static function removeGoogleEvents( int $bookingId ): void {
+		if ( ! \MOBookingStudio\Integrations\Google\Connection::isActive() ) {
+			return;
+		}
+		foreach ( \MOBookingStudio\Integrations\Google\SyncWorker::eventsFor( $bookingId ) as $row ) {
+			if ( 'active' !== $row['state'] ) {
+				continue;
+			}
+			try {
+				( new \MOBookingStudio\Integrations\Google\Api() )->deleteEvent( $row['calendar_id'], $row['event_id'], 'client' === $row['kind'] ? 'all' : 'none' );
+			} catch ( \MOBookingStudio\Integrations\Google\GoogleException $e ) {
+				if ( ! in_array( $e->type, array( 'not_found', 'gone' ), true ) ) {
+					throw new DomainException( 'google_unavailable', 'No se pudo retirar su evento de Google; intenta de nuevo. No se eliminó nada.', 503 );
+				}
+			}
+		}
 	}
 
 	// ----- Edición administrativa (12.2) -----
@@ -1389,6 +1422,7 @@ final class Bookings {
 					$booking,
 					array(
 						'client_category' => $quote['category'],
+						'frequent_match'  => FrequentCheck::MATCH_AUTO === ( $booking['frequent_match'] ?? '' ) && Pricing::CATEGORY_GENERAL === $quote['category'] ? 'reverted' : (string) ( $booking['frequent_match'] ?? '' ),
 						'total_cents'     => $quote['total_cents'],
 						'deposit_cents'   => $quote['deposit_cents'],
 						'quote'           => Db::json( array_merge( $booking['quote'], $quote, array( 'previous' => array( 'total' => $booking['total_cents'], 'category' => $booking['client_category'] ) ) ) ),
@@ -1398,6 +1432,15 @@ final class Bookings {
 			}
 		);
 		return self::get( $bookingId );
+	}
+
+	/** Un clic: quita la tarifa frecuente reconocida automáticamente y regresa al precio general. */
+	public static function revertFrequent( int $bookingId, int $expectedVersion ): array {
+		$booking = self::get( $bookingId );
+		if ( FrequentCheck::MATCH_AUTO !== ( $booking['frequent_match'] ?? '' ) || Pricing::CATEGORY_FREQUENT !== $booking['client_category'] ) {
+			throw new DomainException( 'not_auto_frequent', 'Esta reserva no tiene una tarifa frecuente reconocida automáticamente.', 409 );
+		}
+		return self::recalculate( $bookingId, Pricing::CATEGORY_GENERAL, 'Se revirtió el precio frecuente reconocido por nombre y contacto.', $expectedVersion );
 	}
 
 	public static function addNote( int $bookingId, string $note ): void {

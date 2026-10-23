@@ -46,7 +46,7 @@ final class Frontend {
 		'welcome_returning_title' => 'Ya me he tomado fotos con ustedes',
 		'welcome_returning_text' => 'Revisamos si aplica tu precio de cliente frecuente',
 		'welcome_identify_title' => '¡Qué gusto verte de nuevo!',
-		'welcome_identify_text'  => 'Escribe tu nombre y el correo o teléfono con el que reservaste antes.',
+		'welcome_identify_text'  => 'Escribe tu nombre y el correo y teléfono con los que reservaste antes.',
 	);
 
 	public function bookingShortcode( $atts ): string {

@@ -3,78 +3,94 @@ namespace MOBookingStudio\Application;
 
 use MOBookingStudio\Domain\Contact;
 use MOBookingStudio\Domain\DomainException;
+use MOBookingStudio\Domain\Names;
 use MOBookingStudio\Domain\Pricing;
 use MOBookingStudio\Infrastructure\Audit;
-use MOBookingStudio\Infrastructure\Db;
-use MOBookingStudio\Infrastructure\Schema;
 
 /**
- * Identificación de cliente frecuente al iniciar la reserva.
+ * Identificación de cliente frecuente al iniciar la reserva (decisión B de la beta.3).
  *
- * La persona escribe su nombre y su correo o teléfono. Se busca el expediente por el
- * contacto (nunca solo por nombre) y el nombre se usa como apoyo: al menos una palabra
- * del nombre debe coincidir. Si el expediente tiene la categoría frecuente (sesiones
- * previas + completadas >= umbral, o categoría manual), se emite una verificación
- * temporal que permite cotizar y reservar con la tarifa de cliente frecuente.
+ * "Ya me he tomado fotos con ustedes" pide nombre, correo y teléfono en campos separados.
+ * Se reconoce al cliente si el correo O el teléfono coincide con su expediente (principal o
+ * contacto adicional) y el nombre se parece (sin acentos y con faltas leves). Si es
+ * frecuente (sesiones previas + completadas >= umbral, o categoría manual), se emite una
+ * verificación temporal que muestra los precios de cliente frecuente (y la preventa).
  *
  * Protecciones:
- * - La respuesta nunca revela el número de sesiones ni datos del expediente; si no se
- *   confirma el beneficio, el mensaje es el mismo exista o no el contacto.
- * - La reserva debe hacerse con el mismo correo o teléfono verificado; los avisos y el
- *   enlace privado llegan a ese contacto.
+ * - Nunca solo por nombre. Si el correo y el teléfono apuntan a clientes distintos, o un
+ *   contacto lo comparten varios expedientes, no hay descuento automático.
+ * - La respuesta nunca revela sesiones ni datos del expediente; si no se confirma, el
+ *   mensaje es el mismo exista o no el contacto.
+ * - La reserva debe usar el mismo correo o teléfono que coincidió.
  * - Límite de intentos por IP en la API.
- * Pendiente (siguiente etapa): confirmar la posesión del contacto con un código enviado
- * por correo o WhatsApp cuando esos envíos estén activos.
+ * - Toda cita pasa por la aprobación del anticipo; en el panel la reserva lleva la insignia
+ *   "Frecuente reconocido por nombre y contacto" y se puede regresar al precio general.
  */
 final class FrequentCheck {
 	private const TTL = 3 * HOUR_IN_SECONDS;
 
-	public const REVIEW_MESSAGE = 'Verás los precios para público general. Antes de confirmar tu reserva revisaremos tu historial de sesiones; si aplica la tarifa de cliente frecuente, ajustaremos el precio y te avisaremos.';
-
-	/**
-	 * SEG-04 / Salida B: el precio frecuente automático está deshabilitado hasta tener una
-	 * prueba de posesión del contacto (código o enlace de verificación). Mientras tanto,
-	 * "Ya me he tomado fotos con ustedes" es una solicitud de revisión y la administradora
-	 * aplica la tarifa con la acción auditada del panel.
-	 */
-	public static function automaticEnabled(): bool {
-		return false;
-	}
+	public const MATCH_AUTO = 'auto';
 
 	public const NOT_CONFIRMED = 'No pudimos confirmar el beneficio de cliente frecuente con esos datos. Verás los precios para público general; si crees que es un error, continúa con tu reserva y lo revisaremos antes de confirmarla.';
 
+	public static function automaticEnabled(): bool {
+		return (bool) apply_filters( 'mo_booking_frequent_automatic', true );
+	}
+
 	/**
-	 * @param array $input {name, contact (correo o teléfono), phone_country}
+	 * @param array $input {name, email, phone, phone_country}
 	 * @return array{frequent:bool,token?:string,message:string,email?:string,phone?:string}
 	 */
 	public static function identify( array $input ): array {
-		if ( ! self::automaticEnabled() ) {
-			// Salida B: no se busca a nadie ni se revela si existe; solo se registra la solicitud de revisión.
-			return array(
-				'frequent' => false,
-				'review'   => true,
-				'message'  => self::REVIEW_MESSAGE,
-			);
-		}
-		$name    = trim( sanitize_text_field( (string) ( $input['name'] ?? '' ) ) );
-		$contact = trim( sanitize_text_field( (string) ( $input['contact'] ?? '' ) ) );
+		$name    = trim( (string) preg_replace( '/\s+/u', ' ', sanitize_text_field( (string) ( $input['name'] ?? '' ) ) ) );
+		$rawMail = trim( sanitize_text_field( (string) ( $input['email'] ?? '' ) ) );
+		$rawTel  = trim( sanitize_text_field( (string) ( $input['phone'] ?? '' ) ) );
 		$country = 'US' === strtoupper( (string) ( $input['phone_country'] ?? 'MX' ) ) ? 'US' : 'MX';
-		if ( mb_strlen( $name ) < 2 ) {
-			throw new DomainException( 'invalid_name', 'Escribe tu nombre.', 400, array( 'field' => 'name' ) );
+		// Compatibilidad con la versión anterior del formulario (un solo campo "contacto").
+		if ( '' === $rawMail && '' === $rawTel && ! empty( $input['contact'] ) ) {
+			$contact = trim( sanitize_text_field( (string) $input['contact'] ) );
+			if ( false !== strpos( $contact, '@' ) ) {
+				$rawMail = $contact;
+			} else {
+				$rawTel = $contact;
+			}
 		}
-		$email = false !== strpos( $contact, '@' ) ? Contact::normalizeEmail( $contact ) : null;
-		$phone = $email ? null : Contact::normalizePhone( $contact, $country );
+		if ( mb_strlen( $name ) < 2 ) {
+			throw new DomainException( 'invalid_name', 'Escribe tu nombre y apellido.', 400, array( 'field' => 'name' ) );
+		}
+		$email = '' !== $rawMail ? Contact::normalizeEmail( $rawMail ) : null;
+		$phone = '' !== $rawTel ? Contact::normalizePhone( $rawTel, $country ) : null;
+		if ( '' !== $rawMail && ! $email ) {
+			throw new DomainException( 'invalid_email', 'Revisa tu correo.', 400, array( 'field' => 'email' ) );
+		}
+		if ( '' !== $rawTel && ! $phone ) {
+			throw new DomainException( 'invalid_phone', 'Revisa tu teléfono (10 dígitos).', 400, array( 'field' => 'phone' ) );
+		}
 		if ( ! $email && ! $phone ) {
-			throw new DomainException( 'invalid_contact', 'Escribe el correo o el teléfono (10 dígitos) con el que reservaste antes.', 400, array( 'field' => 'contact' ) );
+			throw new DomainException( 'invalid_contact', 'Escribe el correo o el teléfono con el que reservaste antes.', 400, array( 'field' => 'email' ) );
 		}
 
-		$client = self::findClient( $email, $phone );
-		$ok     = $client && self::nameMatches( $name, (string) $client['name'] ) && Pricing::CATEGORY_FREQUENT === Clients::effectiveCategory( $client );
-		Audit::log( 'client', $client ? (int) $client['id'] : 0, 'frequent_check', array( 'result' => $ok ? 'verified' : 'not_confirmed', 'by' => $email ? 'email' : 'phone' ), 'client', 0 );
+		$found  = self::findClient( $email, $phone );
+		$client = $found['client'];
+		$ok     = self::automaticEnabled() && $client && Names::shareWord( $name, (string) $client['name'] ) && Pricing::CATEGORY_FREQUENT === Clients::effectiveCategory( $client );
+		Audit::log(
+			'client',
+			$client ? (int) $client['id'] : 0,
+			'frequent_check',
+			array(
+				'result' => $ok ? 'verified' : ( $found['reason'] ?: ( $client ? 'name_or_category' : 'not_found' ) ),
+				'by'     => $found['by'],
+			),
+			'client',
+			0
+		);
 		if ( ! $ok ) {
 			return array(
 				'frequent' => false,
 				'message'  => self::NOT_CONFIRMED,
+				// Se devuelve lo que escribió la persona para no pedirlo dos veces.
+				'email'    => $rawMail,
+				'phone'    => $rawTel,
 			);
 		}
 		$token = bin2hex( random_bytes( 32 ) );
@@ -82,8 +98,9 @@ final class FrequentCheck {
 			self::key( $token ),
 			array(
 				'client_id' => (int) $client['id'],
-				'email'     => $client['email_norm'],
-				'phone'     => $client['phone_e164'],
+				// Solo los contactos que coincidieron: la reserva debe usar uno de ellos.
+				'email'     => in_array( 'email', $found['by'], true ) ? $email : null,
+				'phone'     => in_array( 'phone', $found['by'], true ) ? $phone : null,
 			),
 			self::TTL
 		);
@@ -91,16 +108,16 @@ final class FrequentCheck {
 			'frequent' => true,
 			'token'    => $token,
 			'message'  => '¡Gracias por volver! Verás los precios para clientes frecuentes.',
-			// Se devuelve lo que escribió la persona, nunca datos del expediente.
-			'email'    => $email ?: '',
-			'phone'    => $phone ? $contact : '',
+			'email'    => $rawMail,
+			'phone'    => $rawTel,
+			'locked'   => array( 'email' => in_array( 'email', $found['by'], true ), 'phone' => in_array( 'phone', $found['by'], true ) ),
 		);
 	}
 
 	/** Verificación vigente o null. */
 	public static function get( ?string $token ): ?array {
 		if ( ! self::automaticEnabled() ) {
-			return null; // Ningún token concede precio frecuente (SEG-04).
+			return null;
 		}
 		$token = (string) $token;
 		if ( ! preg_match( '/^[a-f0-9]{64}$/', $token ) ) {
@@ -125,26 +142,34 @@ final class FrequentCheck {
 		}
 	}
 
-	private static function findClient( ?string $email, ?string $phone ): ?array {
-		$wpdb  = Db::wpdb();
-		$table = Schema::table( 'clients' );
-		$rows  = $email
-			? $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $table WHERE email_norm = %s", $email ), ARRAY_A ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-			: $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $table WHERE phone_e164 = %s", $phone ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		// Un contacto compartido por varios expedientes no se resuelve automáticamente.
-		return ( $rows && 1 === count( $rows ) ) ? $rows[0] : null;
+	/**
+	 * Un solo expediente al que apunten el correo y/o el teléfono escritos.
+	 *
+	 * @return array{client:?array,by:string[],reason:string}
+	 */
+	private static function findClient( ?string $email, ?string $phone ): array {
+		$byMail  = $email ? Clients::idsByEmail( $email ) : array();
+		$byPhone = $phone ? Clients::idsByPhone( $phone ) : array();
+		if ( count( $byMail ) > 1 || count( $byPhone ) > 1 ) {
+			return array( 'client' => null, 'by' => array(), 'reason' => 'shared_contact' );
+		}
+		if ( $byMail && $byPhone && $byMail[0] !== $byPhone[0] ) {
+			return array( 'client' => null, 'by' => array(), 'reason' => 'different_clients' );
+		}
+		$id = $byMail ? $byMail[0] : ( $byPhone ? $byPhone[0] : 0 );
+		$by = array();
+		if ( $byMail ) {
+			$by[] = 'email';
+		}
+		if ( $byPhone ) {
+			$by[] = 'phone';
+		}
+		return array( 'client' => $id ? Clients::find( $id ) : null, 'by' => $by, 'reason' => '' );
 	}
 
-	/** Al menos una palabra de 3 o más letras en común, sin distinguir acentos ni mayúsculas. */
+	/** Compatibilidad: al menos una palabra en común (sin acentos, faltas leves). */
 	public static function nameMatches( string $typed, string $stored ): bool {
-		$words = static function ( string $s ): array {
-			$s = strtolower( remove_accents( $s ) );
-			$s = preg_replace( '/[^a-z ]+/', ' ', $s );
-			return array_filter( explode( ' ', $s ), static function ( $w ) {
-				return strlen( $w ) >= 3;
-			} );
-		};
-		return (bool) array_intersect( $words( $typed ), $words( $stored ) );
+		return Names::shareWord( $typed, $stored );
 	}
 
 	private static function key( string $token ): string {

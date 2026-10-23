@@ -54,7 +54,7 @@ final class Contracts {
 	public static function all( bool $withArchived = false ): array {
 		$wpdb  = Db::wpdb();
 		$table = Schema::table( 'contracts' );
-		$where = $withArchived ? '' : " WHERE status <> 'archived'";
+		$where = $withArchived ? " WHERE status <> 'trash'" : " WHERE status NOT IN ('archived', 'trash')";
 		return $wpdb->get_results( "SELECT * FROM $table$where ORDER BY name", ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
@@ -78,7 +78,7 @@ final class Contracts {
 	/** Versión publicada vigente de una plantilla activa, o null. */
 	public static function current( int $contractId ): ?array {
 		$contract = $contractId ? self::find( $contractId ) : null;
-		if ( ! $contract || 'archived' === $contract['status'] || (int) $contract['current_version'] < 1 ) {
+		if ( ! $contract || in_array( $contract['status'], array( 'archived', 'trash' ), true ) || (int) $contract['current_version'] < 1 ) {
 			return null;
 		}
 		return self::version( $contractId, (int) $contract['current_version'] );

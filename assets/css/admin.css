@@ -70,3 +70,16 @@
 	.mo-policy-table td[data-label]::before { content: attr(data-label) ": "; font-weight: 600; }
 	.mo-policy-table tr { border-bottom: 2px solid #dcdcde; }
 }
+
+/* beta.3: listas estilo WordPress, papelera, fusión. */
+.mo-pill--auto { background: #e7f7f4; border-color: #46b4a3; color: #0b5348; white-space: normal; }
+.mo-card--danger { border-left: 4px solid #d63638; }
+.mo-admin .mo-list-form .tablenav .actions { padding-bottom: 6px; }
+.mo-admin .mo-list-filters label { display: inline-flex; align-items: center; gap: 4px; margin-right: 4px; }
+.mo-admin .mo-list-filters .mo-check { display: inline-flex; margin-right: 8px; }
+.mo-details--inline > summary { cursor: pointer; color: #b32d2e; }
+.mo-details--inline form { min-width: 260px; }
+.mo-movements td { vertical-align: top; }
+@media (max-width: 782px) {
+	.mo-admin .mo-list-filters { float: none; display: flex; flex-wrap: wrap; gap: 6px; }
+}

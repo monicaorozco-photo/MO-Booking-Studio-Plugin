@@ -6,7 +6,7 @@ namespace MOBookingStudio\Infrastructure;
  * duplica ni borra datos. Todas las fechas se guardan en UTC (DATETIME).
  */
 final class Schema {
-	public const VERSION = '3';
+	public const VERSION = '4';
 	public const OPTION  = 'mo_booking_schema_version';
 
 	public static function tables(): array {
@@ -33,6 +33,7 @@ final class Schema {
 			'conflicts',
 			'contracts',
 			'contract_versions',
+			'client_contacts',
 		);
 	}
 
@@ -124,12 +125,15 @@ final class Schema {
   review_note varchar(190) NOT NULL DEFAULT '',
   notes text,
   archived_at datetime DEFAULT NULL,
+  trashed_at datetime DEFAULT NULL,
+  merged_into bigint(20) unsigned DEFAULT NULL,
   is_test tinyint(1) NOT NULL DEFAULT 0,
   created_at datetime NOT NULL,
   updated_at datetime NOT NULL,
   PRIMARY KEY  (id),
   KEY email_norm (email_norm),
-  KEY phone_e164 (phone_e164)
+  KEY phone_e164 (phone_e164),
+  KEY trashed_at (trashed_at)
 ) ENGINE=InnoDB $c;";
 
 		$sql[] = "CREATE TABLE {$t('bookings')} (
@@ -158,8 +162,10 @@ final class Schema {
   invite_override tinyint(1) NOT NULL DEFAULT 0,
   cancel_outcome varchar(20) NOT NULL DEFAULT '',
   archived_at datetime DEFAULT NULL,
+  trashed_at datetime DEFAULT NULL,
   client_category varchar(20) NOT NULL DEFAULT 'general',
   frequent_claim tinyint(1) NOT NULL DEFAULT 0,
+  frequent_match varchar(20) NOT NULL DEFAULT '',
   session_counted tinyint(1) NOT NULL DEFAULT 0,
   deadline_at datetime DEFAULT NULL,
   corrections_used tinyint(3) unsigned NOT NULL DEFAULT 0,
@@ -297,6 +303,8 @@ final class Schema {
   received_late tinyint(1) NOT NULL DEFAULT 0,
   version smallint(5) unsigned NOT NULL DEFAULT 1,
   client_reason varchar(190) NOT NULL DEFAULT '',
+  source varchar(20) NOT NULL DEFAULT 'client',
+  uploaded_by bigint(20) unsigned DEFAULT NULL,
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
   KEY booking_id (booking_id),
@@ -454,6 +462,21 @@ final class Schema {
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
   UNIQUE KEY contract_version (contract_id,version)
+) ENGINE=InnoDB $c;";
+
+		// Esquema 4: correos y teléfonos adicionales de un cliente (se usan al buscarlo y al fusionar).
+		$sql[] = "CREATE TABLE {$t('client_contacts')} (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  client_id bigint(20) unsigned NOT NULL,
+  kind varchar(10) NOT NULL,
+  value varchar(190) NOT NULL,
+  value_norm varchar(190) DEFAULT NULL,
+  phone_country char(2) NOT NULL DEFAULT 'MX',
+  label varchar(60) NOT NULL DEFAULT '',
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  KEY client_id (client_id),
+  KEY kind_norm (kind,value_norm)
 ) ENGINE=InnoDB $c;";
 
 		foreach ( $sql as $statement ) {

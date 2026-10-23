@@ -100,7 +100,7 @@ final class MigrationTest extends IntegrationTestCase {
 		Installer::upgrade();
 		Installer::upgrade();
 		$this->assertFalse( Plugin::maintenance() );
-		$this->assertSame( '3', get_option( Schema::OPTION ) );
+		$this->assertSame( Schema::VERSION, get_option( Schema::OPTION ) );
 
 		foreach ( $tables as $t ) {
 			// La auditoría solo crece: se comparan las filas que ya existían.

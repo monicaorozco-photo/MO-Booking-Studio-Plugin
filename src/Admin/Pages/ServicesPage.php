@@ -68,7 +68,9 @@ final class ServicesPage {
 		$imageUrl = $imageId ? wp_get_attachment_image_url( $imageId, 'thumbnail' ) : '';
 		$general .= Ui::row( 'Foto del servicio', '<div class="mo-media" data-mo-media><img src="' . esc_url( (string) $imageUrl ) . '" alt="" class="mo-media__preview"' . ( $imageUrl ? '' : ' hidden' ) . '>' . Ui::input( 'image_id', $imageId ?: '', 'hidden' ) . '<button type="button" class="button" data-mo-media-pick>Elegir imagen</button> <button type="button" class="button-link" data-mo-media-clear>Quitar</button></div>', 'Opcional. Es una foto pública del servicio, no de clientes.' );
 		$general .= Ui::row( 'Ubicación o modalidad', Ui::input( 'location', $v( 'location' ), 'text', array( 'class' => 'regular-text' ) ), '', 'location' );
-		$general .= Ui::row( 'Indicaciones para la sesión', Ui::textarea( 'instructions', $v( 'instructions' ), 3 ), 'Se muestran en la confirmación y en el portal.', 'instructions' );
+		$general .= Ui::row( 'Indicaciones para la sesión', Ui::textarea( 'instructions', $v( 'instructions' ), 3 ), 'Se muestran a la clienta cuando su cita ya está confirmada (enlace privado, aviso de confirmación e invitación de Google).', 'instructions' );
+		$general .= Ui::row( 'Título en tu Google Calendar', Ui::input( 'event_title_internal', $v( 'event_title_internal', 'MO {estado} · {cliente}' ), 'text', array( 'class' => 'regular-text' ) ), 'Ejemplo: HM: {cliente} · {estado} → "HM: Ana López · Confirmada". Códigos: {cliente} {servicio} {estado} {referencia} {negocio}.', 'event_title_internal' );
+		$general .= Ui::row( 'Título de la invitación a la clienta', Ui::input( 'event_title_client', $v( 'event_title_client', 'Sesión con {negocio}' ), 'text', array( 'class' => 'regular-text' ) ), 'Ejemplo: Holiday Mini: {cliente}. Mismos códigos (en la invitación, {estado} siempre es "Confirmada").', 'event_title_client' );
 		$general .= Ui::row( 'Entrega', Ui::input( 'delivery_text', $v( 'delivery_text' ), 'text', array( 'class' => 'large-text', 'placeholder' => 'Entrega de 5 a 7 días hábiles' ) ), '', 'delivery_text' );
 		echo Ui::card( 'Datos generales', $general ); // phpcs:ignore WordPress.Security.EscapeOutput
 
@@ -264,6 +266,8 @@ final class ServicesPage {
 				'image_id'                   => (int) ( $p['image_id'] ?? 0 ),
 				'location'                   => sanitize_text_field( (string) ( $p['location'] ?? '' ) ),
 				'instructions'               => sanitize_textarea_field( (string) ( $p['instructions'] ?? '' ) ),
+				'event_title_internal'       => sanitize_text_field( (string) ( $p['event_title_internal'] ?? '' ) ),
+				'event_title_client'         => sanitize_text_field( (string) ( $p['event_title_client'] ?? '' ) ),
 				'delivery_text'              => sanitize_text_field( (string) ( $p['delivery_text'] ?? '' ) ),
 				'duration'                   => (int) ( $p['duration'] ?? 0 ),
 				'buffer_before'              => (int) ( $p['buffer_before'] ?? 0 ),

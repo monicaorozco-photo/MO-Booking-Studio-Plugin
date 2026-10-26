@@ -694,8 +694,7 @@ final class Admin {
 					throw new DomainException( 'no_phone', 'La reserva no tiene un teléfono válido.' );
 				}
 				Notifications::logManualWhatsapp( $b, sanitize_key( (string) $p['event'] ), 'opened_manual' );
-				wp_redirect( $url ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- wa.me es externo a propósito.
-				exit;
+				self::redirectToWhatsapp( $url );
 
 			case 'whatsapp_sent':
 				Notifications::markManualSent( (int) $p['notification_id'] );
@@ -761,6 +760,20 @@ final class Admin {
 				return $redirect;
 		}
 		return $redirect;
+	}
+
+	/**
+	 * beta.4: wp_redirect() quita los saltos de línea codificados (%0A) de la dirección por
+	 * seguridad, y el mensaje llegaba amontonado. La dirección ya viene codificada (sin
+	 * saltos reales) y solo puede ser de wa.me, así que se envía tal cual.
+	 */
+	private static function redirectToWhatsapp( string $url ): void {
+		if ( 0 !== strpos( $url, 'https://wa.me/' ) || preg_match( '/[\r\n]/', $url ) ) {
+			wp_die( 'Dirección de WhatsApp no válida.', '', array( 'response' => 400 ) );
+		}
+		nocache_headers();
+		header( 'Location: ' . $url, true, 302 );
+		exit;
 	}
 
 	/** URL firmada para ver un comprobante (GET). */

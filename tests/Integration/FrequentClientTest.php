@@ -36,12 +36,26 @@ final class FrequentClientTest extends IntegrationTestCase {
 		$this->assertArrayNotHasKey( 'token', $unknown );
 	}
 
-	public function test_no_discount_when_email_and_phone_point_to_different_clients(): void {
+	/** beta.4: si el correo es de una sola clienta, manda el correo aunque el teléfono sea de otro expediente (se marca para revisar). */
+	public function test_email_wins_when_phone_belongs_to_another_client(): void {
+		$service = $this->christmasTableService();
 		$this->frequentClient( 9 );
-		Clients::create( array( 'name' => 'Rosa Otra', 'email' => 'otra@example.com', 'phone' => '656 999 0000', 'historic_sessions' => 9 ) );
+		Clients::create( array( 'name' => 'Luisa Otra', 'email' => 'otra@example.com', 'phone' => '656 999 0000', 'historic_sessions' => 9 ) );
 		$r = FrequentCheck::identify( array( 'name' => 'Rosa López', 'email' => 'rosa@example.com', 'phone' => '656 999 0000' ) );
-		$this->assertFalse( $r['frequent'] );
-		$this->assertTrue( FrequentCheck::identify( array( 'name' => 'Rosa López', 'email' => 'rosa@example.com', 'phone' => '656 222 3344' ) )['frequent'], 'Con datos coherentes sí aplica.' );
+		$this->assertTrue( $r['frequent'] );
+		$this->assertSame( array( 'email' => true, 'phone' => false ), $r['locked'], 'Solo el correo queda fijo.' );
+		$quote   = Catalog::quote( $service, array( 'start' => self::NOV20, 'participants' => 6, 'frequent_token' => $r['token'] ) );
+		$booking = Bookings::create( $service, array_merge( $this->contact( array( 'name' => 'Rosa López', 'email' => 'rosa@example.com', 'phone' => '656 999 0000' ) ), array( 'quote_id' => $quote['quote_id'], 'idempotency_key' => wp_generate_uuid4(), 'frequent_token' => $r['token'] ) ) )['booking'];
+		$this->assertSame( FrequentCheck::MATCH_AUTO_REVIEW, $booking['frequent_match'], 'Queda marcada para revisar.' );
+		$this->assertSame( 'frequent', $booking['client_category'] );
+		// Solo con el teléfono de otra persona: no.
+		$this->assertFalse( FrequentCheck::identify( array( 'name' => 'Rosa López', 'phone' => '656 999 0000' ) )['frequent'] );
+	}
+
+	public function test_no_discount_when_email_is_shared_by_two_clients(): void {
+		$this->frequentClient( 9 );
+		Clients::create( array( 'name' => 'Rosa Gemela', 'email' => 'rosa@example.com', 'historic_sessions' => 9 ) );
+		$this->assertFalse( FrequentCheck::identify( array( 'name' => 'Rosa López', 'email' => 'rosa@example.com' ) )['frequent'] );
 	}
 
 	public function test_additional_contact_is_recognized_and_general_client_is_not(): void {

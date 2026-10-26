@@ -67,9 +67,45 @@ final class Portal {
 		$proofs = array();
 		foreach ( Bookings::proofs( $booking['id'] ) as $p ) {
 			$proofs[] = array(
+				'id'     => (int) $p['id'],
 				'date'   => Catalog::dateTimeText( new \DateTimeImmutable( $p['created_at'], new \DateTimeZone( 'UTC' ) ) ),
 				'status' => self::PROOF_STATUS[ $p['status'] ] ?? $p['status'],
 				'note'   => in_array( $p['status'], array( 'correction', 'rejected' ), true ) ? $p['client_reason'] : '',
+				// beta.4: la persona puede volver a ver su propio archivo (copia segura; los PDF se descargan).
+				'url'    => self::proofUrl( (int) $p['id'] ),
+				'kind'   => 'application/pdf' === $p['mime'] ? 'PDF' : 'Imagen',
+			);
+		}
+
+		// beta.4: pagos recibidos y verificados (sin reversos ni movimientos internos).
+		$payments = array();
+		$reversed = array();
+		$moves    = Bookings::movements( $booking['id'] );
+		foreach ( $moves as $m ) {
+			if ( 'reversal' === $m['type'] ) {
+				$reversed[ (int) $m['reverses_id'] ] = true;
+			}
+		}
+		foreach ( $moves as $m ) {
+			if ( 'payment' === $m['type'] && ! isset( $reversed[ (int) $m['id'] ] ) ) {
+				$payments[] = array(
+					'date'       => Catalog::dateText( new \DateTimeImmutable( (string) ( $m['received_at'] ?: $m['created_at'] ), new \DateTimeZone( 'UTC' ) ) ),
+					'amount_txt' => Money::format( (int) $m['amount_cents'] ),
+					'method'     => array( 'transfer' => 'Transferencia', 'cash' => 'Efectivo' )[ $m['method'] ] ?? 'Otro medio',
+				);
+			}
+		}
+
+		// beta.4: ubicación e indicaciones solo con la cita confirmada.
+		$confirmed = in_array( $status, array( BookingStatus::CONFIRMED, BookingStatus::COMPLETED ), true );
+
+		// beta.4: el contrato que aceptó (las reglas de cancelación quedan como control interno).
+		$contract = null;
+		if ( $booking['contract_version'] && '' !== (string) $booking['contract_body'] ) {
+			$contract = array(
+				'title'        => (string) $booking['contract_title'],
+				'body'         => Contracts::sanitize( (string) $booking['contract_body'] ),
+				'accepted_txt' => $booking['contract_accepted_at'] ? Catalog::dateTimeText( new \DateTimeImmutable( $booking['contract_accepted_at'], new \DateTimeZone( 'UTC' ) ) ) : '',
 			);
 		}
 
@@ -98,8 +134,9 @@ final class Portal {
 			'time_txt'        => $local->format( 'H:i' ),
 			'timezone'        => $booking['timezone'],
 			'start'           => $booking['start']->format( 'c' ),
-			'location'        => $service ? $service['location'] : '',
-			'instructions'    => $service ? $service['instructions'] : '',
+			'location'        => $service && $confirmed ? $service['location'] : '',
+			'instructions'    => $service && $confirmed ? $service['instructions'] : '',
+			'location_later'  => $service && ! $confirmed && ( '' !== (string) $service['location'] || '' !== (string) $service['instructions'] ) && BookingStatus::isOpen( $status ),
 			'delivery_text'   => $service ? $service['delivery_text'] : '',
 			'notices'         => $service ? Services::noticesFor( $service, $local->format( 'Y-m-d' ) ) : array(),
 			'participants'    => $booking['participants'],
@@ -128,6 +165,8 @@ final class Portal {
 			'bank'            => $paying && $summary['balance_cents'] > 0 ? (string) Settings::get( 'bank_instructions' ) : '',
 			'payment_ref'     => $paying ? (string) Settings::get( 'payment_reference' ) : '',
 			'proofs'          => $proofs,
+			'payments'        => $payments,
+			'contract'        => $contract,
 			'can_upload'      => $canUpload,
 			'uploads_note'    => ! PrivateStorage::uploadsEnabled() ? ( $paying && Settings::proofWhatsappUrl( '', '' ) ? '' : 'Por ahora no podemos recibir archivos aquí. Envíanos tu comprobante por WhatsApp o correo con tu número de reserva.' ) : ( 'late' === $window['reason'] ? $window['message'] : '' ),
 			// beta.3: sin carga de archivos, botón al WhatsApp del negocio con el mensaje listo.
@@ -145,6 +184,11 @@ final class Portal {
 			'children'        => $booking['children'],
 			'adults'          => $booking['adults'],
 		);
+	}
+
+	/** Dirección para que la persona vea su propio comprobante (requiere la sesión del enlace privado). */
+	public static function proofUrl( int $proofId ): string {
+		return rest_url( \MOBookingStudio\Rest\Routes::NS . '/portal/proofs/' . $proofId );
 	}
 
 	public static function cookie(): ?string {

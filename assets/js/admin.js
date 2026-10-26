@@ -95,10 +95,19 @@
 			text.replace(/(^|[^{])\{([a-z_]+)\}(?!\})/g, function (all, pre, code) { out.push('{' + code + '}'); return all; });
 			return out.filter(function (v, i, a) { return a.indexOf(v) === i; });
 		};
+		// Editor con formato (TinyMCE) si está activo para ese campo.
+		var rich = function (id) {
+			var ed = window.tinymce && window.tinymce.get(id);
+			return ed && !ed.isHidden() ? ed : null;
+		};
+		var valueOf = function (field) {
+			var ed = rich(field.id);
+			return ed ? ed.getContent() : field.value;
+		};
 		var check = function (field) {
 			var warn = document.querySelector('[data-warning-for="' + field.id + '"]');
 			if (!warn) { return; }
-			var bad = unknownCodes(field.value);
+			var bad = unknownCodes(valueOf(field));
 			warn.hidden = !bad.length;
 			warn.textContent = bad.length ? 'No reconocemos: ' + bad.join(' ') + '. Usa doble llave y un código de la guía (por ejemplo {{nombre}}); si no, saldrá vacío.' : '';
 		};
@@ -106,12 +115,18 @@
 			check(field);
 			field.addEventListener('input', function () { check(field); });
 		});
+		// Los editores con formato no avisan cada tecla: se revisan cada segundo.
+		window.setInterval(function () {
+			document.querySelectorAll('textarea.mo-rich').forEach(function (field) { if (rich(field.id)) { check(field); } });
+		}, 1200);
 		document.addEventListener('click', function (ev) {
 			var btn = ev.target.closest('.mo-code');
 			if (btn) {
 				var target = document.getElementById(btn.getAttribute('data-target'));
 				if (!target) { return; }
 				var code = btn.getAttribute('data-insert');
+				var ed = rich(target.id);
+				if (ed) { ed.execCommand('mceInsertContent', false, code); ed.focus(); check(target); return; }
 				var start = target.selectionStart || 0;
 				var end = target.selectionEnd || 0;
 				target.value = target.value.slice(0, start) + code + target.value.slice(end);
@@ -126,7 +141,15 @@
 				var field = document.getElementById(id);
 				var out = document.querySelector('[data-preview-for="' + id + '"]');
 				if (!field || !out) { return; }
-				out.textContent = field.value.replace(/\{\{\s*([a-z_]+)\s*\}\}/g, function (all, code) { return Object.prototype.hasOwnProperty.call(sample, code) ? sample[code] : ''; });
+				var filled = valueOf(field).replace(/\{\{\s*([a-z_]+)\s*\}\}/g, function (all, code) { return Object.prototype.hasOwnProperty.call(sample, code) ? sample[code] : ''; });
+				if (out.classList.contains('mo-preview-text--html')) {
+					// Texto propio de la administradora en su propio panel; se quitan scripts por si acaso.
+					var doc = new window.DOMParser().parseFromString(/<[a-z][\s\S]*>/i.test(filled) ? filled : filled.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>'), 'text/html');
+					doc.querySelectorAll('script,style,iframe,object').forEach(function (n) { n.remove(); });
+					out.innerHTML = doc.body.innerHTML;
+				} else {
+					out.textContent = filled;
+				}
 				out.hidden = false;
 			}
 		});

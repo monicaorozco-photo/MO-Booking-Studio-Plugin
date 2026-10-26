@@ -167,14 +167,12 @@ final class Beta3Test extends IntegrationTestCase {
 	public function test_booking_trash_only_when_closed_and_purge_from_trash(): void {
 		$service = $this->christmasService();
 		$booking = $this->book( $service, self::NOV20 )['booking'];
-		try {
-			Trash::trashBooking( $booking['id'] );
-			$this->fail( 'Vigente: primero cancelar.' );
-		} catch ( DomainException $e ) {
-			$this->assertSame( 'booking_active', $e->errorCode() );
-		}
-		Bookings::cancel( $booking['id'], true, 'Prueba', Bookings::get( $booking['id'] )['version'], 'manual' );
+		// beta.4: vigente → se cancela sola, sin aviso a la persona.
 		Trash::trashBooking( $booking['id'] );
+		$this->assertSame( BookingStatus::CANCELLED, Bookings::get( $booking['id'] )['status'] );
+		$this->assertSame( array(), array_filter( Notifications::forBooking( $booking['id'] ), static function ( $n ) {
+			return 'booking_cancelled' === $n['event'];
+		} ), 'Sin aviso de cancelación.' );
 		$this->assertSame( 0, Bookings::count( array() ) );
 		$this->assertSame( 1, Bookings::count( array( 'trash' => true ) ) );
 		Trash::restoreBooking( $booking['id'] );
@@ -324,7 +322,7 @@ final class Beta3Test extends IntegrationTestCase {
 		} ) );
 		$this->assertCount( 1, $rows, 'Se envía junto con el evento.' );
 		$stored = Notifications::storedText( $rows[0] );
-		$this->assertSame( 'Gracias Ana Prueba por tu reserva ' . $booking['public_ref'] . ' ', $stored['text'] );
+		$this->assertSame( 'Gracias Ana Prueba por tu reserva ' . $booking['public_ref'], $stored['text'] );
 
 		// Cambiar o quitar la plantilla no altera el texto guardado.
 		Notifications::saveCustom( $r['id'], array( 'name' => 'Bienvenida preventa', 'channel' => 'email', 'trigger' => 'booking_created', 'subject' => 'Otro', 'body' => 'Texto nuevo', 'enabled' => 1 ) );

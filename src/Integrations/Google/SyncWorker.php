@@ -143,15 +143,16 @@ final class SyncWorker {
 
 	private static function upsert( array $booking, string $kind, array $body, bool $force ): void {
 		$row = self::row( (int) $booking['id'], $kind );
-		if ( $row && 'active' === $row['state'] && $row['calendar_id'] !== Connection::data()['destination'] ) {
-			$row = self::moveToDestination( $row );
+		$target = Connection::targetFor( $kind );
+		if ( $row && 'active' === $row['state'] && $row['calendar_id'] !== $target ) {
+			$row = self::moveToDestination( $row, $target );
 		}
 		$fp  = EventBuilder::fingerprint( $body );
 		if ( $row && 'active' === $row['state'] && $row['fingerprint'] === $fp && ! $force ) {
 			return;
 		}
 		$api      = new Api();
-		$calendar = $row ? $row['calendar_id'] : Connection::data()['destination'];
+		$calendar = $row && 'active' === $row['state'] ? $row['calendar_id'] : $target;
 		$eventId  = $row ? $row['event_id'] : EventBuilder::eventId( (int) $booking['id'], $kind );
 		// Solo el evento del cliente notifica; el interno nunca tiene invitados.
 		$send     = 'client' === $kind ? 'all' : 'none';
@@ -212,9 +213,8 @@ final class SyncWorker {
 	 * en el calendario anterior, se recreará en el nuevo. Un fallo deja el trabajo en la
 	 * cola para reintentar; nunca se borra nada del calendario anterior que no sea propio.
 	 */
-	private static function moveToDestination( array $row ): array {
+	private static function moveToDestination( array $row, string $destination ): array {
 		$api         = new Api();
-		$destination = Connection::data()['destination'];
 		$from        = $row['calendar_id'];
 		$wpdb        = Db::wpdb();
 		try {
@@ -243,7 +243,8 @@ final class SyncWorker {
 		if ( '' === $dest ) {
 			return array();
 		}
-		return $wpdb->get_results( $wpdb->prepare( 'SELECT ce.booking_id, ce.kind, ce.calendar_id, b.public_ref FROM ' . Schema::table( 'calendar_events' ) . ' ce JOIN ' . Schema::table( 'bookings' ) . " b ON b.id = ce.booking_id WHERE ce.state = 'active' AND ce.calendar_id <> %s ORDER BY b.start_utc", $dest ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$client = Connection::targetFor( 'client' );
+		return $wpdb->get_results( $wpdb->prepare( 'SELECT ce.booking_id, ce.kind, ce.calendar_id, b.public_ref FROM ' . Schema::table( 'calendar_events' ) . ' ce JOIN ' . Schema::table( 'bookings' ) . " b ON b.id = ce.booking_id WHERE ce.state = 'active' AND ( ( ce.kind = 'client' AND ce.calendar_id <> %s ) OR ( ce.kind <> 'client' AND ce.calendar_id <> %s ) ) ORDER BY b.start_utc", $client, $dest ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/** Borra solo eventos que el plugin registró como suyos (CAL-09). */

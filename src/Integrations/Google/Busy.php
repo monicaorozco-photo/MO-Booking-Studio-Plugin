@@ -81,7 +81,7 @@ final class Busy {
 		$api    = new Api();
 		$min    = $from->format( 'Y-m-d\TH:i:s\Z' );
 		$max    = $to->format( 'Y-m-d\TH:i:s\Z' );
-		$read   = array_values( array_diff( (array) $d['read_calendars'], array( $d['destination'] ) ) );
+		$read   = array_values( array_diff( (array) $d['read_calendars'], array( $d['destination'], (string) ( $d['client_destination'] ?? '' ) ) ) );
 		$blocks = array();
 		foreach ( $api->freeBusy( $min, $max, $read ) as $calendar => $busy ) {
 			foreach ( $busy as $b ) {

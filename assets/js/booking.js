@@ -325,7 +325,7 @@
 			} else if (info && info.status === 'sold_out') {
 				cls += ' mo-booking__day--soldout';
 				extra = '<span class="mo-booking__soldout-mark" aria-hidden="true">✕</span>';
-				label += ', agotado';
+				label += ', ' + String(this.text('slot_taken', 'No disponible')).toLowerCase();
 			} else {
 				cls += ' mo-booking__day--closed';
 				label += ', sin horarios';
@@ -378,7 +378,7 @@
 		if (has.presale) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--presale" aria-hidden="true"></span> Precio de preventa</li>'); }
 		if (has.regular) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--regular" aria-hidden="true"></span> ' + (has.presale ? 'Precio regular' : 'Disponible') + '</li>'); }
 		if (has.special) { items.push('<li>' + TAG_ICON + ' Precio especial por fecha</li>'); }
-		if (has.soldout) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--soldout" aria-hidden="true">✕</span> Agotado</li>'); }
+		if (has.soldout) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--soldout" aria-hidden="true">✕</span> ' + esc(this.text('slot_taken', 'No disponible')) + '</li>'); }
 		return items.length ? '<ul class="mo-booking__legend" aria-label="Significado de los colores">' + items.join('') + '</ul>' : '';
 	};
 
@@ -386,6 +386,12 @@
 		var parts = date.split('-');
 		var d = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2]));
 		return WEEKDAY_NAMES[(d.getUTCDay() + 6) % 7] + ' ' + (+parts[2]) + ' de ' + MONTHS[+parts[1] - 1];
+	};
+
+	/** Texto configurable que manda el servidor con el servicio (Ajustes), con valor de respaldo. */
+	App.prototype.text = function (key, fallback) {
+		var t = (this.state.service && this.state.service.texts) || {};
+		return Object.prototype.hasOwnProperty.call(t, key) ? t[key] : fallback;
 	};
 
 	App.prototype.field = function (name, label, input, help) {
@@ -453,8 +459,10 @@
 		}
 		// 6.5: contrato en acordeón, debajo del formulario; aceptarlo es obligatorio.
 		if (svc.contract) {
-			html += '<details class="mo-booking__policies mo-booking__contract"><summary>' + esc(svc.contract.title) + ' (versión ' + esc(svc.contract.version) + ')</summary><div class="mo-booking__contract-body">' + svc.contract.body + '</div></details>';
-			html += '<label class="mo-booking__check"><input type="checkbox" name="accept_contract" id="mo-f-accept_contract"' + (f.accept_contract ? ' checked' : '') + ' required> He leído y acepto el contrato «' + esc(svc.contract.title) + '» (versión ' + esc(svc.contract.version) + ')' + (svc.privacy_url ? ' y el <a href="' + esc(svc.privacy_url) + '" target="_blank" rel="noopener noreferrer">aviso de privacidad</a>' : '') + '</label>';
+			var notice = this.text('contract_notice', '');
+			if (notice) { html += '<p class="mo-booking__contract-notice">' + M.lines(notice) + '</p>'; }
+			html += '<details class="mo-booking__policies mo-booking__contract"><summary>' + esc(svc.contract.title) + '</summary><div class="mo-booking__contract-body">' + svc.contract.body + '</div></details>';
+			html += '<label class="mo-booking__check"><input type="checkbox" name="accept_contract" id="mo-f-accept_contract"' + (f.accept_contract ? ' checked' : '') + ' required> He leído y acepto el contrato «' + esc(svc.contract.title) + '»' + (svc.privacy_url ? ' y el <a href="' + esc(svc.privacy_url) + '" target="_blank" rel="noopener noreferrer">aviso de privacidad</a>' : '') + '</label>';
 			html += '<p class="mo-booking__field-error" data-error-for="accept_contract" role="alert"></p>';
 		}
 		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="to-calendar">Atrás</button><button type="submit" class="mo-booking__button mo-booking__button--primary">Ver resumen</button></div>';
@@ -508,9 +516,11 @@
 			html += '</details>';
 		}
 		if (svc.contract) {
-			html += '<p class="mo-booking__note">Contrato aceptado: «' + esc(svc.contract.title) + '» (versión ' + esc(svc.contract.version) + ').</p>';
+			html += '<p class="mo-booking__note">Contrato aceptado: «' + esc(svc.contract.title) + '».</p>';
 		}
-		html += '<label class="mo-booking__check"><input type="checkbox" name="whatsapp_consent"' + (f.whatsapp_consent ? ' checked' : '') + '> Acepto recibir avisos sobre mi reserva por WhatsApp (opcional)</label>';
+		var consentRequired = this.text('consent_required', true);
+		html += '<label class="mo-booking__check"><input type="checkbox" name="whatsapp_consent" id="mo-f-whatsapp_consent"' + (f.whatsapp_consent ? ' checked' : '') + (consentRequired ? ' required' : '') + '> ' + esc(this.text('whatsapp_consent', 'Acepto recibir por WhatsApp y por correo los avisos de mi reserva')) + (consentRequired ? '' : ' (opcional)') + '</label>';
+		html += '<p class="mo-booking__field-error" data-error-for="whatsapp_consent" role="alert"></p>';
 		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="to-details">Atrás</button><button type="submit" class="mo-booking__button mo-booking__button--primary">' + (this.config.preview ? 'Enviar (demostración)' : 'Enviar solicitud') + '</button></div>';
 		html += '</form>';
 		return html;
@@ -693,6 +703,10 @@
 		var s = this.state;
 		var f0 = s.form;
 		f0.whatsapp_consent = !!(form.querySelector('[name=whatsapp_consent]') || {}).checked;
+		if (this.text('consent_required', true) && !f0.whatsapp_consent && !this.config.preview) {
+			this.showFieldError('whatsapp_consent', 'Para continuar acepta recibir los avisos de tu reserva.');
+			return;
+		}
 		if (s.service.contract && !f0.accept_contract) { s.step = 2; this.render(); this.showFieldError('accept_contract', 'Para continuar, lee y acepta el contrato.'); return; }
 		if (this.config.preview) {
 			s.message = 'Vista previa: en el sitio publicado aquí se enviaría la solicitud.';
@@ -715,6 +729,11 @@
 			if (res.ok) {
 				s.result = res.data;
 				s.csrf = res.data.csrf;
+				// beta.4: "Listo" es la misma página de reserva que abrirá después desde su enlace.
+				if (res.data.portal_url && !self.config.preview) {
+					window.location.href = res.data.portal_url.replace(/(#|$)/, (res.data.portal_url.indexOf('?') === -1 ? '?' : '&') + 'mo_nuevo=1$1');
+					return;
+				}
 				self.setStep(4);
 				return;
 			}

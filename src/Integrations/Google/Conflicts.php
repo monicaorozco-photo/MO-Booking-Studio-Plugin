@@ -112,17 +112,20 @@ final class Conflicts {
 	 */
 	public static function scanExternalEdits( \DateTimeImmutable $from, \DateTimeImmutable $to ): int {
 		$wpdb = Db::wpdb();
-		$d    = Connection::data();
-		try {
-			$events = ( new Api() )->listEvents( $d['destination'], $from->format( 'Y-m-d\TH:i:s\Z' ), $to->format( 'Y-m-d\TH:i:s\Z' ), array( 'privateExtendedProperty' => 'mo_owner=' . EventBuilder::siteKey() ) );
-		} catch ( GoogleException $e ) {
-			return 0;
-		}
-		$byId = array();
-		foreach ( $events as $e ) {
-			$byId[ $e['id'] ] = $e;
-		}
 		$rows    = $wpdb->get_results( "SELECT ce.*, b.start_utc, b.end_utc FROM " . Schema::table( 'calendar_events' ) . ' ce JOIN ' . Schema::table( 'bookings' ) . " b ON b.id = ce.booking_id WHERE ce.state = 'active'", ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// Eventos propios de cada calendario usado (destino e invitaciones, beta.4).
+		$byId      = array();
+		$calendars = array_unique( array_merge( array( Connection::targetFor( 'internal' ), Connection::targetFor( 'client' ) ), array_column( $rows, 'calendar_id' ) ) );
+		foreach ( array_filter( $calendars ) as $calendar ) {
+			try {
+				$events = ( new Api() )->listEvents( $calendar, $from->format( 'Y-m-d\TH:i:s\Z' ), $to->format( 'Y-m-d\TH:i:s\Z' ), array( 'privateExtendedProperty' => 'mo_owner=' . EventBuilder::siteKey() ) );
+			} catch ( GoogleException $e ) {
+				return 0;
+			}
+			foreach ( $events as $e ) {
+				$byId[ $calendar . '|' . $e['id'] ] = $e;
+			}
+		}
 		$flagged = 0;
 		foreach ( $rows as $r ) {
 			$start = Db::fromSql( $r['start_utc'] );
@@ -130,7 +133,7 @@ final class Conflicts {
 				continue;
 			}
 			$change = '';
-			$event  = $byId[ $r['event_id'] ] ?? null;
+			$event  = $byId[ $r['calendar_id'] . '|' . $r['event_id'] ] ?? null;
 			if ( ! $event ) {
 				$change = 'deleted';
 			} else {

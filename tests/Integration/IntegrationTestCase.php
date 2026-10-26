@@ -113,6 +113,7 @@ abstract class IntegrationTestCase extends TestCase {
 				'phone'         => '656 123 4567',
 				'phone_country' => 'MX',
 				'accept_terms'  => true,
+				'whatsapp_consent' => true,
 			),
 			$overrides
 		);

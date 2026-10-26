@@ -41,12 +41,16 @@ const noPhp = async (page, l) => ok(!/(Fatal error|Warning:|Notice:|Deprecated:|
   await noPhp(page, 'notificaciones');
   await page.fill('#mo-name', 'Recordatorio de saldo');
   await page.selectOption('#mo-channel', 'whatsapp');
-  await page.fill('#mo-body', 'Hola {nombre}, ');
-  ok(/No reconocemos: \{nombre\}/.test(await page.locator('[data-warning-for=mo-body]').innerText()), 'Aviso en vivo de código con una sola llave');
-  await page.click('#mo-body'); await page.press('#mo-body', 'End');
-  await page.click('.mo-code[data-target=mo-body][data-insert="{{saldo}}"]');
-  await page.click('[data-mo-preview=mo-body]');
-  ok(/\$900\.00 MXN/.test(await page.locator('[data-preview-for=mo-body]').innerText()), 'Vista previa con datos de ejemplo', await page.locator('[data-preview-for=mo-body]').innerText());
+  // El mensaje usa el editor con formato (TinyMCE).
+  await page.waitForFunction(() => window.tinymce && window.tinymce.get('mo_body'));
+  await page.evaluate(() => { window.tinymce.get('mo_body').setContent('<p>Hola {nombre}, <strong>tu saldo</strong> es </p>'); });
+  await page.waitForTimeout(1600);
+  ok(/No reconocemos: \{nombre\}/.test(await page.locator('[data-warning-for=mo_body]').innerText()), 'Aviso de código con una sola llave (editor con formato)');
+  await page.evaluate(() => { const ed = window.tinymce.get('mo_body'); ed.focus(); ed.selection.select(ed.getBody(), true); ed.selection.collapse(false); });
+  await page.click('.mo-code[data-target=mo_body][data-insert="{{saldo}}"]');
+  await page.click('[data-mo-preview=mo_body]');
+  ok(/\$900\.00 MXN/.test(await page.locator('[data-preview-for=mo_body]').innerText()), 'Vista previa con datos de ejemplo', await page.locator('[data-preview-for=mo_body]').innerText());
+  ok(await page.locator('[data-preview-for=mo_body] strong').count() === 1, 'La vista previa muestra el formato');
   await page.screenshot({ path: SHOTS + '/b2-plantilla.png', fullPage: true });
   await Promise.all([page.waitForNavigation(), page.click('button:has-text("Crear plantilla")')]);
   ok(/Plantilla guardada/.test(await notice(page)) && /\{nombre\}/.test(await notice(page)), 'Guardada con aviso de código desconocido', (await notice(page)).slice(-200));

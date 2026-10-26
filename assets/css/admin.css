@@ -92,3 +92,4 @@
 .mo-code-warning { color: #8a2424; background: #fcf0f1; border-left: 3px solid #d63638; padding: 4px 8px; margin: 4px 0; }
 .mo-preview-text, .mo-message-text { white-space: pre-wrap; background: #fff; border: 1px solid #dcdcde; padding: 8px; max-width: 640px; font-family: inherit; }
 @media (max-width: 960px) { .mo-editor { grid-template-columns: 1fr; } }
+.mo-preview-text--html { white-space: normal; }

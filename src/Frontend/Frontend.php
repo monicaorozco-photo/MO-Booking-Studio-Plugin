@@ -107,7 +107,8 @@ final class Frontend {
 			'intro'           => (string) ( $options['intro'] ?? '' ),
 			'welcome'         => self::welcomeTexts( (array) ( $options['texts'] ?? array() ) ),
 			'showDescription' => ! isset( $options['show_description'] ) || $options['show_description'],
-			'showPolicies'    => ! isset( $options['show_policies'] ) || $options['show_policies'],
+			// beta.4: las reglas de cancelación son de control interno; solo se muestran si se pide.
+			'showPolicies'    => ! empty( $options['show_policies'] ) && 'no' !== $options['show_policies'],
 			'portalUrl'       => esc_url_raw( \MOBookingStudio\Application\Bookings::portalBase() ),
 		);
 		$layout = (string) ( $options['layout'] ?? 'stacked' );
@@ -121,12 +122,13 @@ final class Frontend {
 		);
 	}
 
-	public static function renderPortal(): string {
+	public static function renderPortal( bool $preview = false ): string {
 		self::registerAssetHandles();
 		wp_enqueue_style( 'mo-booking' );
 		wp_enqueue_script( 'mo-booking-portal' );
 		$config = array(
-			'api' => esc_url_raw( rest_url( Routes::NS . '/' ) ),
+			'api'     => esc_url_raw( rest_url( Routes::NS . '/' ) ),
+			'preview' => $preview,
 		);
 		return sprintf(
 			'<div class="mo-booking mo-booking-portal" data-mo-portal="%1$s"><noscript>%2$s</noscript><p class="mo-booking__loading" role="status">%3$s</p></div>',

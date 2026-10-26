@@ -54,6 +54,7 @@ final class Routes {
 		register_rest_route( self::NS, '/portal/session', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalSession' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/portal/booking', array( 'methods' => 'GET', 'callback' => $this->wrap( array( $this, 'portalBooking' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/portal/proofs', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalProof' ) ), 'permission_callback' => $public ) );
+		register_rest_route( self::NS, '/portal/proofs/(?P<id>\d+)', array( 'methods' => 'GET', 'callback' => $this->wrap( array( $this, 'portalProofFile' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/portal/logout', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalLogout' ) ), 'permission_callback' => $public ) );
 	}
 
@@ -168,6 +169,18 @@ final class Routes {
 			'csrf'    => Tokens::rotateCsrf( (string) Portal::cookie() ),
 			'booking' => Portal::view( Bookings::get( $id ) ),
 		);
+	}
+
+	/** beta.4: la persona ve su propio comprobante (solo de su reserva y con su sesión). */
+	public function portalProofFile( \WP_REST_Request $r ): array {
+		RateLimit::hit( 'proof_view', 30, 600 );
+		$id    = Tokens::sessionBooking( Portal::cookie(), null, false );
+		$proof = Proofs::find( (int) $r['id'] );
+		if ( ! $proof || (int) $proof['booking_id'] !== $id ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'not_found', 'Comprobante no encontrado.', 404 );
+		}
+		Proofs::stream( $proof, false );
+		return array();
 	}
 
 	public function portalProof( \WP_REST_Request $r ): array {

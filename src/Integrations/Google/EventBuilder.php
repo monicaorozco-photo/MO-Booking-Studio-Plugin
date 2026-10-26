@@ -74,17 +74,36 @@ final class EventBuilder {
 		);
 	}
 
-	/** Etiqueta del estado en el evento interno (9.4). */
-	private static function internalState( array $booking ): string {
+	/** Estado en palabras sencillas para el título del evento. */
+	public static function stateWord( array $booking ): string {
 		switch ( $booking['status'] ) {
 			case BookingStatus::CONFIRMED:
-				return 'MO CONFIRMADA';
+				return 'Confirmada';
 			case BookingStatus::PAYMENT_REVIEW:
 			case BookingStatus::UNDER_REVIEW:
-				return 'MO EN REVISIÓN';
+				return 'En revisión';
 			default:
-				return 'MO PENDIENTE';
+				return 'Por confirmar';
 		}
+	}
+
+	/**
+	 * beta.4: título con la plantilla del servicio. Códigos: {cliente} {servicio} {estado}
+	 * {referencia} {negocio}. Un código desconocido se deja como está.
+	 */
+	public static function title( string $template, array $booking, ?array $service ): string {
+		$brand = ( $service && $service['brand'] ) ? $service['brand'] : (string) Settings::get( 'business_name' );
+		$title = strtr(
+			$template,
+			array(
+				'{cliente}'    => (string) ( $booking['contact']['name'] ?? '' ),
+				'{servicio}'   => $service ? (string) $service['title'] : (string) ( $booking['quote']['service_title'] ?? '' ),
+				'{estado}'     => self::stateWord( $booking ),
+				'{referencia}' => (string) $booking['public_ref'],
+				'{negocio}'    => $brand,
+			)
+		);
+		return trim( (string) preg_replace( '/\s+/u', ' ', $title ) );
 	}
 
 	/**
@@ -128,7 +147,7 @@ final class EventBuilder {
 		return array_merge(
 			self::times( $booking ),
 			array(
-				'summary'            => ( $booking['is_test'] ? 'PRUEBA · ' : '' ) . self::internalState( $booking ) . ' · ' . $booking['public_ref'],
+				'summary'            => ( $booking['is_test'] ? 'PRUEBA · ' : '' ) . self::title( (string) ( $service['event_title_internal'] ?? 'MO {estado} · {cliente}' ), $booking, $service ),
 				'description'        => implode( "\n", $lines ),
 				'visibility'         => 'private',
 				'transparency'       => 'opaque',
@@ -161,7 +180,7 @@ final class EventBuilder {
 		$event = array_merge(
 			self::times( $booking ),
 			array(
-				'summary'                 => 'Sesión con ' . $brand,
+				'summary'                 => self::title( (string) ( $service['event_title_client'] ?? 'Sesión con {negocio}' ), $booking, $service ),
 				'description'             => implode( "\n\n", $parts ),
 				'transparency'            => 'transparent',
 				'attendees'               => self::canInvite( $email ) ? array( array( 'email' => $email ) ) : array(),

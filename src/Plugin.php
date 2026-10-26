@@ -114,6 +114,7 @@ final class Plugin {
 	public function registerElementorWidget( $widgetsManager ): void {
 		if ( class_exists( '\Elementor\Widget_Base' ) ) {
 			$widgetsManager->register( new Elementor\BookingWidget() );
+			$widgetsManager->register( new Elementor\PortalWidget() );
 		}
 	}
 }

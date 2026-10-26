@@ -41,6 +41,9 @@ final class SettingsPage {
 		$body .= Ui::row( 'Recordatorio (horas antes)', Ui::input( 'reminder_hours', $s['reminder_hours'], 'number', array( 'min' => 0 ) ), '0 = sin recordatorio. Propuesta: 48.', 'reminder_hours' );
 		$body .= Ui::row( 'WhatsApp', Ui::select( 'whatsapp_mode', array( 'off' => 'Desactivado', 'manual' => 'Manual (abrir chat con el texto listo)', 'automatic' => 'Automático (pendiente de conectar proveedor oficial)' ), $s['whatsapp_mode'] ), 'El modo automático aún no envía: requiere un proveedor oficial de WhatsApp Business, plantillas aprobadas y credenciales.', 'whatsapp_mode' );
 		$body .= Ui::row( 'Número de WhatsApp del negocio', Ui::input( 'whatsapp_number', $s['whatsapp_number'], 'tel' ), 'Tu número (no el de la clienta). Lo usan los botones de WhatsApp del enlace privado: enviar comprobante, preguntas y cambios.', 'whatsapp_number' );
+		$body .= Ui::row( 'Texto de horario ocupado', Ui::input( 'slot_taken_label', $s['slot_taken_label'], 'text', array( 'class' => 'regular-text' ) ), 'Aparece en los horarios ya apartados del calendario. Ejemplo: No disponible, Ocupado.', 'slot_taken_label' );
+		$body .= Ui::row( 'Aviso antes del contrato', Ui::textarea( 'contract_notice', $s['contract_notice'], 3 ), 'Se muestra arriba del acordeón del contrato en el formulario. Vacío = sin aviso.', 'contract_notice' );
+		$body .= Ui::row( 'Casilla de avisos', Ui::input( 'whatsapp_consent_text', $s['whatsapp_consent_text'], 'text', array( 'class' => 'large-text' ) ) . '<br>' . Ui::checkbox( 'whatsapp_consent_required', (bool) $s['whatsapp_consent_required'], 'Obligatoria para reservar' ), 'Texto de la casilla del resumen. Si es obligatoria, sin marcarla no se puede enviar la solicitud.', 'whatsapp_consent_text' );
 		$body .= Ui::row( 'Botón para enviar el comprobante por WhatsApp', Ui::input( 'whatsapp_proof_button', $s['whatsapp_proof_button'], 'text', array( 'class' => 'large-text' ) ), 'Aparece en el enlace privado y al terminar la reserva cuando no se pueden subir archivos. Abre WhatsApp con el número del negocio.', 'whatsapp_proof_button' );
 		$body .= Ui::row( 'Mensaje predeterminado del comprobante', Ui::textarea( 'whatsapp_proof_message', $s['whatsapp_proof_message'], 2 ), 'Texto que se escribe solo en WhatsApp. Códigos: {nombre} = nombre de la persona, {referencia} = número de reserva.', 'whatsapp_proof_message' );
 		$body .= Ui::row( 'Texto junto al comprobante', Ui::textarea( 'portal_proof_text', $s['portal_proof_text'], 2 ), 'Se muestra en el enlace privado sobre la carga del comprobante. {whatsapp} se reemplaza por el número de arriba.', 'portal_proof_text' );
@@ -154,6 +157,10 @@ final class SettingsPage {
 				'whatsapp_number'     => sanitize_text_field( (string) ( $p['whatsapp_number'] ?? '' ) ),
 				'portal_proof_text'   => sanitize_textarea_field( (string) ( $p['portal_proof_text'] ?? '' ) ),
 				'whatsapp_proof_button'  => sanitize_text_field( (string) ( $p['whatsapp_proof_button'] ?? '' ) ),
+				'slot_taken_label'          => sanitize_text_field( (string) ( $p['slot_taken_label'] ?? '' ) ) ?: 'No disponible',
+				'contract_notice'           => sanitize_textarea_field( (string) ( $p['contract_notice'] ?? '' ) ),
+				'whatsapp_consent_text'     => sanitize_text_field( (string) ( $p['whatsapp_consent_text'] ?? '' ) ),
+				'whatsapp_consent_required' => ! empty( $p['whatsapp_consent_required'] ),
 				'whatsapp_proof_message' => sanitize_textarea_field( (string) ( $p['whatsapp_proof_message'] ?? '' ) ),
 				'public_contact'      => sanitize_text_field( (string) ( $p['public_contact'] ?? '' ) ),
 				'token_days_after'    => (int) $num( 'token_days_after', 1, 3650 ),

@@ -142,7 +142,7 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		SyncWorker::processQueue();
 		$internal = $this->google->owned( 'internal' );
 		$this->assertCount( 1, $internal );
-		$this->assertSame( 'MO PENDIENTE · ' . $booking['public_ref'], $internal[0]['summary'] );
+		$this->assertSame( 'MO Por confirmar · Ana Prueba', $internal[0]['summary'] );
 		$this->assertSame( array(), $internal[0]['attendees'] );
 		$this->assertSame( 'private', $internal[0]['visibility'] );
 		$this->assertSame( 'opaque', $internal[0]['transparency'] );
@@ -171,7 +171,7 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		$client   = $this->google->owned( 'client' );
 		$this->assertCount( 1, $internal );
 		$this->assertCount( 1, $client );
-		$this->assertSame( 'MO CONFIRMADA · ' . $booking['public_ref'], $internal[0]['summary'] );
+		$this->assertSame( 'MO Confirmada · Ana Prueba', $internal[0]['summary'] );
 		$this->assertSame( 1, $this->google->invitations );
 		$this->assertSame( array( array( 'email' => 'ana@clientes-mo.mx' ) ), $client[0]['attendees'] );
 		$this->assertSame( 'Sesión con Clics con Amor Fotografía', $client[0]['summary'] );
@@ -180,7 +180,8 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		$this->assertStringContainsString( 'Llega 10 minutos antes.', $client[0]['description'] );
 
 		// AC-CAL-05: el evento del cliente no expone datos internos.
-		$public = wp_json_encode( $client[0] );
+		// Sin el identificador (al azar por sitio: puede contener por casualidad "500" o "999").
+		$public = wp_json_encode( array_diff_key( $client[0], array( 'id' => 1, 'iCalUID' => 1, 'etag' => 1, 'extendedProperties' => 1 ) ) );
 		foreach ( array( '656', '999', '500', '$', 'wp-admin', 'admin.php', 'acceso=', 'Pago', 'Teléfono' ) as $secret ) {
 			$this->assertStringNotContainsString( $secret, $public, 'El evento del cliente no debe contener: ' . $secret );
 		}
@@ -506,8 +507,8 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		$this->assertSame( 0, $this->google->invitations );
 		$this->assertSame( 0, Conflicts::scan()['external'] );
 		$this->assertNull( SyncWorker::eventsFor( $booking['id'] )[0]['invited_at'], 'No se registra invitación.' );
-		$this->assertStringStartsWith( 'MO CONFIRMADA', $this->google->owned( 'internal' )[0]['summary'] );
-		$this->assertStringStartsWith( 'PRUEBA · MO PENDIENTE', EventBuilder::internal( array_merge( Bookings::get( $booking['id'] ), array( 'is_test' => 1, 'status' => BookingStatus::PENDING_PAYMENT ) ) )['summary'] );
+		$this->assertStringStartsWith( 'MO Confirmada', $this->google->owned( 'internal' )[0]['summary'] );
+		$this->assertStringStartsWith( 'PRUEBA · MO Por confirmar', EventBuilder::internal( array_merge( Bookings::get( $booking['id'] ), array( 'is_test' => 1, 'status' => BookingStatus::PENDING_PAYMENT ) ) )['summary'] );
 		$this->assertFalse( EventBuilder::canInvite( 'x@demo.test' ) );
 		$this->assertTrue( EventBuilder::canInvite( 'monica@gmail.com' ) );
 	}
@@ -521,7 +522,7 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		SyncWorker::processQueue();
 		$this->assertSame( BookingStatus::CONFIRMED, Bookings::get( $booking['id'] )['status'] );
 		$this->assertCount( 1, $this->google->owned( 'internal' ) );
-		$this->assertStringStartsWith( 'MO CONFIRMADA', $this->google->owned( 'internal' )[0]['summary'] );
+		$this->assertStringStartsWith( 'MO Confirmada', $this->google->owned( 'internal' )[0]['summary'] );
 		$this->assertCount( 0, $this->google->owned( 'client' ), 'Sin invitación.' );
 		$this->assertSame( 0, $this->google->invitations );
 		$audit = array_column( \MOBookingStudio\Infrastructure\Audit::forEntity( 'booking', $booking['id'] ), 'action' );
@@ -597,6 +598,46 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		unset( $confirmed, $pending );
 	}
 
+	/** beta.4: títulos personalizados por servicio, con nombre y estado. */
+	public function test_custom_event_titles(): void {
+		$service = $this->christmasService( array( 'event_title_internal' => 'HM: {cliente} · {estado}', 'event_title_client' => 'Holiday Mini: {cliente}' ) );
+		$this->google->connect();
+		$booking = $this->book( $service, self::START )['booking'];
+		SyncWorker::processQueue();
+		$this->assertSame( 'HM: Ana Prueba · Por confirmar', $this->google->owned( 'internal' )[0]['summary'] );
+		$this->approve( $booking );
+		SyncWorker::processQueue();
+		$this->assertSame( 'HM: Ana Prueba · Confirmada', $this->google->owned( 'internal' )[0]['summary'] );
+		$this->assertSame( 'Holiday Mini: Ana Prueba', $this->google->owned( 'client' )[0]['summary'] );
+	}
+
+	/** beta.4: la invitación vive en un calendario aparte; las existentes se mueven sin reenviarse. */
+	public function test_client_events_in_separate_calendar(): void {
+		$service = $this->christmasService();
+		$this->google->connect();
+		$this->approve( $this->book( $service, self::START )['booking'] );
+		SyncWorker::processQueue();
+		$this->assertCount( 1, $this->google->owned( 'client' ) );
+
+		Connection::save( array( 'client_destination' => FakeGoogle::NEW_DEST ) );
+		$this->assertCount( 1, SyncWorker::pendingMigration(), 'Solo la invitación cambia de calendario.' );
+		foreach ( array_unique( array_column( SyncWorker::pendingMigration(), 'booking_id' ) ) as $id ) {
+			\MOBookingStudio\Application\CalendarSync::enqueue( (int) $id );
+		}
+		SyncWorker::processQueue();
+		$this->assertCount( 0, SyncWorker::pendingMigration() );
+		$this->assertCount( 1, $this->google->owned( 'internal' ), 'El interno sigue en el destino.' );
+		$this->assertCount( 0, $this->google->owned( 'client' ) );
+		$this->assertCount( 1, $this->google->owned( 'client', FakeGoogle::NEW_DEST ) );
+		$this->assertSame( 1, $this->google->invitations, 'Mover no reenvía la invitación.' );
+
+		// Una cita nueva crea su invitación directamente en el calendario aparte.
+		$this->approve( $this->book( $service, '2026-11-20T18:00:00Z' )['booking'] );
+		SyncWorker::processQueue();
+		$this->assertCount( 2, $this->google->owned( 'client', FakeGoogle::NEW_DEST ) );
+		$this->assertCount( 2, $this->google->owned( 'internal' ) );
+	}
+
 	/** AC-09 y AC-10: contenido exacto de los dos eventos (9.4 y 9.5). */
 	public function test_event_contents_follow_spec(): void {
 		\MOBookingStudio\Infrastructure\Settings::update( array( 'public_contact' => 'WhatsApp 656 634 4849' ) );
@@ -620,7 +661,7 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 
 		$this->approve( $booking );
 		SyncWorker::processQueue();
-		$this->assertStringStartsWith( 'MO CONFIRMADA', $this->google->owned( 'internal' )[0]['summary'] );
+		$this->assertStringStartsWith( 'MO Confirmada', $this->google->owned( 'internal' )[0]['summary'] );
 		$client = $this->google->owned( 'client' )[0];
 		$this->assertSame( 'Sesión con Clics con Amor Fotografía', $client['summary'] );
 		foreach ( array( 'Servicio: Minis navideñas 2026', 'Duración: 20 minutos', 'Llega 10 minutos antes.', 'Contacto: WhatsApp 656 634 4849' ) as $text ) {
@@ -649,7 +690,7 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $q );
 		Connection::handleCallback( 'code-2', $q['state'] );
 		SyncWorker::processQueue();
-		$this->assertStringStartsWith( 'MO CONFIRMADA', $this->google->owned( 'internal' )[0]['summary'] );
+		$this->assertStringStartsWith( 'MO Confirmada', $this->google->owned( 'internal' )[0]['summary'] );
 		$this->assertCount( 1, $this->google->owned( 'client' ) );
 		$this->assertSame( 1, $this->google->invitations );
 	}

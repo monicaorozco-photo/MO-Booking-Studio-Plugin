@@ -167,7 +167,7 @@ final class BookingsTable extends BaseTable {
 				return '';
 			case 'trash':
 				Trash::trashBooking( $id );
-				return 'Puedes restaurarlas desde la pestaña Papelera.';
+				return 'Las vigentes se cancelaron sin aviso a la persona. Puedes restaurarlas desde la pestaña Papelera.';
 			case 'restore':
 				Trash::restoreBooking( $id );
 				return '';
@@ -218,9 +218,7 @@ final class BookingsTable extends BaseTable {
 			$actions += $b['archived']
 				? array( 'unarchive' => '<a href="' . esc_url( $this->actionUrl( 'unarchive', $id ) ) . '">Quitar de archivadas</a>' )
 				: array( 'archive' => '<a href="' . esc_url( $this->actionUrl( 'archive', $id ) ) . '">Archivar</a>' );
-			if ( ! BookingStatus::isOpen( $b['status'] ) ) {
-				$actions['trash'] = '<a class="submitdelete" href="' . esc_url( $this->actionUrl( 'trash', $id ) ) . '">Papelera</a>';
-			}
+			$actions['trash'] = '<a class="submitdelete" href="' . esc_url( $this->actionUrl( 'trash', $id ) ) . '"' . ( BookingStatus::isOpen( $b['status'] ) ? ' data-confirm="Esta reserva está vigente: se cancelará sin avisar a la persona y se liberará el horario. ¿Continuar?"' : '' ) . '>Papelera</a>';
 		}
 		return $html . $this->row_actions( $actions );
 	}
@@ -230,8 +228,8 @@ final class BookingsTable extends BaseTable {
 		switch ( $column ) {
 			case 'client':
 				$html = esc_html( (string) $b['client_name'] );
-				if ( FrequentCheck::MATCH_AUTO === $b['frequent_match'] && 'frequent' === $b['client_category'] ) {
-					$html .= ' <span class="mo-pill mo-pill--auto">Frecuente reconocido por nombre y contacto</span>';
+				if ( FrequentCheck::isAuto( (string) $b['frequent_match'] ) && 'frequent' === $b['client_category'] ) {
+					$html .= ' <span class="mo-pill mo-pill--auto">Frecuente reconocido por nombre y contacto</span>' . ( FrequentCheck::MATCH_AUTO_REVIEW === $b['frequent_match'] ? ' <span class="mo-pill mo-pill--review">Revisar teléfono</span>' : '' );
 				} elseif ( $b['frequent_claim'] && 'frequent' !== $b['client_category'] ) {
 					$html .= ' <span class="mo-pill mo-pill--review">Frecuente por revisar</span>';
 				}

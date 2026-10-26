@@ -47,7 +47,8 @@ final class NotificationsPage {
 			$body .= Ui::checkbox( "tpl[$event][enabled]", (bool) $t['enabled'], 'Enviar este aviso' );
 			$body .= Ui::row( 'Asunto', Ui::input( "tpl[$event][subject]", $t['subject'], 'text', array( 'class' => 'large-text', 'data-mo-codes' => '1' ) ) . self::warning( "tpl[$event][subject]" ) );
 			if ( in_array( 'client', $info['to'], true ) ) {
-				$body .= self::editorRow( 'Mensaje al cliente', "tpl[$event][body]", $t['body'], 8 );
+				$body .= self::editorRow( 'Mensaje al cliente (correo)', "tpl[$event][body]", $t['body'], 8, 'Puedes usar negritas, cursivas, encabezados, listas y enlaces.', true );
+				$body .= self::editorRow( 'Texto para WhatsApp (opcional)', "tpl[$event][whatsapp]", (string) ( $t['whatsapp'] ?? '' ), 5, 'Vacío = se usa el texto del correo. En WhatsApp: *negrita*, _cursiva_, ~tachado~. Los saltos de línea y emojis se respetan.' );
 			}
 			if ( in_array( 'admin', $info['to'], true ) ) {
 				$body .= self::editorRow( 'Aviso a la administradora', "tpl[$event][admin]", $t['admin'], 3, 'Vacío = no avisar.' );
@@ -105,22 +106,47 @@ final class NotificationsPage {
 		$html .= Ui::row( 'Canal', Ui::select( 'channel', Notifications::CHANNELS, $t['channel'] ), 'WhatsApp abre el chat con el texto listo desde la reserva; tú lo envías.', 'channel' );
 		$html .= Ui::row( 'Cuándo se usa (correo)', Ui::select( 'trigger', $triggers, $t['trigger'] ), 'Un correo ligado a un evento se envía además del aviso del sistema.', 'trigger' );
 		$html .= Ui::row( 'Asunto (correo)', Ui::input( 'subject', $t['subject'], 'text', array( 'class' => 'large-text', 'data-mo-codes' => '1' ) ) . self::warning( 'subject' ), '', 'subject' );
-		$html .= self::editorRow( 'Mensaje', 'body', $t['body'], 8 );
+		$html .= self::editorRow( 'Mensaje', 'body', $t['body'], 8, 'Correo: negritas, cursivas, encabezados, listas y enlaces. WhatsApp: *negrita*, _cursiva_, ~tachado~ (el editor con formato solo aplica a correos).', 'whatsapp' !== $t['channel'] );
 		$html .= Ui::checkbox( 'enabled', (bool) $t['enabled'], 'Activa' );
 		$html .= '<p>' . Ui::button( $id ? 'Guardar plantilla' : 'Crear plantilla' ) . ' <a href="' . esc_url( Ui::url( 'mo-booking-notifications' ) ) . '">Cancelar</a></p></form>';
 		return Ui::card( $id ? 'Editar plantilla: ' . $t['name'] : 'Nueva plantilla', $html );
 	}
 
 	/** Área de texto con la guía de códigos al lado, aviso de códigos desconocidos y vista previa. */
-	private static function editorRow( string $label, string $name, string $value, int $rows, string $help = '' ): string {
-		$id    = Ui::id( $name );
+	private static function editorRow( string $label, string $name, string $value, int $rows, string $help = '', bool $rich = false ): string {
+		$id    = $rich ? str_replace( '-', '_', Ui::id( $name ) ) : Ui::id( $name );
 		$guide = '<div class="mo-codes" aria-label="Códigos disponibles"><p class="mo-codes__title">Códigos (clic para insertar)</p><ul>';
 		foreach ( Notifications::variables() as $code => $text ) {
 			$guide .= '<li><button type="button" class="button-link mo-code" data-insert="{{' . esc_attr( $code ) . '}}" data-target="' . esc_attr( $id ) . '"><code>{{' . esc_html( $code ) . '}}</code></button> <span>' . esc_html( $text ) . '</span></li>';
 		}
 		$guide .= '</ul></div>';
-		$control = '<div class="mo-editor"><div class="mo-editor__text">' . Ui::textarea( $name, $value, $rows, array( 'data-mo-codes' => '1' ) ) . self::warning( $name ) .
-			'<p><button type="button" class="button button-small" data-mo-preview="' . esc_attr( $id ) . '">Vista previa con datos de ejemplo</button></p><pre class="mo-preview-text" data-preview-for="' . esc_attr( $id ) . '" hidden></pre>' . ( $help ? '<p class="description">' . esc_html( $help ) . '</p>' : '' ) . '</div>' . $guide . '</div>';
+		if ( $rich ) {
+			// Editor de WordPress sencillo (negritas, cursivas, encabezados, listas y enlaces).
+			ob_start();
+			wp_editor(
+				\MOBookingStudio\Application\Notifications::isHtml( $value ) ? $value : wpautop( esc_html( $value ) ),
+				$id,
+				array(
+					'textarea_name' => $name,
+					'textarea_rows' => $rows,
+					'media_buttons' => false,
+					'teeny'         => false,
+					'quicktags'     => array( 'buttons' => 'strong,em,link,ul,ol,li' ),
+					'tinymce'       => array(
+						'toolbar1'      => 'formatselect,bold,italic,underline,bullist,numlist,link,unlink,undo,redo',
+						'toolbar2'      => '',
+						'block_formats' => 'Párrafo=p;Título=h2;Subtítulo=h3',
+					),
+					'editor_class'  => 'mo-rich',
+				)
+			);
+			$editor = (string) ob_get_clean();
+			$editor = str_replace( '<textarea class="', '<textarea data-mo-codes="1" class="', $editor );
+		} else {
+			$editor = Ui::textarea( $name, $value, $rows, array( 'data-mo-codes' => '1' ) );
+		}
+		$control = '<div class="mo-editor"><div class="mo-editor__text">' . $editor . '<p class="mo-code-warning" data-warning-for="' . esc_attr( $id ) . '" role="status" hidden></p>' .
+			'<p><button type="button" class="button button-small" data-mo-preview="' . esc_attr( $id ) . '">Vista previa con datos de ejemplo</button></p><div class="mo-preview-text' . ( $rich ? ' mo-preview-text--html' : '' ) . '" data-preview-for="' . esc_attr( $id ) . '" hidden></div>' . ( $help ? '<p class="description">' . esc_html( $help ) . '</p>' : '' ) . '</div>' . $guide . '</div>';
 		return '<div class="mo-row"><label class="mo-row__label" for="' . esc_attr( $id ) . '">' . esc_html( $label ) . '</label><div class="mo-row__control">' . $control . '</div></div>';
 	}
 

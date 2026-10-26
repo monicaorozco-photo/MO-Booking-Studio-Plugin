@@ -43,6 +43,11 @@ final class Settings {
 			'public_contact'       => '',
 			// 8.1: texto del portal junto a la carga del comprobante. {whatsapp} = número de WhatsApp del negocio.
 			'portal_proof_text'    => 'Sube aquí tu comprobante de anticipo o envíalo por WhatsApp con tu nombre o número de reserva al {whatsapp}.',
+			// beta.4: textos del formulario público.
+			'slot_taken_label'          => 'No disponible',
+			'contract_notice'           => 'Antes de continuar, lee con calma el contrato completo. Ahí explicamos qué incluye tu sesión y cómo funcionan el anticipo, los cambios de fecha y las cancelaciones. Al aceptarlo confirmas que estás de acuerdo con todo lo que dice.',
+			'whatsapp_consent_text'     => 'Acepto recibir por WhatsApp y por correo los avisos de mi reserva',
+			'whatsapp_consent_required' => true,
 			// beta.3: si no se pueden subir archivos, botón a WhatsApp del negocio con mensaje listo.
 			'whatsapp_proof_button'  => 'Da clic en este botón para enviar tu comprobante por WhatsApp',
 			'whatsapp_proof_message' => 'Hola! Hago el envío de mi comprobante de anticipo a nombre de {nombre} con número de reserva {referencia}',

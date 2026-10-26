@@ -110,9 +110,9 @@ final class BookingsPage {
 		$body .= '<dt>Correo</dt><dd>' . esc_html( $b['contact']['email'] ?? '' ) . '</dd>';
 		$body .= '<dt>Teléfono</dt><dd>' . esc_html( $b['contact']['phone'] ?? '' ) . ' <span class="description">' . esc_html( $b['contact']['phone_e164'] ?? '' ) . '</span></dd>';
 		$body .= '<dt>WhatsApp</dt><dd>' . ( ! empty( $b['consent']['whatsapp'] ) ? 'Aceptó avisos' : 'No aceptó avisos automáticos' ) . '</dd>';
-		$autoFrequent = \MOBookingStudio\Application\FrequentCheck::MATCH_AUTO === $b['frequent_match'] && 'frequent' === $b['client_category'];
+		$autoFrequent = \MOBookingStudio\Application\FrequentCheck::isAuto( (string) $b['frequent_match'] ) && 'frequent' === $b['client_category'];
 		$body .= '<dt>Categoría aplicada</dt><dd>' . ( 'frequent' === $b['client_category'] ? 'Cliente frecuente' : 'Público general' ) .
-			( $autoFrequent ? ' <span class="mo-pill mo-pill--auto">Frecuente reconocido por nombre y contacto</span>' . ( current_user_can( Cap::BOOKINGS ) && ! $b['trashed'] ? Ui::formOpen( 'revert_frequent', array( 'booking_id' => $b['id'], 'version' => $b['version'] ), 'mo-inline-form' ) . ' ' . Ui::button( 'Regresar a precio general', 'button-link', '¿Quitar la tarifa de cliente frecuente y recalcular con el precio general? El anticipo y el saldo se actualizan.' ) . '</form>' : '' ) : '' ) .
+			( $autoFrequent ? ' <span class="mo-pill mo-pill--auto">Frecuente reconocido por nombre y contacto</span>' . ( \MOBookingStudio\Application\FrequentCheck::MATCH_AUTO_REVIEW === $b['frequent_match'] ? ' <span class="mo-pill mo-pill--review">Revisar: se reconoció por su correo; su teléfono está en otro expediente</span>' : '' ) . ( current_user_can( Cap::BOOKINGS ) && ! $b['trashed'] ? Ui::formOpen( 'revert_frequent', array( 'booking_id' => $b['id'], 'version' => $b['version'] ), 'mo-inline-form' ) . ' ' . Ui::button( 'Regresar a precio general', 'button-link', '¿Quitar la tarifa de cliente frecuente y recalcular con el precio general? El anticipo y el saldo se actualizan.' ) . '</form>' : '' ) : '' ) .
 			( 'reverted' === $b['frequent_match'] ? ' <span class="description">(se revirtió la tarifa frecuente reconocida automáticamente)</span>' : '' ) .
 			( $b['frequent_claim'] && 'frequent' !== $b['client_category'] && 'reverted' !== $b['frequent_match'] ? ' · <span class="mo-pill mo-pill--review">Dice que ya tuvo sesión: validar</span>' : '' ) . '</dd>';
 		if ( $client ) {
@@ -354,9 +354,7 @@ final class BookingsPage {
 		// 7.8: archivar es solo visibilidad.
 		$html .= '<p>' . Ui::formOpen( $b['archived'] ? 'restore_booking' : 'archive_booking', $hidden, 'mo-inline-form' ) . Ui::button( $b['archived'] ? 'Restaurar (quitar de archivadas)' : 'Archivar', 'button-secondary', $b['archived'] ? '' : '¿Archivar? No cambia el estado ni los pagos; puedes restaurarla después.' ) . '</form>';
 		if ( ! $b['trashed'] ) {
-			$html .= BookingStatus::isOpen( $s )
-				? ' <span class="description">Para enviarla a la papelera, primero cancélala o recházala.</span>'
-				: ' ' . Ui::formOpen( 'trash_booking', $hidden, 'mo-inline-form' ) . Ui::button( 'Mover a la papelera', 'button-link-delete', '¿Mover a la papelera? Puedes restaurarla después.' ) . '</form>';
+			$html .= ' ' . Ui::formOpen( 'trash_booking', $hidden, 'mo-inline-form' ) . Ui::button( 'Mover a la papelera', 'button-link-delete', BookingStatus::isOpen( $s ) ? '¿Eliminar esta reserva? Está vigente: se cancelará SIN avisar a la persona, se libera el horario y se quitan sus eventos de Google. El anticipo queda por resolver. Para avisarle, usa "Cancelar" en lugar de esto.' : '¿Mover a la papelera? Puedes restaurarla después.' ) . '</form>';
 		}
 		$html .= '</p>';
 		if ( $b['is_test'] ) {

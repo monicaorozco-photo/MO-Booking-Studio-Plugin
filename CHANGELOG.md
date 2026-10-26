@@ -1,5 +1,19 @@
 # Cambios
 
+## 0.2.0-beta.4 — 26 de octubre de 2026 (lanzamiento de la preventa)
+
+Sin cambios de base de datos (esquema 4). Guía: `docs/entrega-beta4.md`.
+
+- Google Calendar: títulos por servicio con códigos (`{cliente}`, `{estado}`…); calendario aparte para las invitaciones a clientas (las existentes se mueven sin reenviarse) para ver un solo evento por cita.
+- Vista de reserva: es también la pantalla final al reservar; contrato aceptado en lugar de las reglas de cancelación; comprobantes enviados (con vista segura de su propio archivo) y pagos recibidos; ubicación e indicaciones solo con la cita confirmada; aviso de comprobante dentro de su recuadro.
+- Formulario: colores de días que el tema ya no puede tapar; texto editable para horarios ocupados; aviso editable antes del contrato y sin número de versión; casilla de avisos por WhatsApp y correo obligatoria (configurable); reglas de cancelación ocultas al público por omisión.
+- Elementor: widget "MO Vista de reserva" con vista de ejemplo en el editor; controles de estilo para calendario, horarios, botones, tipografía y tarjetas.
+- Notificaciones: correos con formato (editor con negritas, títulos, listas y enlaces) y copia en texto simple; texto propio para WhatsApp por aviso; los saltos de línea ya no se pierden al abrir WhatsApp desde el panel.
+- Papelera: una reserva vigente se cancela sola sin avisar a la clienta.
+- Cliente frecuente: el correo manda aunque el teléfono esté en otro expediente; la reserva se marca "Revisar teléfono".
+- Página para imprimir: pagos recibidos; ubicación e indicaciones solo con la cita confirmada.
+- Correcciones: borrar un cliente borra también sus contactos adicionales; prueba de privacidad del evento ya no depende del identificador al azar.
+
 ## 0.2.0-beta.3 — 23 de octubre de 2026 (beta para preventa controlada)
 
 Esquema de datos 4. Detalle y pruebas en `docs/entrega-beta3.md`.

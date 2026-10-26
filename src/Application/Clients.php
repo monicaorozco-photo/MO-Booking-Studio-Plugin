@@ -489,6 +489,7 @@ final class Clients {
 		if ( $bookings ) {
 			throw new DomainException( 'has_dependencies', sprintf( 'No se puede eliminar: tiene %d reserva(s) con su historial. Archívalo o anonimízalo.', $bookings ), 409 );
 		}
+		$wpdb->delete( Schema::table( 'client_contacts' ), array( 'client_id' => $id ) );
 		$wpdb->delete( Schema::table( 'clients' ), array( 'id' => $id ) );
 		Audit::log( 'client', $id, 'deleted' );
 	}

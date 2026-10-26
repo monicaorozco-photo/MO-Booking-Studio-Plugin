@@ -181,11 +181,13 @@ final class Notifications {
 		$trigger = (string) ( $data['trigger'] ?? 'manual' );
 		$trigger = 'email' === $channel && isset( self::events()[ $trigger ] ) ? $trigger : 'manual';
 		$subject = sanitize_text_field( (string) ( $data['subject'] ?? '' ) );
-		$body    = sanitize_textarea_field( (string) ( $data['body'] ?? '' ) );
+		$raw     = (string) ( $data['body'] ?? '' );
+		// WhatsApp es texto: si se escribió en el editor con formato, se convierte (negritas → *texto*).
+		$body    = 'email' === $channel ? self::cleanBody( $raw ) : sanitize_textarea_field( self::isHtml( $raw ) ? self::htmlToText( self::cleanBody( $raw ), true ) : $raw );
 		if ( '' === $name ) {
 			throw new \MOBookingStudio\Domain\DomainException( 'invalid_template', 'Ponle un nombre a la plantilla.', 400, array( 'field' => 'name' ) );
 		}
-		if ( '' === trim( $body ) ) {
+		if ( '' === trim( wp_strip_all_tags( $body ) ) ) {
 			throw new \MOBookingStudio\Domain\DomainException( 'invalid_template', 'Escribe el texto del mensaje.', 400, array( 'field' => 'body' ) );
 		}
 		if ( 'email' === $channel && '' === trim( $subject ) ) {
@@ -306,6 +308,10 @@ final class Notifications {
 	public static function templates(): array {
 		$stored = get_option( self::TEMPLATES_OPTION, array() );
 		$out    = self::defaultTemplates();
+		foreach ( $out as $event => $tpl ) {
+			// beta.4: texto propio para WhatsApp (vacío = se usa el del correo, convertido).
+			$out[ $event ] += array( 'whatsapp' => '' );
+		}
 		foreach ( (array) $stored as $event => $tpl ) {
 			if ( isset( $out[ $event ] ) && is_array( $tpl ) ) {
 				$out[ $event ] = array_merge( $out[ $event ], array_intersect_key( $tpl, $out[ $event ] ) );
@@ -329,19 +335,100 @@ final class Notifications {
 			}
 			$t = $templates[ $event ];
 			if ( ! empty( $t['reset'] ) ) {
-				$clean[ $event ] = array_merge( $default, array( 'enabled' => ! empty( $t['enabled'] ) ) );
+				$clean[ $event ] = array_merge( $default, array( 'enabled' => ! empty( $t['enabled'] ), 'whatsapp' => '' ) );
 				continue;
 			}
 			$clean[ $event ] = array(
-				'enabled' => ! empty( $t['enabled'] ),
-				'subject' => sanitize_text_field( (string) ( $t['subject'] ?? $default['subject'] ) ),
-				'body'    => sanitize_textarea_field( (string) ( $t['body'] ?? $default['body'] ) ),
-				'admin'   => sanitize_textarea_field( (string) ( $t['admin'] ?? $default['admin'] ) ),
+				'enabled'  => ! empty( $t['enabled'] ),
+				'subject'  => sanitize_text_field( (string) ( $t['subject'] ?? $default['subject'] ) ),
+				'body'     => self::cleanBody( (string) ( $t['body'] ?? $default['body'] ) ),
+				'admin'    => sanitize_textarea_field( (string) ( $t['admin'] ?? $default['admin'] ) ),
+				'whatsapp' => sanitize_textarea_field( (string) ( $t['whatsapp'] ?? '' ) ),
 			);
-			$unknown = array_merge( $unknown, self::unknownCodes( implode( "\n", array( $clean[ $event ]['subject'], $clean[ $event ]['body'], $clean[ $event ]['admin'] ) ) ) );
+			$unknown = array_merge( $unknown, self::unknownCodes( implode( "\n", array( $clean[ $event ]['subject'], $clean[ $event ]['body'], $clean[ $event ]['admin'], $clean[ $event ]['whatsapp'] ) ) ) );
 		}
 		update_option( self::TEMPLATES_OPTION, $clean, false );
 		return array_values( array_unique( $unknown ) );
+	}
+
+	// ----- Correos con formato (beta.4) -----
+
+	/** Etiquetas permitidas en el texto de los correos (negritas, encabezados, listas, enlaces). */
+	public static function allowedHtml(): array {
+		return array(
+			'p'          => array( 'style' => true ),
+			'br'         => array(),
+			'strong'     => array(),
+			'b'          => array(),
+			'em'         => array(),
+			'i'          => array(),
+			'u'          => array(),
+			'h1'         => array( 'style' => true ),
+			'h2'         => array( 'style' => true ),
+			'h3'         => array( 'style' => true ),
+			'h4'         => array( 'style' => true ),
+			'ul'         => array(),
+			'ol'         => array(),
+			'li'         => array(),
+			'blockquote' => array(),
+			'hr'         => array(),
+			'span'       => array( 'style' => true ),
+			'a'          => array( 'href' => true, 'target' => true, 'rel' => true ),
+		);
+	}
+
+	public static function cleanBody( string $html ): string {
+		return trim( wp_kses( $html, self::allowedHtml() ) );
+	}
+
+	public static function isHtml( string $text ): bool {
+		return $text !== wp_strip_all_tags( $text );
+	}
+
+	/**
+	 * Texto del correo con formato. Los datos de la reserva se escapan; las plantillas sin
+	 * etiquetas (texto simple) conservan sus saltos de línea.
+	 */
+	public static function renderHtml( string $template, array $vars ): string {
+		if ( ! self::isHtml( $template ) ) {
+			return make_clickable( nl2br( esc_html( self::render( $template, $vars ) ) ) );
+		}
+		$html = (string) preg_replace_callback(
+			'/\{\{\s*([a-z_]+)\s*\}\}/',
+			static function ( $m ) use ( $vars ) {
+				if ( ! isset( $vars[ $m[1] ] ) ) {
+					return '';
+				}
+				$value = esc_html( wp_strip_all_tags( (string) $vars[ $m[1] ] ) );
+				return 'enlace' === $m[1] ? '<a href="' . esc_url( (string) $vars[ $m[1] ] ) . '">' . $value . '</a>' : nl2br( $value );
+			},
+			self::cleanBody( $template )
+		);
+		return $html;
+	}
+
+	/** Versión de texto simple (para clientes de correo sin formato y para WhatsApp). */
+	public static function htmlToText( string $html, bool $whatsapp = false ): string {
+		$text = $html;
+		if ( $whatsapp ) {
+			$text = (string) preg_replace( '#<(strong|b|h[1-4])[^>]*>(.*?)</\1>#is', '*$2*', $text );
+			$text = (string) preg_replace( '#<(em|i)[^>]*>(.*?)</\1>#is', '_$2_', $text );
+		}
+		$text = (string) preg_replace( '#<a [^>]*href="([^"]*)"[^>]*>(.*?)</a>#is', '$2 ($1)', $text );
+		$text = (string) preg_replace( '#\s*<br\s*/?>\s*#i', "\n", $text );
+		$text = (string) preg_replace( '#</(p|h[1-6]|li|blockquote|ul|ol)>#i', "\n\n", $text );
+		$text = (string) preg_replace( '#<li[^>]*>#i', '• ', $text );
+		$text = html_entity_decode( wp_strip_all_tags( $text ), ENT_QUOTES, 'UTF-8' );
+		$text = (string) preg_replace( "/[ \t]+\n/", "\n", $text );
+		$text = (string) preg_replace( "/\n{3,}/", "\n\n", $text );
+		// "texto (texto)" cuando el enlace se escribió como la propia dirección.
+		$text = (string) preg_replace( '#(https?://\S+) \(\1\)#', '$1', $text );
+		return trim( $text );
+	}
+
+	/** Correo completo: el texto dentro de un diseño sencillo y legible en el teléfono. */
+	private static function emailLayout( string $inner ): string {
+		return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;padding:0;background:#f6f4f1;"><div style="max-width:600px;margin:0 auto;padding:24px 16px;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1f2523;"><div style="background:#ffffff;border-radius:10px;padding:24px;">' . $inner . '</div></div></body></html>';
 	}
 
 	/**
@@ -549,21 +636,24 @@ final class Notifications {
 		}
 		$vars    = self::varsFor( $booking, (array) ( $payload['extra'] ?? array() ) );
 		$subject = self::render( $tpl['subject'], $vars );
-		$body    = self::render( 'admin' === $audience ? $tpl['admin'] : $tpl['body'], $vars );
+		$html    = '';
 		if ( 'admin' === $audience ) {
-			$body .= "\n\n" . admin_url( 'admin.php?page=mo-booking-bookings&booking=' . (int) $booking['id'] );
+			$body    = self::render( $tpl['admin'], $vars ) . "\n\n" . admin_url( 'admin.php?page=mo-booking-bookings&booking=' . (int) $booking['id'] );
 			$subject = '[Reservas] ' . $subject;
+		} else {
+			$html = self::renderHtml( $tpl['body'], $vars );
+			$body = self::htmlToText( $html );
 		}
 
-		return self::deliver( $row, $subject, $body, (bool) $booking['is_test'], $audience, $set, $payload );
+		return self::deliver( $row, $subject, $body, (bool) $booking['is_test'], $audience, $set, $payload, $html );
 	}
 
 	/** Envía (o simula) un correo de la cola y actualiza su estado. */
-	private static function deliver( array $row, string $subject, string $body, bool $isTest, string $audience, callable $set, array $payload = array() ): bool {
+	private static function deliver( array $row, string $subject, string $body, bool $isTest, string $audience, callable $set, array $payload = array(), string $html = '' ): bool {
 		$id  = (int) $row['id'];
 		$now = Plugin::clock()->now();
 		// El registro conserva el texto exacto que se usó, aunque la plantilla cambie después.
-		$keep = Db::json( array_merge( $payload, array( 'subject' => $subject, 'text' => $body, 'preview' => mb_substr( $body, 0, 400 ) ) ) );
+		$keep = Db::json( array_merge( $payload, array( 'subject' => $subject, 'text' => $body, 'html' => $html, 'preview' => mb_substr( $body, 0, 400 ) ) ) );
 		if ( $isTest || 'live' !== Settings::get( 'email_mode' ) ) {
 			$set( array( 'status' => 'simulated', 'payload' => $keep ) );
 			return true;
@@ -573,7 +663,14 @@ final class Notifications {
 			$error = is_wp_error( $wpError ) ? $wpError->get_error_message() : 'Error de correo.';
 		};
 		add_action( 'wp_mail_failed', $capture );
-		$headers = array( 'Content-Type: text/plain; charset=UTF-8' );
+		$headers = array( '' !== $html ? 'Content-Type: text/html; charset=UTF-8' : 'Content-Type: text/plain; charset=UTF-8' );
+		// Con formato: el mismo mensaje en texto simple para los programas de correo que no lo muestran.
+		$alt = static function ( $mailer ) use ( $body ) {
+			$mailer->AltBody = $body;
+		};
+		if ( '' !== $html ) {
+			add_action( 'phpmailer_init', $alt );
+		}
 		$from    = (string) Settings::get( 'email_from' );
 		if ( is_email( $from ) ) {
 			$fromName  = (string) Settings::get( 'email_from_name' ) ?: (string) Settings::get( 'business_name' );
@@ -582,8 +679,9 @@ final class Notifications {
 		if ( 'client' === $audience && is_email( (string) Settings::get( 'admin_email' ) ) ) {
 			$headers[] = 'Reply-To: ' . Settings::get( 'admin_email' );
 		}
-		$ok = wp_mail( $row['recipient'], $subject, $body, $headers );
+		$ok = wp_mail( $row['recipient'], $subject, '' !== $html ? self::emailLayout( $html ) : $body, $headers );
 		remove_action( 'wp_mail_failed', $capture );
+		remove_action( 'phpmailer_init', $alt );
 
 		if ( $ok ) {
 			$set( array( 'status' => 'accepted', 'last_error' => '', 'payload' => $keep ) );
@@ -610,8 +708,13 @@ final class Notifications {
 	// ----- WhatsApp manual -----
 
 	public static function whatsappText( array $booking, string $event ): string {
-		$tpl = self::templates()[ $event ] ?? self::customFor( $event ) ?? self::templates()['booking_created'];
-		return self::render( $tpl['body'], self::varsFor( $booking ) );
+		$tpl  = self::templates()[ $event ] ?? self::customFor( $event ) ?? self::templates()['booking_created'];
+		$vars = self::varsFor( $booking );
+		if ( '' !== trim( (string) ( $tpl['whatsapp'] ?? '' ) ) ) {
+			return self::render( (string) $tpl['whatsapp'], $vars );
+		}
+		// Sin texto propio: el del correo, con negritas y cursivas al estilo de WhatsApp.
+		return self::isHtml( (string) $tpl['body'] ) ? self::htmlToText( self::renderHtml( (string) $tpl['body'], $vars ), true ) : self::render( (string) $tpl['body'], $vars );
 	}
 
 	/** Mensajes que se pueden abrir por WhatsApp desde la reserva: avisos del sistema y plantillas propias de WhatsApp. */

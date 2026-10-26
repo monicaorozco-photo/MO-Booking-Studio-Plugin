@@ -43,12 +43,20 @@ final class Connection {
 				'read_calendars'   => array(),
 				'calendar_names'   => array(),
 				'destination'      => '',
+				// beta.4: calendario aparte para las invitaciones a clientas ('' = el mismo destino).
+				'client_destination' => '',
 				'last_sync_at'     => '',
 				'last_scan_at'     => '',
 				'last_error'       => '',
 			),
 			is_array( $d ) ? $d : array()
 		);
+	}
+
+	/** Calendario donde se escribe cada tipo de evento propio. */
+	public static function targetFor( string $kind ): string {
+		$d = self::data();
+		return 'client' === $kind && '' !== (string) $d['client_destination'] ? (string) $d['client_destination'] : (string) $d['destination'];
 	}
 
 	public static function save( array $changes ): void {

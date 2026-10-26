@@ -71,14 +71,20 @@ final class GooglePage {
 			$body     .= '<p class="mo-error">' . esc_html( $e->getMessage() ) . '</p>';
 		}
 		if ( $calendars ) {
+			$clientOpts = array( '' => 'El mismo calendario destino' );
 			$body .= Ui::formOpen( 'google_calendars' ) . '<table class="widefat striped"><thead><tr><th>Calendario</th><th>Bloquea horarios</th><th>Destino de las reservas</th></tr></thead><tbody>';
 			foreach ( $calendars as $c ) {
 				$canWrite = in_array( $c['role'], array( 'owner', 'writer' ), true );
 				$body    .= '<tr><td>' . esc_html( $c['name'] ) . ( $c['primary'] ? ' <span class="description">(principal)</span>' : '' ) . '</td>' .
 					'<td><label><input type="checkbox" name="read[]" value="' . esc_attr( $c['id'] ) . '"' . checked( in_array( $c['id'], (array) $d['read_calendars'], true ), true, false ) . '> Leer ocupación</label></td>' .
 					'<td>' . ( $canWrite ? '<label><input type="radio" name="destination" value="' . esc_attr( $c['id'] ) . '"' . checked( $d['destination'], $c['id'], false ) . '> Escribir aquí</label>' : '<span class="description">Sin permiso de escritura</span>' ) . '</td></tr>';
+				if ( $canWrite ) {
+					$clientOpts[ $c['id'] ] = $c['name'];
+				}
 			}
-			$body .= '</tbody></table><p class="description">Recomendación: un calendario nuevo y dedicado como destino (por ejemplo "MO Reservas"). Sus eventos propios no bloquean; cualquier otro evento que pongas ahí sí. Prueba primero con calendarios de prueba.</p>' . Ui::button( 'Guardar calendarios' ) . '</form>';
+			$body .= '</tbody></table><p class="description">Recomendación: un calendario nuevo y dedicado como destino (por ejemplo "MO Reservas"). Sus eventos propios no bloquean; cualquier otro evento que pongas ahí sí. Prueba primero con calendarios de prueba.</p>' .
+				Ui::row( 'Invitaciones a clientas', Ui::select( 'client_destination', $clientOpts, (string) $d['client_destination'] ), 'Para no ver dos eventos por cita: crea en Google un calendario "MO Invitaciones", elígelo aquí y desmárcalo en tu Google Calendar para ocultarlo. Tú ves solo el evento interno; la clienta recibe su invitación normal. Al cambiarlo, las invitaciones existentes se mueven sin volver a enviarse.', 'client_destination' ) .
+				Ui::button( 'Guardar calendarios' ) . '</form>';
 		}
 		echo Ui::card( '3. Calendarios', $body ?: '<p>Conecta Google para elegir calendarios.</p>' ); // phpcs:ignore WordPress.Security.EscapeOutput
 
@@ -164,18 +170,23 @@ final class GooglePage {
 		if ( ! in_array( $destination, $writable, true ) ) {
 			throw new DomainException( 'google_destination', 'Elige un calendario destino en el que tengas permiso de escritura.' );
 		}
+		$clientDest = (string) ( $p['client_destination'] ?? '' );
+		if ( '' !== $clientDest && ( ! in_array( $clientDest, $writable, true ) || $clientDest === $destination ) ) {
+			$clientDest = '';
+		}
 		$before = Connection::data();
 		Connection::save(
 			array(
 				'read_calendars' => $read,
 				'destination'    => $destination,
+				'client_destination' => $clientDest,
 				'calendar_names' => $names,
 			)
 		);
 		Audit::log( 'google', 0, 'calendars_saved', array( 'read' => count( $read ), 'destination_changed' => $before['destination'] !== $destination ) );
 		if ( '' === $before['destination'] ) {
 			self::enqueueActive();
-		} elseif ( $before['destination'] !== $destination ) {
+		} elseif ( $before['destination'] !== $destination || (string) $before['client_destination'] !== $clientDest ) {
 			// SEG-05: migración explícita de los eventos propios al nuevo destino.
 			$ids = array_unique( array_map( 'intval', array_column( SyncWorker::pendingMigration(), 'booking_id' ) ) );
 			foreach ( $ids as $id ) {

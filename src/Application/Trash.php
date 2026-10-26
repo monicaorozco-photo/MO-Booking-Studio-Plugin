@@ -91,7 +91,11 @@ final class Trash {
 			return;
 		}
 		if ( BookingStatus::isOpen( $booking['status'] ) ) {
-			throw new DomainException( 'booking_active', 'La reserva sigue vigente (' . BookingStatus::label( $booking['status'] ) . '). Cancélala o recházala antes de enviarla a la papelera.', 409 );
+			// beta.4: una reserva vigente se cancela sola, sin avisar a la persona (ni por correo
+			// ni con la cancelación de Google). El anticipo queda "por resolver" en el panel.
+			Bookings::removeGoogleEvents( $id, false );
+			Bookings::cancel( $id, true, 'Eliminada desde el panel (sin aviso a la persona).', $booking['version'], 'manual', false );
+			$booking = Bookings::get( $id );
 		}
 		Db::wpdb()->update( Schema::table( 'bookings' ), array( 'trashed_at' => self::now() ), array( 'id' => $id ) );
 		Audit::log( 'booking', $id, 'trashed', array( 'ref' => $booking['public_ref'] ) );

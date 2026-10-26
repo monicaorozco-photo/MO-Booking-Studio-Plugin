@@ -13,7 +13,7 @@ const ok = (cond, label, extra) => {
   console.log((cond ? 'PASA ' : 'FALLA') + ' · ' + label + (extra ? ' · ' + extra : ''));
   if (!cond) { failures++; }
 };
-const notice = async page => (await page.locator('.notice').allInnerTexts()).join(' ').replace(/\s+/g, ' ');
+const notice = async page => { await page.waitForLoadState('load'); return (await page.locator('.notice').allInnerTexts()).join(' ').replace(/\s+/g, ' '); };
 
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' }).catch(() => chromium.launch());

@@ -66,8 +66,10 @@ final class PrintView {
 			'Fecha'             => Catalog::dateText( $local ),
 			'Hora'              => $local->format( 'H:i' ) . ' h (' . $b['timezone'] . ')',
 		);
+		$confirmed = in_array( $b['status'], array( BookingStatus::CONFIRMED, BookingStatus::COMPLETED ), true );
 		if ( $service && $service['location'] ) {
-			$rows['Lugar'] = $service['location'];
+			// beta.4: la ubicación se comparte cuando el anticipo está confirmado.
+			$rows['Lugar'] = $confirmed ? $service['location'] : 'Se comparte al confirmar tu anticipo';
 		}
 		if ( null !== $b['children'] || null !== $b['adults'] ) {
 			$rows['Asistentes'] = (int) $b['participants'] . ' (niños ' . (int) $b['children'] . ', adultos ' . (int) $b['adults'] . ')';
@@ -88,6 +90,9 @@ final class PrintView {
 			$html .= '<tr><th scope="row">' . esc_html( $label ) . '</th><td>' . esc_html( $value ) . '</td></tr>';
 		}
 		$html .= '</table>';
+		if ( $confirmed && $service && '' !== (string) $service['instructions'] ) {
+			$html .= '<h3>Indicaciones</h3><p>' . nl2br( esc_html( (string) $service['instructions'] ) ) . '</p>';
+		}
 		if ( '' !== $b['important_info'] ) {
 			$html .= '<h3>Información importante que nos compartiste</h3><p>' . nl2br( esc_html( $b['important_info'] ) ) . '</p>';
 		}
@@ -106,7 +111,16 @@ final class PrintView {
 		$html .= '<tr><th scope="row">Anticipo requerido</th><td>' . esc_html( Money::format( $b['deposit_cents'] ) ) . '</td></tr>';
 		$html .= '<tr><th scope="row">Pagado</th><td>' . esc_html( Money::format( max( 0, $summary['applied_cents'] ) ) ) . '</td></tr>';
 		$html .= '<tr><th scope="row">Saldo</th><td>' . esc_html( Money::format( $summary['balance_cents'] ) ) . '</td></tr>';
-		$html .= '</table></section>';
+		$html .= '</table>';
+		$payments = Portal::view( $b )['payments'];
+		if ( $payments ) {
+			$html .= '<h3>Pagos recibidos</h3><table>';
+			foreach ( $payments as $p ) {
+				$html .= '<tr><th scope="row">' . esc_html( $p['date'] ) . '</th><td>' . esc_html( $p['amount_txt'] . ' · ' . $p['method'] ) . '</td></tr>';
+			}
+			$html .= '</table>';
+		}
+		$html .= '</section>';
 
 		$html .= '<section class="contract"><h2>Contrato</h2>';
 		if ( $b['contract_version'] ) {

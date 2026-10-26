@@ -64,6 +64,13 @@ final class Catalog {
 			'policies'              => self::policyTexts( (int) $s['id'] ),
 			'contract'              => Contracts::publicView( Contracts::forService( $s ) ),
 			'privacy_url'           => (string) Settings::get( 'privacy_url' ),
+			// beta.4: textos editables del formulario.
+			'texts'                 => array(
+				'slot_taken'        => (string) Settings::get( 'slot_taken_label' ) ?: 'No disponible',
+				'contract_notice'   => (string) Settings::get( 'contract_notice' ),
+				'whatsapp_consent'  => (string) Settings::get( 'whatsapp_consent_text' ) ?: 'Acepto recibir por WhatsApp y por correo los avisos de mi reserva',
+				'consent_required'  => (bool) Settings::get( 'whatsapp_consent_required' ),
+			),
 		);
 	}
 
@@ -200,7 +207,7 @@ final class Catalog {
 		switch ( $reason ) {
 			case Availability::REASON_BOOKED:
 			case Availability::REASON_MAX_PER_DAY:
-				return 'Agotado';
+				return (string) Settings::get( 'slot_taken_label' ) ?: 'No disponible';
 			case Availability::REASON_NOTICE:
 				return 'Ya no se puede reservar';
 			case Availability::REASON_HORIZON:

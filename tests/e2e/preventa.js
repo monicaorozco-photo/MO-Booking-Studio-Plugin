@@ -169,14 +169,24 @@ async function fillDetails(page, email) {
   await other.check('#mo-f-accept_contract');
   await other.click('[data-form=details] button[type=submit]');
   await other.waitForSelector('[data-form=summary]');
+  // beta.4: la casilla de avisos es obligatoria.
+  await m.click('[data-form=summary] button[type=submit]');
+  ok(/acepta recibir los avisos/.test(await m.locator('[data-error-for=whatsapp_consent]').innerText()), 'Casilla de avisos obligatoria');
+  await m.check('#mo-f-whatsapp_consent');
+  await other.check('#mo-f-whatsapp_consent');
   await Promise.all([m.click('[data-form=summary] button[type=submit]'), other.click('[data-form=summary] button[type=submit]')]);
-  await m.waitForTimeout(4000);
+  await m.waitForTimeout(9000);
   const mWon = await m.locator('.mo-booking__ref').count() > 0;
   const oWon = await other.locator('.mo-booking__ref').count() > 0;
   const loserMsg = mWon ? await other.locator('.mo-booking__alert, .mo-booking__message').allInnerTexts() : await m.locator('.mo-booking__alert, .mo-booking__message').allInnerTexts();
   ok(mWon !== oWon, 'AC-02 solo una persona obtiene el horario ' + slotTime);
   ok(/ya no está disponible|alguien acaba de apartar/.test(loserMsg.join(' ')), 'AC-02 la otra recibe un mensaje claro', loserMsg.join(' ').slice(0, 120));
   const winner = mWon ? m : other;
+  await winner.waitForSelector('.mo-booking__welcome-new', { timeout: 15000 });
+  ok(/mo_nuevo/.test(winner.url()) === false && /Recibimos tu solicitud/.test(await winner.locator('.mo-booking__welcome-new').innerText()), 'Al enviar llega a su vista de reserva (sin token en la dirección)', winner.url());
+  const portalText = await winner.locator('.mo-booking-portal').innerText();
+  ok(!/Indicaciones/.test(portalText) && (!/Lugar/.test(portalText) || /Te lo compartiremos/.test(portalText)), 'Ubicación e indicaciones ocultas hasta confirmar');
+  ok(await winner.locator('.mo-booking__contract summary').count() === 1, 'Contrato aceptado en la vista de reserva');
   await winner.screenshot({ path: SHOTS + '/p3-confirmacion.png', fullPage: true });
   const deadline = await winner.locator('.mo-booking__deadline').innerText();
   ok(/antes del .*\d{1,2}:\d{2}/.test(deadline), 'AC-03 muestra la hora exacta de vencimiento', deadline.replace(/\s+/g, ' '));
@@ -185,8 +195,13 @@ async function fillDetails(page, email) {
   // AC-04: carga del comprobante desde la confirmación (enlace privado).
   await winner.setInputFiles('[data-mo-upload] input[type=file]', { name: 'comprobante.png', mimeType: 'image/png', buffer: PNG });
   await winner.click('[data-mo-upload] button[type=submit]');
-  await winner.waitForSelector('.mo-booking__success', { timeout: 15000 });
-  ok(true, 'AC-04 comprobante cargado desde el enlace privado', await winner.locator('.mo-booking__success').innerText());
+  await winner.waitForSelector('.mo-booking__upload-wrap .mo-booking__success', { timeout: 15000 });
+  ok(true, 'AC-04 comprobante cargado; aviso dentro del recuadro', await winner.locator('.mo-booking__upload-wrap .mo-booking__success').innerText());
+  ok(await winner.locator('.mo-booking__proofs a').count() === 1, 'Puede volver a ver su comprobante');
+  const ownProof = await winner.request.get(await winner.getAttribute('.mo-booking__proofs a', 'href'));
+  ok(ownProof.status() === 200 && /image\/png/.test(ownProof.headers()['content-type'] || ''), 'Su comprobante se abre con su sesión', String(ownProof.status()));
+  const strangerProof = await (await browser.newContext()).request.get(await winner.getAttribute('.mo-booking__proofs a', 'href'));
+  ok(strangerProof.status() !== 200, 'Sin su sesión no se abre', String(strangerProof.status()));
 
   // El panel autorizado lo ve; sin sesión no.
   await admin.goto(BASE + '/wp-admin/admin.php?page=mo-booking-bookings&search=' + encodeURIComponent(ref) + '&status=');

@@ -142,8 +142,9 @@ final class Bookings {
 			$where[] = "b.conflict_state = 'open'";
 		}
 		if ( ! empty( $filters['frequent_auto'] ) ) {
-			$where[]  = 'b.frequent_match = %s';
+			$where[]  = '(b.frequent_match = %s OR b.frequent_match = %s)';
 			$params[] = FrequentCheck::MATCH_AUTO;
+			$params[] = FrequentCheck::MATCH_AUTO_REVIEW;
 		}
 		if ( isset( $filters['is_test'] ) ) {
 			$where[]  = 'b.is_test = %d';
@@ -236,6 +237,10 @@ final class Bookings {
 		if ( ! $isAdmin && empty( $input['accept_terms'] ) ) {
 			throw new DomainException( 'terms_required', 'Para reservar debes aceptar las condiciones y políticas.', 400, array( 'field' => 'accept_terms' ) );
 		}
+		// beta.4: los avisos por WhatsApp y correo son parte del servicio (configurable en Ajustes).
+		if ( ! $isAdmin && Settings::get( 'whatsapp_consent_required' ) && empty( $input['whatsapp_consent'] ) ) {
+			throw new DomainException( 'consent_required', 'Para continuar acepta recibir los avisos de tu reserva por WhatsApp y correo.', 400, array( 'field' => 'whatsapp_consent' ) );
+		}
 		$requestHash = hash( 'sha256', Db::json( array( $input['quote_id'] ?? ( $input['start'] ?? '' ), $contact, $answers, $info ) ) );
 
 		// Reintento de la misma solicitud: devolver la reserva existente sin duplicar efectos.
@@ -312,10 +317,11 @@ final class Bookings {
 		}
 		$isTest      = ! empty( $options['is_test'] ) || ! empty( $service['is_test'] );
 		$verifiedId  = isset( $verification ) && $verification ? (int) $verification['client_id'] : 0;
+		$verifiedReview = $verifiedId && ! empty( $verification['review'] );
 		$extrasInput = $context['extras'];
 
 		$created = Db::transaction(
-			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $info, $contract, $isAdmin, $context, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput, $verifiedId, $externalBusy, $googleOverride ) {
+			static function () use ( $service, $start, $occupy, $now, $result, $status, $holdUntil, $contact, $answers, $info, $contract, $isAdmin, $context, $input, $key, $requestHash, $requestedAt, $source, $isTest, $category, $extrasInput, $verifiedId, $verifiedReview, $externalBusy, $googleOverride ) {
 				$resource = (int) $service['resource_id'];
 				self::lockDays( $resource, $occupy->utcDays() );
 
@@ -364,7 +370,7 @@ final class Bookings {
 					'contract_accepted_at' => ( $contract && ! $isAdmin ) ? Db::toSql( $now ) : null,
 					'client_category'  => $category,
 					'frequent_claim'   => ! empty( $input['frequent_claim'] ) || $verifiedId ? 1 : 0,
-					'frequent_match'   => $verifiedId ? FrequentCheck::MATCH_AUTO : '',
+					'frequent_match'   => $verifiedId ? ( $verifiedReview ? FrequentCheck::MATCH_AUTO_REVIEW : FrequentCheck::MATCH_AUTO ) : '',
 					'total_cents'      => $result['total_cents'],
 					'deposit_cents'    => $result['deposit_cents'],
 					'quote'            => Db::json(
@@ -984,7 +990,7 @@ final class Bookings {
 	 *
 	 * @param string $depositOutcome policy | lost | credit | manual
 	 */
-	public static function cancel( int $bookingId, bool $byBusiness, string $reason, int $expectedVersion, string $depositOutcome = 'policy' ): array {
+	public static function cancel( int $bookingId, bool $byBusiness, string $reason, int $expectedVersion, string $depositOutcome = 'policy', bool $notify = true ): array {
 		$reason = trim( sanitize_textarea_field( $reason ) );
 		if ( '' === $reason ) {
 			throw new DomainException( 'reason_required', 'Indica el motivo de la cancelación.' );
@@ -1008,7 +1014,9 @@ final class Bookings {
 		);
 		Notifications::cancelPending( $bookingId );
 		$booking = self::get( $bookingId );
-		Notifications::bookingEvent( 'booking_cancelled', $booking, array( 'reason' => $reason ) );
+		if ( $notify ) {
+			Notifications::bookingEvent( 'booking_cancelled', $booking, array( 'reason' => $reason ) );
+		}
 		return $booking;
 	}
 
@@ -1099,7 +1107,7 @@ final class Bookings {
 	 * Retira de Google los eventos propios de la reserva (interno y del cliente). Si Google
 	 * falla por otra razón que "ya no existe", no se borra nada en el sitio.
 	 */
-	public static function removeGoogleEvents( int $bookingId ): void {
+	public static function removeGoogleEvents( int $bookingId, bool $notifyGuests = true ): void {
 		if ( ! \MOBookingStudio\Integrations\Google\Connection::isActive() ) {
 			return;
 		}
@@ -1108,12 +1116,13 @@ final class Bookings {
 				continue;
 			}
 			try {
-				( new \MOBookingStudio\Integrations\Google\Api() )->deleteEvent( $row['calendar_id'], $row['event_id'], 'client' === $row['kind'] ? 'all' : 'none' );
+				( new \MOBookingStudio\Integrations\Google\Api() )->deleteEvent( $row['calendar_id'], $row['event_id'], 'client' === $row['kind'] && $notifyGuests ? 'all' : 'none' );
 			} catch ( \MOBookingStudio\Integrations\Google\GoogleException $e ) {
 				if ( ! in_array( $e->type, array( 'not_found', 'gone' ), true ) ) {
 					throw new DomainException( 'google_unavailable', 'No se pudo retirar su evento de Google; intenta de nuevo. No se eliminó nada.', 503 );
 				}
 			}
+			Db::wpdb()->update( Schema::table( 'calendar_events' ), array( 'state' => 'deleted', 'synced_at' => Db::toSql( Plugin::clock()->now() ) ), array( 'id' => $row['id'] ) );
 		}
 	}
 
@@ -1422,7 +1431,7 @@ final class Bookings {
 					$booking,
 					array(
 						'client_category' => $quote['category'],
-						'frequent_match'  => FrequentCheck::MATCH_AUTO === ( $booking['frequent_match'] ?? '' ) && Pricing::CATEGORY_GENERAL === $quote['category'] ? 'reverted' : (string) ( $booking['frequent_match'] ?? '' ),
+						'frequent_match'  => FrequentCheck::isAuto( (string) ( $booking['frequent_match'] ?? '' ) ) && Pricing::CATEGORY_GENERAL === $quote['category'] ? 'reverted' : (string) ( $booking['frequent_match'] ?? '' ),
 						'total_cents'     => $quote['total_cents'],
 						'deposit_cents'   => $quote['deposit_cents'],
 						'quote'           => Db::json( array_merge( $booking['quote'], $quote, array( 'previous' => array( 'total' => $booking['total_cents'], 'category' => $booking['client_category'] ) ) ) ),
@@ -1437,7 +1446,7 @@ final class Bookings {
 	/** Un clic: quita la tarifa frecuente reconocida automáticamente y regresa al precio general. */
 	public static function revertFrequent( int $bookingId, int $expectedVersion ): array {
 		$booking = self::get( $bookingId );
-		if ( FrequentCheck::MATCH_AUTO !== ( $booking['frequent_match'] ?? '' ) || Pricing::CATEGORY_FREQUENT !== $booking['client_category'] ) {
+		if ( ! FrequentCheck::isAuto( (string) ( $booking['frequent_match'] ?? '' ) ) || Pricing::CATEGORY_FREQUENT !== $booking['client_category'] ) {
 			throw new DomainException( 'not_auto_frequent', 'Esta reserva no tiene una tarifa frecuente reconocida automáticamente.', 409 );
 		}
 		return self::recalculate( $bookingId, Pricing::CATEGORY_GENERAL, 'Se revirtió el precio frecuente reconocido por nombre y contacto.', $expectedVersion );

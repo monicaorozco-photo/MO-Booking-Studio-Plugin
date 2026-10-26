@@ -30,6 +30,12 @@ final class FrequentCheck {
 	private const TTL = 3 * HOUR_IN_SECONDS;
 
 	public const MATCH_AUTO = 'auto';
+	/** beta.4: reconocida por correo aunque su teléfono esté en otro expediente (revisar). */
+	public const MATCH_AUTO_REVIEW = 'auto_review';
+
+	public static function isAuto( string $match ): bool {
+		return in_array( $match, array( self::MATCH_AUTO, self::MATCH_AUTO_REVIEW ), true );
+	}
 
 	public const NOT_CONFIRMED = 'No pudimos confirmar el beneficio de cliente frecuente con esos datos. Verás los precios para público general; si crees que es un error, continúa con tu reserva y lo revisaremos antes de confirmarla.';
 
@@ -78,7 +84,7 @@ final class FrequentCheck {
 			$client ? (int) $client['id'] : 0,
 			'frequent_check',
 			array(
-				'result' => $ok ? 'verified' : ( $found['reason'] ?: ( $client ? 'name_or_category' : 'not_found' ) ),
+				'result' => $ok ? ( empty( $found['review'] ) ? 'verified' : 'verified_email_phone_elsewhere' ) : ( $found['reason'] ?: ( $client ? 'name_or_category' : 'not_found' ) ),
 				'by'     => $found['by'],
 			),
 			'client',
@@ -101,6 +107,7 @@ final class FrequentCheck {
 				// Solo los contactos que coincidieron: la reserva debe usar uno de ellos.
 				'email'     => in_array( 'email', $found['by'], true ) ? $email : null,
 				'phone'     => in_array( 'phone', $found['by'], true ) ? $phone : null,
+				'review'    => ! empty( $found['review'] ),
 			),
 			self::TTL
 		);
@@ -150,11 +157,17 @@ final class FrequentCheck {
 	private static function findClient( ?string $email, ?string $phone ): array {
 		$byMail  = $email ? Clients::idsByEmail( $email ) : array();
 		$byPhone = $phone ? Clients::idsByPhone( $phone ) : array();
-		if ( count( $byMail ) > 1 || count( $byPhone ) > 1 ) {
+		if ( count( $byMail ) > 1 ) {
 			return array( 'client' => null, 'by' => array(), 'reason' => 'shared_contact' );
 		}
-		if ( $byMail && $byPhone && $byMail[0] !== $byPhone[0] ) {
-			return array( 'client' => null, 'by' => array(), 'reason' => 'different_clients' );
+		// beta.4 (decisión de la administradora): si el correo es de una sola clienta, manda el
+		// correo aunque el teléfono sea de otro expediente o lo compartan varios (familias).
+		// La reserva queda marcada para revisar.
+		if ( 1 === count( $byMail ) && $byPhone && array( $byMail[0] ) !== $byPhone ) {
+			return array( 'client' => Clients::find( $byMail[0] ), 'by' => array( 'email' ), 'reason' => '', 'review' => true );
+		}
+		if ( count( $byPhone ) > 1 ) {
+			return array( 'client' => null, 'by' => array(), 'reason' => 'shared_contact' );
 		}
 		$id = $byMail ? $byMail[0] : ( $byPhone ? $byPhone[0] : 0 );
 		$by = array();

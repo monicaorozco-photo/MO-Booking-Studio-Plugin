@@ -154,3 +154,49 @@
 @media (min-width: 760px) {
 	.mo-booking--columns .mo-booking__slots-wrap { margin-top: 0; }
 }
+
+/* beta.4: el tema o Elementor suelen pintar todos los botones (por ejemplo, de negro).
+   Estas reglas tienen más prioridad para que siempre se distingan los días con horarios,
+   los cerrados, los agotados y los horarios. Se cambian con las variables (widget de Elementor). */
+.mo-booking {
+	--mo-day-open-bg: var(--mo-bg);
+	--mo-day-open-text: var(--mo-text);
+	--mo-day-open-border: var(--mo-primary);
+	--mo-day-closed-bg: var(--mo-surface);
+	--mo-day-closed-text: #9aa19e;
+	--mo-slot-bg: var(--mo-bg);
+	--mo-slot-text: var(--mo-primary);
+	--mo-slot-off-bg: var(--mo-surface);
+	--mo-slot-off-text: var(--mo-muted);
+}
+.mo-booking .mo-booking__days .mo-booking__day,
+.mo-booking .mo-booking__days .mo-booking__day:hover,
+.mo-booking .mo-booking__days .mo-booking__day:focus { box-shadow: none; text-transform: none; letter-spacing: normal; font-weight: 400; }
+.mo-booking .mo-booking__days .mo-booking__day--regular,
+.mo-booking .mo-booking__days .mo-booking__day--regular:hover,
+.mo-booking .mo-booking__days .mo-booking__day--regular:focus { background: var(--mo-day-open-bg); color: var(--mo-day-open-text); border: 2px solid var(--mo-day-open-border); }
+.mo-booking .mo-booking__days .mo-booking__day--presale,
+.mo-booking .mo-booking__days .mo-booking__day--presale:hover,
+.mo-booking .mo-booking__days .mo-booking__day--presale:focus { background: var(--mo-presale); color: var(--mo-presale-text); border: 2px solid var(--mo-presale-text); }
+.mo-booking .mo-booking__days .mo-booking__day--closed,
+.mo-booking .mo-booking__days .mo-booking__day--closed:hover,
+.mo-booking .mo-booking__days .mo-booking__day--closed:disabled { background: var(--mo-day-closed-bg); color: var(--mo-day-closed-text); border: 1px solid transparent; opacity: 1; }
+.mo-booking .mo-booking__days .mo-booking__day--soldout,
+.mo-booking .mo-booking__days .mo-booking__day--soldout:hover,
+.mo-booking .mo-booking__days .mo-booking__day--soldout:disabled { background: var(--mo-soldout-bg); color: var(--mo-soldout); border: 1px solid transparent; opacity: 1; }
+.mo-booking .mo-booking__days .mo-booking__day--available .mo-booking__day-num { font-weight: 700; }
+.mo-booking .mo-booking__days .mo-booking__day--selected,
+.mo-booking .mo-booking__days .mo-booking__day--selected:hover,
+.mo-booking .mo-booking__days .mo-booking__day--selected:focus { background: var(--mo-selected); border-color: var(--mo-selected); color: var(--mo-primary-contrast); }
+.mo-booking .mo-booking__slots .mo-booking__slot,
+.mo-booking .mo-booking__slots .mo-booking__slot:hover,
+.mo-booking .mo-booking__slots .mo-booking__slot:focus { background: var(--mo-slot-bg); color: var(--mo-slot-text); border: 1px solid var(--mo-slot-text); text-transform: none; box-shadow: none; }
+.mo-booking .mo-booking__slots .mo-booking__slot--off,
+.mo-booking .mo-booking__slots .mo-booking__slot--off:hover,
+.mo-booking .mo-booking__slots .mo-booking__slot--off:disabled { background: var(--mo-slot-off-bg); color: var(--mo-slot-off-text); border-color: var(--mo-border); opacity: 1; }
+.mo-booking .mo-booking__slots .mo-booking__slot--selected,
+.mo-booking .mo-booking__slots .mo-booking__slot--selected:hover { background: var(--mo-selected); color: var(--mo-primary-contrast); border-color: var(--mo-selected); }
+.mo-booking__welcome-new { background: var(--mo-success-bg); color: var(--mo-success); border-radius: var(--mo-radius); padding: 12px 14px; margin: 0 0 var(--mo-gap); }
+.mo-booking__welcome-new .mo-booking__panel-title { color: inherit; margin-bottom: 4px; }
+.mo-booking__contract-notice { background: var(--mo-notice-bg); color: var(--mo-notice); border-radius: 8px; padding: 10px 12px; margin: var(--mo-gap) 0 8px; }
+.mo-booking__payments, .mo-booking__proofs { padding-left: 1.2em; }

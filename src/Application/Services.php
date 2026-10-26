@@ -63,6 +63,9 @@ final class Services {
 			'description'                => '',
 			'location'                   => '',
 			'instructions'               => '',
+			// beta.4: títulos de los eventos de Google. Códigos: {cliente} {servicio} {estado} {referencia} {negocio}.
+			'event_title_internal'       => 'MO {estado} · {cliente}',
+			'event_title_client'         => 'Sesión con {negocio}',
 			'delivery_text'              => '',
 			'image_id'                   => 0,
 			'duration'                   => 60,
@@ -400,6 +403,9 @@ final class Services {
 
 		foreach ( array( 'description', 'location', 'instructions', 'delivery_text', 'terms_text' ) as $key ) {
 			$c[ $key ] = trim( (string) $c[ $key ] );
+		}
+		foreach ( array( 'event_title_internal' => 'MO {estado} · {cliente}', 'event_title_client' => 'Sesión con {negocio}' ) as $key => $default ) {
+			$c[ $key ] = mb_substr( trim( (string) ( $c[ $key ] ?? '' ) ), 0, 190 ) ?: $default;
 		}
 		$c['price_table'] = Pricing::validateTable( (array) $c['price_table'] );
 		// Comprobar que la combinación de duración e intervalo es válida.

@@ -1,5 +1,17 @@
 # Cambios
 
+## 0.2.0-beta.5 — 27 de octubre de 2026 (rediseño)
+
+Solo apariencia; sin cambios de base de datos (esquema 4). Guía: `docs/entrega-beta5.md`.
+
+- Rediseño del formulario y de la vista de reserva con la paleta Off White, Beige, Taupe, Café, Espresso y Negro, Cormorant Garamond en títulos y Montserrat en textos, tarjetas con íconos y dos columnas en computadora.
+- Tus datos: primero contacto y después asistentes (con botones − / +); extras y contrato en la misma página.
+- Desglose del precio: precio de referencia tachado, descuento por fecha, cliente frecuente y preventa, y precio con descuento (en el resumen, la vista de reserva, la página para imprimir y la tarifa estimada). Etiquetas editables en Ajustes. El total no cambia.
+- Vista de reserva: tarjeta principal con lo que falta pagar, avance de la reserva, botones para copiar datos bancarios y referencia, comprobante con nombre del archivo elegido; en celular, si falta pagar, eso va primero.
+- Página para imprimir con la misma paleta.
+- Elementor: disposición en dos columnas por omisión; nuevo color "Fondo suave".
+- Corrección: tras un error al guardar un servicio, el anticipo, la entrega rápida y otros importes se mostraban divididos entre 100 y se guardaban así al volver a guardar.
+
 ## 0.2.0-beta.4.2 — 27 de octubre de 2026
 
 - Elementor: el widget "MO Vista de reserva" ya muestra la reserva de ejemplo dentro del editor (se quedaba en "Cargando tu reserva…").

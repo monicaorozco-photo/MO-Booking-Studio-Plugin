@@ -42,6 +42,11 @@ final class SettingsPage {
 		$body .= Ui::row( 'WhatsApp', Ui::select( 'whatsapp_mode', array( 'off' => 'Desactivado', 'manual' => 'Manual (abrir chat con el texto listo)', 'automatic' => 'Automático (pendiente de conectar proveedor oficial)' ), $s['whatsapp_mode'] ), 'El modo automático aún no envía: requiere un proveedor oficial de WhatsApp Business, plantillas aprobadas y credenciales.', 'whatsapp_mode' );
 		$body .= Ui::row( 'Número de WhatsApp del negocio', Ui::input( 'whatsapp_number', $s['whatsapp_number'], 'tel' ), 'Tu número (no el de la clienta). Lo usan los botones de WhatsApp del enlace privado: enviar comprobante, preguntas y cambios.', 'whatsapp_number' );
 		$body .= Ui::row( 'Texto de horario ocupado', Ui::input( 'slot_taken_label', $s['slot_taken_label'], 'text', array( 'class' => 'regular-text' ) ), 'Aparece en los horarios ya apartados del calendario. Ejemplo: No disponible, Ocupado.', 'slot_taken_label' );
+		$body .= Ui::row( 'Desglose: Precio de referencia', Ui::input( 'label_price_reference', $s['label_price_reference'], 'text', array( 'class' => 'regular-text' ) ), 'En el resumen de precio (con tabla por temporada): el precio más alto de la tabla aparece tachado y luego cada descuento.', 'label_price_reference' );
+		$body .= Ui::row( 'Desglose: Descuento por fecha', Ui::input( 'label_discount_date', $s['label_discount_date'], 'text', array( 'class' => 'regular-text' ) ), '', 'label_discount_date' );
+		$body .= Ui::row( 'Desglose: Descuento cliente frecuente', Ui::input( 'label_discount_frequent', $s['label_discount_frequent'], 'text', array( 'class' => 'regular-text' ) ), '', 'label_discount_frequent' );
+		$body .= Ui::row( 'Desglose: Descuento por preventa', Ui::input( 'label_discount_presale', $s['label_discount_presale'], 'text', array( 'class' => 'regular-text' ) ), '', 'label_discount_presale' );
+		$body .= Ui::row( 'Desglose: Precio con descuento', Ui::input( 'label_price_discounted', $s['label_price_discounted'], 'text', array( 'class' => 'regular-text' ) ), '', 'label_price_discounted' );
 		$body .= Ui::row( 'Aviso antes del contrato', Ui::textarea( 'contract_notice', $s['contract_notice'], 3 ), 'Se muestra arriba del acordeón del contrato en el formulario. Vacío = sin aviso.', 'contract_notice' );
 		$body .= Ui::row( 'Casilla de avisos', Ui::input( 'whatsapp_consent_text', $s['whatsapp_consent_text'], 'text', array( 'class' => 'large-text' ) ) . '<br>' . Ui::checkbox( 'whatsapp_consent_required', (bool) $s['whatsapp_consent_required'], 'Obligatoria para reservar' ), 'Texto de la casilla del resumen. Si es obligatoria, sin marcarla no se puede enviar la solicitud.', 'whatsapp_consent_text' );
 		$body .= Ui::row( 'Botón para enviar el comprobante por WhatsApp', Ui::input( 'whatsapp_proof_button', $s['whatsapp_proof_button'], 'text', array( 'class' => 'large-text' ) ), 'Aparece en el enlace privado y al terminar la reserva cuando no se pueden subir archivos. Abre WhatsApp con el número del negocio.', 'whatsapp_proof_button' );
@@ -158,6 +163,11 @@ final class SettingsPage {
 				'portal_proof_text'   => sanitize_textarea_field( (string) ( $p['portal_proof_text'] ?? '' ) ),
 				'whatsapp_proof_button'  => sanitize_text_field( (string) ( $p['whatsapp_proof_button'] ?? '' ) ),
 				'slot_taken_label'          => sanitize_text_field( (string) ( $p['slot_taken_label'] ?? '' ) ) ?: 'No disponible',
+				'label_price_reference' => sanitize_text_field( (string) ( $p['label_price_reference'] ?? '' ) ) ?: 'Precio',
+				'label_discount_date' => sanitize_text_field( (string) ( $p['label_discount_date'] ?? '' ) ) ?: 'Descuento por fecha anticipada',
+				'label_discount_frequent' => sanitize_text_field( (string) ( $p['label_discount_frequent'] ?? '' ) ) ?: 'Descuento cliente frecuente',
+				'label_discount_presale' => sanitize_text_field( (string) ( $p['label_discount_presale'] ?? '' ) ) ?: 'Descuento por preventa',
+				'label_price_discounted' => sanitize_text_field( (string) ( $p['label_price_discounted'] ?? '' ) ) ?: 'Precio con descuento',
 				'contract_notice'           => sanitize_textarea_field( (string) ( $p['contract_notice'] ?? '' ) ),
 				'whatsapp_consent_text'     => sanitize_text_field( (string) ( $p['whatsapp_consent_text'] ?? '' ) ),
 				'whatsapp_consent_required' => ! empty( $p['whatsapp_consent_required'] ),

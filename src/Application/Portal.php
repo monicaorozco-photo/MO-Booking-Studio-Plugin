@@ -151,6 +151,7 @@ final class Portal {
 				},
 				(array) ( $booking['quote']['lines'] ?? array() )
 			),
+			'price_rows'      => Catalog::priceRows( array_merge( array( 'base_cents' => 0, 'discount_cents' => 0 ), (array) $booking['quote'] ) ),
 			'total_txt'       => Money::format( $booking['total_cents'] ),
 			'deposit_txt'     => Money::format( $booking['deposit_cents'] ),
 			'paid_txt'        => Money::format( max( 0, $summary['applied_cents'] ) ),

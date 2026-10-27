@@ -153,6 +153,7 @@ final class Catalog {
 				);
 			}
 			$price     = null;
+			$reference = null;
 			$priceType = null;
 			$special   = false;
 			if ( $day['slots'] ) {
@@ -168,6 +169,7 @@ final class Catalog {
 						)
 					);
 					$price     = $q['base_cents'] - $q['discount_cents'];
+					$reference = ! empty( $q['breakdown']['reference'] ) && $q['breakdown']['reference'] > $price ? (int) $q['breakdown']['reference'] : null;
 					$priceType = $q['price_type'];
 					$special   = $q['special'] || $q['discount_cents'] > 0;
 				} catch ( DomainException $e ) {
@@ -184,6 +186,7 @@ final class Catalog {
 				'status'    => ! $day['open'] ? 'closed' : ( $available ? 'available' : 'sold_out' ),
 				'price'     => $price,
 				'price_txt' => null !== $price ? Money::format( $price ) : null,
+				'reference_txt' => null !== $reference ? Money::format( $reference ) : null,
 				'price_type' => $priceType,
 				'special'   => $special,
 				'notices'   => Services::noticesFor( $service, $date ),
@@ -267,6 +270,51 @@ final class Catalog {
 		return self::presentQuote( $service, $key, $expires, $start, $result );
 	}
 
+	/**
+	 * Renglones del precio para la clienta. Con tabla por temporada: precio de referencia
+	 * (tachado), descuentos y "precio con descuento"; luego personas, mascotas y extras.
+	 * Sin desglose (tarifas avanzadas o reservas anteriores): los renglones de siempre.
+	 *
+	 * @return array<array{kind:string,label:string,amount:int,amount_txt:string}>
+	 */
+	public static function priceRows( array $result ): array {
+		$row = static function ( string $kind, string $label, int $amount ): array {
+			return array( 'kind' => $kind, 'label' => $label, 'amount' => $amount, 'amount_txt' => ( $amount < 0 ? '−' : '' ) . Money::format( abs( $amount ) ) );
+		};
+		$lines = (array) ( $result['lines'] ?? array() );
+		$b     = $result['breakdown'] ?? null;
+		if ( ! is_array( $b ) || empty( $b['steps'] ) ) {
+			return array_map(
+				static function ( $l ) use ( $row ) {
+					return $row( (string) ( $l['kind'] ?? 'line' ), (string) $l['label'], (int) $l['amount'] );
+				},
+				$lines
+			);
+		}
+		$labels = array(
+			'date'     => (string) Settings::get( 'label_discount_date' ),
+			'frequent' => (string) Settings::get( 'label_discount_frequent' ),
+			'presale'  => (string) Settings::get( 'label_discount_presale' ),
+		);
+		$out = array( $row( 'reference', (string) Settings::get( 'label_price_reference' ), (int) $b['reference'] ) );
+		foreach ( $b['steps'] as $step ) {
+			$out[] = $row( 'discount', $labels[ $step['kind'] ] ?? 'Descuento', (int) $step['amount'] );
+		}
+		$after = array();
+		foreach ( $lines as $l ) {
+			if ( 'base' === ( $l['kind'] ?? '' ) ) {
+				continue;
+			}
+			if ( 'discount' === ( $l['kind'] ?? '' ) ) {
+				$out[] = $row( 'discount', (string) $l['label'], (int) $l['amount'] );
+				continue;
+			}
+			$after[] = $row( (string) ( $l['kind'] ?? 'line' ), (string) $l['label'], (int) $l['amount'] );
+		}
+		$out[] = $row( 'discounted', (string) Settings::get( 'label_price_discounted' ), (int) $result['base_cents'] - (int) ( $result['discount_cents'] ?? 0 ) );
+		return array_merge( $out, $after );
+	}
+
 	public static function presentQuote( array $service, string $key, \DateTimeImmutable $expires, \DateTimeImmutable $start, array $result ): array {
 		$zone  = Settings::timezone();
 		$local = $start->setTimezone( $zone );
@@ -286,6 +334,7 @@ final class Catalog {
 				},
 				$result['lines']
 			),
+			'price_rows'    => self::priceRows( $result ),
 			'total'         => $result['total_cents'],
 			'total_txt'     => Money::format( $result['total_cents'] ),
 			'deposit'       => $result['deposit_cents'],

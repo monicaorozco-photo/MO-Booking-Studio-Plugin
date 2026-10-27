@@ -43,6 +43,12 @@ final class Settings {
 			'public_contact'       => '',
 			// 8.1: texto del portal junto a la carga del comprobante. {whatsapp} = número de WhatsApp del negocio.
 			'portal_proof_text'    => 'Sube aquí tu comprobante de anticipo o envíalo por WhatsApp con tu nombre o número de reserva al {whatsapp}.',
+			// Rediseño: etiquetas del desglose de precio (solo presentación).
+			'label_price_reference'    => 'Precio',
+			'label_discount_date'      => 'Descuento por fecha anticipada',
+			'label_discount_frequent'  => 'Descuento cliente frecuente',
+			'label_discount_presale'   => 'Descuento por preventa',
+			'label_price_discounted'   => 'Precio con descuento',
 			// beta.4: textos del formulario público.
 			'slot_taken_label'          => 'No disponible',
 			'contract_notice'           => 'Antes de continuar, lee con calma el contrato completo. Ahí explicamos qué incluye tu sesión y cómo funcionan el anticipo, los cambios de fecha y las cancelaciones. Al aceptarlo confirmas que estás de acuerdo con todo lo que dice.',

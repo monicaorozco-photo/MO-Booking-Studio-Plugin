@@ -103,16 +103,17 @@ final class PrintView {
 		}
 		$html .= '</section>';
 
+		$view  = Portal::view( $b );
 		$html .= '<section><h2>Precio y pagos</h2><table>';
-		foreach ( (array) ( $b['quote']['lines'] ?? array() ) as $l ) {
-			$html .= '<tr><th scope="row">' . esc_html( (string) $l['label'] ) . '</th><td>' . esc_html( Money::format( (int) $l['amount'] ) ) . '</td></tr>';
+		foreach ( $view['price_rows'] as $l ) {
+			$html .= '<tr class="' . esc_attr( $l['kind'] ) . '"><th scope="row">' . esc_html( $l['label'] ) . '</th><td>' . esc_html( $l['amount_txt'] ) . '</td></tr>';
 		}
 		$html .= '<tr class="total"><th scope="row">Total</th><td>' . esc_html( Money::format( $b['total_cents'] ) ) . '</td></tr>';
 		$html .= '<tr><th scope="row">Anticipo requerido</th><td>' . esc_html( Money::format( $b['deposit_cents'] ) ) . '</td></tr>';
 		$html .= '<tr><th scope="row">Pagado</th><td>' . esc_html( Money::format( max( 0, $summary['applied_cents'] ) ) ) . '</td></tr>';
 		$html .= '<tr><th scope="row">Saldo</th><td>' . esc_html( Money::format( $summary['balance_cents'] ) ) . '</td></tr>';
 		$html .= '</table>';
-		$payments = Portal::view( $b )['payments'];
+		$payments = $view['payments'];
 		if ( $payments ) {
 			$html .= '<h3>Pagos recibidos</h3><table>';
 			foreach ( $payments as $p ) {
@@ -141,7 +142,7 @@ final class PrintView {
 			. 'h1{font-size:24px;margin:4px 0 12px}h2{font-size:18px;border-bottom:1px solid #dcdcde;padding-bottom:4px;margin-top:28px}h3{font-size:15px}'
 			. '.brand{text-transform:uppercase;letter-spacing:.08em;font-size:12px;color:#50575e;margin:0}'
 			. 'table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #f0f0f1;vertical-align:top}th{width:38%;font-weight:600}'
-			. '.total th,.total td{font-weight:700}.meta{color:#3c434a}.hash{font-size:11px;color:#646970;word-break:break-all}'
+			. '.total th,.total td{font-weight:700}.reference td{text-decoration:line-through;color:#646970}.discounted th,.discounted td{font-weight:600}.meta{color:#3c434a}.hash{font-size:11px;color:#646970;word-break:break-all}'
 			. 'button{font:inherit;padding:10px 16px;border-radius:6px;border:0;background:#2271b1;color:#fff;cursor:pointer}.actions span{color:#50575e;font-size:14px}'
 			. 'footer{margin-top:32px;font-size:12px;color:#646970}'
 			. '@media print{.no-print{display:none}body{padding:0}h2{break-after:avoid}.contract{break-before:page}}';

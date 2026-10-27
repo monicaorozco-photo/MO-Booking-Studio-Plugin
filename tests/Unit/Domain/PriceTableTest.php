@@ -52,6 +52,21 @@ final class PriceTableTest extends TestCase {
 		$this->assertFalse( $this->quote( '2026-12-12T17:00:00Z', '2026-10-25T00:00:00Z', 'general' )['special'] );
 	}
 
+	/** Rediseño: desglose solo para mostrar; el total no cambia. */
+	public function test_breakdown_from_reference_price(): void {
+		$pre = $this->quote( '2026-11-20T17:00:00Z', '2026-10-20T00:00:00Z', 'general' );
+		$this->assertSame( 140000, $pre['total_cents'] );
+		$this->assertSame(
+			array( 'reference' => 180000, 'steps' => array( array( 'kind' => 'date', 'amount' => -20000 ), array( 'kind' => 'presale', 'amount' => -20000 ) ) ),
+			$pre['breakdown']
+		);
+		$freq = $this->quote( '2026-11-20T17:00:00Z', '2026-10-20T00:00:00Z', 'frequent' );
+		$this->assertSame( array( 'date', 'frequent', 'presale' ), array_column( $freq['breakdown']['steps'], 'kind' ) );
+		$this->assertSame( 180000 - 120000, -array_sum( array_column( $freq['breakdown']['steps'], 'amount' ) ) );
+		// Fecha de precio más alto, sin preventa: no hay nada que desglosar.
+		$this->assertNull( $this->quote( '2026-12-12T17:00:00Z', '2026-11-05T00:00:00Z', 'general' )['breakdown'] );
+	}
+
 	public function test_missing_prices_fall_back_sensibly(): void {
 		$table = array(
 			'presale_until' => '2026-10-31 23:59',

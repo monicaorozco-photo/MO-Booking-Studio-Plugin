@@ -180,6 +180,7 @@ final class Pricing {
 			'rate_rule_id'   => $rate ? (int) $rate['id'] : null,
 			'price_type'     => $priceType,
 			'special'        => $special,
+			'breakdown'      => $table['breakdown'] ?? null,
 			'discount_ids'   => $applied,
 			'discount_cents' => $discountTotal,
 			'extras_cents'   => $participantsCost + $petsCost + $extrasCost,
@@ -244,12 +245,46 @@ final class Pricing {
 		if ( '' !== trim( (string) ( $match['label'] ?? '' ) ) ) {
 			$label .= ' (' . trim( (string) $match['label'] ) . ')';
 		}
+		$amount = max( 0, $isPre ? (int) $presale : $regular );
 		return array(
-			'amount'     => max( 0, $isPre ? (int) $presale : $regular ),
+			'amount'     => $amount,
 			'label'      => $label,
 			'price_type' => $isPre ? 'presale' : 'regular',
 			'special'    => ! empty( $match['special'] ),
+			'breakdown'  => self::breakdown( $rows, $match, $frequent, $isPre ? (int) $presale : null, $amount ),
 		);
+	}
+
+	/**
+	 * Solo para mostrar (no cambia el precio): cómo se llega del precio de referencia al de
+	 * esta cita. Referencia = el precio regular de público general más alto de la tabla.
+	 * Pasos: fecha (fila más barata que la referencia), cliente frecuente y preventa. Si los
+	 * pasos no cuadran exactamente con el precio, no se muestra desglose.
+	 *
+	 * @return array{reference:int,steps:array<array{kind:string,amount:int}>}|null
+	 */
+	private static function breakdown( array $rows, array $match, bool $frequent, ?int $presale, int $amount ): ?array {
+		$reference = 0;
+		foreach ( $rows as $row ) {
+			if ( null !== ( $row['general'] ?? null ) ) {
+				$reference = max( $reference, (int) $row['general'] );
+			}
+		}
+		$general = (int) $match['general'];
+		$regular = $frequent && null !== ( $match['frequent'] ?? null ) ? (int) $match['frequent'] : $general;
+		$steps   = array();
+		foreach ( array( 'date' => $reference - $general, 'frequent' => $general - $regular, 'presale' => null !== $presale ? $regular - $presale : 0 ) as $kind => $diff ) {
+			if ( $diff < 0 ) {
+				return null;
+			}
+			if ( $diff > 0 ) {
+				$steps[] = array( 'kind' => $kind, 'amount' => -$diff );
+			}
+		}
+		if ( ! $steps || $reference - array_sum( array_map( 'abs', array_column( $steps, 'amount' ) ) ) !== $amount ) {
+			return null;
+		}
+		return array( 'reference' => $reference, 'steps' => $steps );
 	}
 
 	/**

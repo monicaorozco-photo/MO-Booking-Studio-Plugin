@@ -21,6 +21,7 @@ trait StyleControls {
 			'muted'            => array( 'Texto secundario', '--mo-muted' ),
 			'bg'               => array( 'Fondo de tarjetas', '--mo-bg' ),
 			'surface'          => array( 'Fondo secundario', '--mo-surface' ),
+			'soft'             => array( 'Fondo suave (fecha elegida, total, avisos)', '--mo-soft' ),
 			'border'           => array( 'Bordes', '--mo-border' ),
 			'notice'           => array( 'Texto de avisos', '--mo-notice' ),
 			'notice_bg'        => array( 'Fondo de avisos', '--mo-notice-bg' ),

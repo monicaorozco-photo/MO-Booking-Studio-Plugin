@@ -1,5 +1,9 @@
 # Cambios
 
+## 0.2.0-beta.4.2 — 27 de octubre de 2026
+
+- Elementor: el widget "MO Vista de reserva" ya muestra la reserva de ejemplo dentro del editor (se quedaba en "Cargando tu reserva…").
+
 ## 0.2.0-beta.4.1 — 27 de octubre de 2026
 
 Solo estilos (sin cambios de datos).

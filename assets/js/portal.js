@@ -162,6 +162,8 @@
 
 	function init() {
 		document.querySelectorAll('[data-mo-portal]').forEach(function (root) {
+			if (root.getAttribute('data-mo-ready')) { return; }
+			root.setAttribute('data-mo-ready', '1');
 			var config = {};
 			try { config = JSON.parse(root.getAttribute('data-mo-portal')); } catch (e) { return; }
 			new Portal(root, config).start();
@@ -173,4 +175,10 @@
 	} else {
 		init();
 	}
+	// Editor de Elementor: el widget se dibuja después de cargar la página.
+	window.addEventListener('elementor/frontend/init', function () {
+		if (window.elementorFrontend && window.elementorFrontend.hooks) {
+			window.elementorFrontend.hooks.addAction('frontend/element_ready/mo-booking-portal.default', init);
+		}
+	});
 })(window, document);

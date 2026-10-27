@@ -111,8 +111,8 @@ final class Frontend {
 			'showPolicies'    => ! empty( $options['show_policies'] ) && 'no' !== $options['show_policies'],
 			'portalUrl'       => esc_url_raw( \MOBookingStudio\Application\Bookings::portalBase() ),
 		);
-		$layout = (string) ( $options['layout'] ?? 'stacked' );
-		$layout = in_array( $layout, array( 'stacked', 'columns' ), true ) ? $layout : 'stacked';
+		$layout = (string) ( $options['layout'] ?? 'columns' );
+		$layout = in_array( $layout, array( 'stacked', 'columns' ), true ) ? $layout : 'columns';
 		return sprintf(
 			'<div class="mo-booking mo-booking--%1$s" data-mo-booking="%2$s"><noscript>%3$s</noscript><p class="mo-booking__loading" role="status">%4$s</p></div>',
 			esc_attr( $layout ),
@@ -175,10 +175,10 @@ final class Frontend {
 		} );
 		$content = self::renderPortal();
 		if ( function_exists( 'wp_is_block_theme' ) && wp_is_block_theme() ) {
-			?><!doctype html><html <?php language_attributes(); ?>><head><meta charset="<?php bloginfo( 'charset' ); ?>"><meta name="viewport" content="width=device-width, initial-scale=1"><?php wp_head(); ?></head><body <?php body_class(); ?>><main class="mo-booking-portal-page" style="max-width:760px;margin:0 auto;padding:24px 16px"><?php echo $content; // phpcs:ignore WordPress.Security.EscapeOutput ?></main><?php wp_footer(); ?></body></html><?php
+			?><!doctype html><html <?php language_attributes(); ?>><head><meta charset="<?php bloginfo( 'charset' ); ?>"><meta name="viewport" content="width=device-width, initial-scale=1"><?php wp_head(); ?></head><body <?php body_class(); ?>><main class="mo-booking-portal-page" style="max-width:1120px;margin:0 auto;padding:24px 16px"><?php echo $content; // phpcs:ignore WordPress.Security.EscapeOutput ?></main><?php wp_footer(); ?></body></html><?php
 		} else {
 			get_header();
-			echo '<main class="mo-booking-portal-page" style="max-width:760px;margin:0 auto;padding:24px 16px">' . $content . '</main>'; // phpcs:ignore WordPress.Security.EscapeOutput
+			echo '<main class="mo-booking-portal-page" style="max-width:1120px;margin:0 auto;padding:24px 16px">' . $content . '</main>'; // phpcs:ignore WordPress.Security.EscapeOutput
 			get_footer();
 		}
 		exit;

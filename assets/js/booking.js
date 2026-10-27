@@ -25,7 +25,7 @@
 			days.push({
 				date: ymd(y, m, d), open: open, available: open ? (d % 5 === 0 ? 0 : 4) : 0, total: open ? 4 : 0,
 				status: !open ? 'closed' : (d % 5 === 0 ? 'sold_out' : 'available'),
-				price_txt: open ? '$1,400 MXN' : null, special: d % 4 === 1, saving_txt: '$200 MXN', notices: [],
+				price_txt: open ? '$1,400 MXN' : null, reference_txt: open ? '$1,800 MXN' : null, price_type: d < 12 ? 'presale' : 'regular', special: d % 4 === 1, saving_txt: '$200 MXN', notices: [],
 				slots: open ? ['10:00', '10:30', '11:00', '11:30'].map(function (t, i) {
 					return { start: '', time: t, available: d % 5 !== 0 && i !== 1, label: (d % 5 === 0 || i === 1) ? 'Agotado' : 'Disponible' };
 				}) : []
@@ -168,27 +168,40 @@
 		this.bind();
 	};
 
+	/** Rediseño: marca, título del servicio y una frase que explica el paso actual. */
 	App.prototype.renderHeader = function () {
 		var svc = this.state.service;
+		var step = this.state.step;
+		var leads = ['', 'Selecciona una fecha disponible y después el horario que prefieras.', 'Cuéntanos cómo contactarte y quiénes participarán en la sesión.', 'Revisa que los detalles sean correctos antes de enviar tu solicitud.', ''];
 		var html = '<header class="mo-booking__header">';
 		if (svc.brand) { html += '<p class="mo-booking__brand">' + esc(svc.brand) + '</p>'; }
 		html += '<h2 class="mo-booking__title">' + esc(svc.title) + '</h2>';
-		if (this.config.intro) { html += '<p class="mo-booking__intro">' + M.lines(this.config.intro) + '</p>'; }
-		if (this.state.step <= 1 && this.config.showDescription) {
+		if (step === 0 && this.config.intro) { html += '<p class="mo-booking__intro">' + M.lines(this.config.intro) + '</p>'; }
+		if (leads[step]) { html += '<p class="mo-booking__lead">' + esc(leads[step]) + '</p>'; }
+		html += '</header>';
+		if (step === 0 && this.config.showDescription) {
+			html += '<div class="mo-booking__about">';
 			if (svc.image) { html += '<img class="mo-booking__image" src="' + esc(svc.image) + '" alt="" loading="lazy">'; }
 			if (svc.description) { html += '<div class="mo-booking__description">' + M.lines(svc.description) + '</div>'; }
-			html += '<ul class="mo-booking__facts">';
-			html += '<li>Duración: ' + esc(svc.duration) + ' minutos</li>';
-			html += '<li>Incluye hasta ' + esc(svc.participants_included) + ' ' + (svc.participants_included === 1 ? 'persona' : 'personas') +
-				(svc.participants_max > svc.participants_included ? '; ' + esc(svc.extra_participant_txt) + ' por persona adicional, máximo ' + esc(svc.participants_max) : '') + '</li>';
-			if (svc.pet_friendly) { html += '<li>Pet friendly</li>'; }
-			if (svc.location) { html += '<li>Lugar: ' + esc(svc.location) + '</li>'; }
-			if (svc.delivery_text) { html += '<li>' + esc(svc.delivery_text) + '</li>'; }
-			if (svc.deposit_txt) { html += '<li>' + esc(svc.deposit_txt) + '</li>'; }
-			html += '</ul>';
+			html += this.renderFacts();
+			html += '</div>';
 		}
-		html += '</header>';
 		return html;
+	};
+
+	/** Datos del servicio con íconos (duración, personas, mascotas, lugar, entrega, anticipo). */
+	App.prototype.renderFacts = function () {
+		var svc = this.state.service;
+		var fact = function (name, text) { return '<li>' + M.icon(name) + '<span>' + text + '</span></li>'; };
+		var html = '<ul class="mo-booking__facts">';
+		html += fact('clock', 'Duración: ' + esc(svc.duration) + ' minutos');
+		html += fact('users', 'Incluye hasta ' + esc(svc.participants_included) + ' ' + (svc.participants_included === 1 ? 'persona' : 'personas') +
+			(svc.participants_max > svc.participants_included ? '; ' + esc(svc.extra_participant_txt) + ' por persona adicional, máximo ' + esc(svc.participants_max) : ''));
+		if (svc.pet_friendly) { html += fact('paw', 'Pet friendly'); }
+		if (svc.location) { html += fact('pin', 'Lugar: ' + esc(svc.location)); }
+		if (svc.delivery_text) { html += fact('gift', esc(svc.delivery_text)); }
+		if (svc.deposit_txt) { html += fact('receipt', esc(svc.deposit_txt)); }
+		return html + '</ul>';
 	};
 
 	App.prototype.renderSteps = function () {
@@ -197,7 +210,7 @@
 		return '<ol class="mo-booking__steps">' + labels.map(function (l, i) {
 			var n = i + 1;
 			var state = n < s ? 'done' : (n === s ? 'current' : 'todo');
-			return '<li class="mo-booking__step mo-booking__step--' + state + '"' + (n === s ? ' aria-current="step"' : '') + '><span class="mo-booking__step-num">' + n + '</span> ' + esc(l) + '</li>';
+			return '<li class="mo-booking__step mo-booking__step--' + state + '"' + (n === s ? ' aria-current="step"' : '') + '><span class="mo-booking__step-num">' + n + '</span> <span class="mo-booking__step-label">' + esc(l) + '</span></li>';
 		}).join('') + '</ol>';
 	};
 
@@ -209,31 +222,34 @@
 		var sub = function (text) { return text ? '<span class="mo-booking__choice-text">' + esc(text) + '</span>' : ''; };
 		var html = '<section class="mo-booking__panel mo-booking__welcome" aria-labelledby="mo-step-0">';
 		if (s.welcome === 'choose') {
+			html += '<p class="mo-booking__eyebrow">Antes de comenzar</p>';
 			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>' + esc(t('title', 'Antes de ver las fechas')) + '</h3>';
 			var question = t('question', '¿Ya te has tomado fotos con nosotros?', true);
-			if (question) { html += '<p>' + esc(question) + '</p>'; }
+			if (question) { html += '<p class="mo-booking__panel-lead">' + esc(question) + '</p>'; }
 			html += '<div class="mo-booking__choices">';
-			html += '<button type="button" class="mo-booking__choice" data-action="new-client"><span class="mo-booking__choice-title">' + esc(t('new_title', 'Soy cliente nuevo')) + '</span>' + sub(t('new_text', 'Ver fechas y precios', true)) + '</button>';
-			html += '<button type="button" class="mo-booking__choice" data-action="returning"><span class="mo-booking__choice-title">' + esc(t('returning_title', 'Ya me he tomado fotos con ustedes')) + '</span>' + sub(t('returning_text', 'Revisamos si aplica tu precio de cliente frecuente', true)) + '</button>';
+			html += '<button type="button" class="mo-booking__choice" data-action="new-client">' + M.icon('sparkle', 'mo-booking__choice-icon') + '<span class="mo-booking__choice-eyebrow">Primera sesión</span><span class="mo-booking__choice-title">' + esc(t('new_title', 'Soy cliente nuevo')) + '</span>' + sub(t('new_text', 'Ver fechas y precios', true)) + M.icon('arrow', 'mo-booking__choice-arrow') + '</button>';
+			html += '<button type="button" class="mo-booking__choice" data-action="returning">' + M.icon('heart', 'mo-booking__choice-icon') + '<span class="mo-booking__choice-eyebrow">Ya nos conocemos</span><span class="mo-booking__choice-title">' + esc(t('returning_title', 'Ya me he tomado fotos con ustedes')) + '</span>' + sub(t('returning_text', 'Revisamos si aplica tu precio de cliente frecuente', true)) + M.icon('arrow', 'mo-booking__choice-arrow') + '</button>';
 			html += '</div>';
+			html += '<p class="mo-booking__hint">' + M.icon('info') + '<span>El proceso es el mismo en ambos casos; solo cambia el precio que te mostramos.</span></p>';
 		} else if (s.welcome === 'identify') {
 			var id = s.identify;
 			html += '<form data-form="identify" novalidate>';
+			html += '<p class="mo-booking__eyebrow">Cliente frecuente</p>';
 			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>' + esc(t('identify_title', '¡Qué gusto verte de nuevo!')) + '</h3>';
 			var identifyText = t('identify_text', 'Escribe tu nombre y el correo y teléfono con los que reservaste antes.', true);
-			if (identifyText) { html += '<p>' + esc(identifyText) + '</p>'; }
+			if (identifyText) { html += '<p class="mo-booking__panel-lead">' + esc(identifyText) + '</p>'; }
 			html += this.field('id-name', 'Nombre y apellido:', '<input class="mo-booking__input" type="text" id="mo-f-id-name" name="id-name" autocomplete="name" value="' + esc(id.name) + '" required>');
 			html += this.field('id-email', 'Correo electrónico:', '<input class="mo-booking__input" type="email" id="mo-f-id-email" name="id-email" autocomplete="email" value="' + esc(id.email) + '">');
 			html += '<div class="mo-booking__field"><label class="mo-booking__label" for="mo-f-id-phone">Teléfono (WhatsApp):</label><div class="mo-booking__phone">' +
 				'<select class="mo-booking__input mo-booking__country" name="id-phone_country" aria-label="País del teléfono"><option value="MX"' + (id.phone_country === 'MX' ? ' selected' : '') + '>México +52</option><option value="US"' + (id.phone_country === 'US' ? ' selected' : '') + '>EE. UU. +1</option></select>' +
 				'<input class="mo-booking__input" type="tel" id="mo-f-id-phone" name="id-phone" autocomplete="tel-national" inputmode="tel" value="' + esc(id.phone) + '"></div>' +
 				'<p class="mo-booking__help">Con que coincida el correo o el teléfono es suficiente; escribe los dos si puedes.</p><p class="mo-booking__field-error" data-error-for="id-phone" role="alert"></p></div>';
-			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="welcome-back">Atrás</button><button type="submit" class="mo-booking__button mo-booking__button--primary">Revisar</button></div>';
+			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--back" data-action="welcome-back">Atrás</button><button type="submit" class="mo-booking__button mo-booking__button--primary mo-booking__button--next">Revisar</button></div>';
 			html += '</form>';
 		} else if (s.welcome === 'not-found') {
 			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>No encontramos tu tarifa de cliente frecuente</h3>';
-			html += '<p>' + esc(s.identifyMessage) + '</p>';
-			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="returning">Intentar con otros datos</button><button type="button" class="mo-booking__button mo-booking__button--primary" data-action="continue-general">Continuar</button></div>';
+			html += '<p class="mo-booking__panel-lead">' + esc(s.identifyMessage) + '</p>';
+			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--back" data-action="returning">Intentar con otros datos</button><button type="button" class="mo-booking__button mo-booking__button--primary mo-booking__button--next" data-action="continue-general">Continuar</button></div>';
 		}
 		html += '</section>';
 		return html;
@@ -289,13 +305,11 @@
 		var m = s.month;
 		var now = new Date();
 		var canPrev = (y > now.getFullYear()) || (y === now.getFullYear() && m > now.getMonth() + 1);
-		var html = '<section class="mo-booking__panel" aria-labelledby="mo-step-1">';
-		html += '<h3 class="mo-booking__panel-title" id="mo-step-1" tabindex="-1" data-step-heading>Elige fecha y hora</h3>';
-		html += '<p class="mo-booking__who">' + (s.frequentToken ? '<span class="mo-booking__who-badge">Precios de cliente frecuente</span>' : '<span class="mo-booking__who-badge mo-booking__who-badge--general">Precios para público general</span>' + (s.form.frequent_claim ? ' <span class="mo-booking__who-note">Revisaremos tu tarifa de cliente frecuente antes de confirmar.</span>' : '')) +
-			' <button type="button" class="mo-booking__link" data-action="welcome-back">Cambiar</button></p>';
-		if (s.presaleText) {
-			html += '<p class="mo-booking__presale">' + esc(s.presaleText) + '</p>';
-		}
+		var html = '<div class="mo-booking__who">' + (s.frequentToken ? '<span class="mo-booking__who-badge">' + M.icon('heart') + ' Precios de cliente frecuente</span>' : '<span class="mo-booking__who-badge mo-booking__who-badge--general">' + M.icon('user') + ' Precios para público general</span>' + (s.form.frequent_claim ? ' <span class="mo-booking__who-note">Revisaremos tu tarifa de cliente frecuente antes de confirmar.</span>' : '')) +
+			' <button type="button" class="mo-booking__link" data-action="welcome-back">Cambiar tipo de cliente</button></div>';
+		html += '<div class="mo-booking__grid">';
+		html += '<section class="mo-booking__panel mo-booking__cal-card" aria-labelledby="mo-step-1">';
+		html += '<h3 class="mo-booking__panel-title" id="mo-step-1" tabindex="-1" data-step-heading>Selecciona una fecha</h3>';
 		html += '<div class="mo-booking__month">';
 		html += '<button type="button" class="mo-booking__nav" data-action="prev"' + (canPrev ? '' : ' disabled') + ' aria-label="Mes anterior">‹</button>';
 		html += '<p class="mo-booking__month-name" aria-live="polite">' + esc(MONTHS[m - 1]) + ' ' + y + '</p>';
@@ -320,7 +334,8 @@
 			if (info && info.status === 'available') {
 				disabled = false;
 				cls += ' mo-booking__day--available mo-booking__day--' + (info.price_type === 'presale' ? 'presale' : 'regular');
-				if (info.special) { extra = TAG_ICON; cls += ' mo-booking__day--special'; }
+				extra = info.special ? TAG_ICON : '<span class="mo-booking__day-dot" aria-hidden="true"></span>';
+				if (info.special) { cls += ' mo-booking__day--special'; }
 				label += ', disponible' + (info.price_type ? ', ' + PRICE_TYPE[info.price_type] : '') + (info.price_txt ? ' ' + info.price_txt : '') + (info.special ? ', precio especial por fecha' : '');
 			} else if (info && info.status === 'sold_out') {
 				cls += ' mo-booking__day--soldout';
@@ -337,15 +352,14 @@
 		html += '</div></div>';
 		html += this.renderLegend();
 		if (s.availabilityNote) { html += '<p class="mo-booking__note">' + esc(s.availabilityNote) + '</p>'; }
+		html += '</section>';
 
-		if (s.selectedDate && s.days[s.selectedDate]) {
-			var day = s.days[s.selectedDate];
-			html += '<div class="mo-booking__slots-wrap"><h4 class="mo-booking__subtitle">Horarios del ' + esc(this.dateLabel(s.selectedDate)) + '</h4>';
-			html += '<p class="mo-booking__note">Horario de ' + esc(this.state.service.timezone) + '.</p>';
-			if (day.price_txt) {
-				html += '<p class="mo-booking__day-detail">' + (day.special ? TAG_ICON + ' ' : '') + 'Precio para esta fecha: <strong>' + esc(day.price_txt) + '</strong>' +
-					(day.price_type ? ' · ' + esc(PRICE_TYPE[day.price_type]) : '') + (day.special ? ' · Precio especial por fecha' : '') + '</p>';
-			}
+		// Columna derecha: horarios, preventa y tarifa estimada.
+		var day = s.selectedDate ? s.days[s.selectedDate] : null;
+		html += '<div class="mo-booking__side">';
+		html += '<section class="mo-booking__panel mo-booking__slots-wrap"><h4 class="mo-booking__card-title">Elige un horario</h4>';
+		if (day) {
+			html += '<p class="mo-booking__date-caps">' + esc(this.dateLabel(s.selectedDate)) + '</p>';
 			(day.notices || []).forEach(function (n) { html += '<p class="mo-booking__notice">' + esc(n) + '</p>'; });
 			html += '<div class="mo-booking__slots">';
 			day.slots.forEach(function (slot) {
@@ -353,10 +367,24 @@
 				html += '<button type="button" class="mo-booking__slot' + (slot.available ? '' : ' mo-booking__slot--off') + (selected ? ' mo-booking__slot--selected' : '') + '" data-slot="' + esc(slot.start) + '" data-time="' + esc(slot.time) + '"' +
 					(slot.available ? '' : ' disabled') + ' aria-pressed="' + (selected ? 'true' : 'false') + '">' + esc(slot.time) + (slot.available ? '' : ' <span class="mo-booking__slot-state">' + esc(slot.label) + '</span>') + '</button>';
 			});
-			html += '</div></div>';
+			html += '</div>';
+			html += '<p class="mo-booking__note">Horario de ' + esc(this.state.service.timezone) + '.</p>';
+		} else {
+			html += '<p class="mo-booking__empty">' + M.icon('calendar') + '<span>Elige una fecha en el calendario para ver sus horarios.</span></p>';
 		}
-		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--primary" data-action="to-details"' + (s.selectedSlot ? '' : ' disabled') + '>Continuar</button></div>';
+		if (s.presaleText) {
+			html += '<p class="mo-booking__presale">' + M.icon('tag') + '<span>' + esc(s.presaleText) + '</span></p>';
+		}
 		html += '</section>';
+		if (day && day.price_txt) {
+			html += '<section class="mo-booking__panel mo-booking__estimate"><div class="mo-booking__estimate-row"><span class="mo-booking__estimate-label">Tarifa estimada' +
+				(day.price_type ? ' <span class="mo-booking__chip">' + esc(PRICE_TYPE[day.price_type]) + '</span>' : '') + '</span>' +
+				'<span class="mo-booking__estimate-price">' + (day.reference_txt ? '<s>' + esc(day.reference_txt) + '</s> ' : '') + '<strong class="mo-booking__day-detail">' + esc(day.price_txt) + '</strong></span></div>' +
+				(day.special ? '<p class="mo-booking__estimate-special">' + TAG_ICON + ' Precio especial por fecha</p>' : '') +
+				'<p class="mo-booking__note">El total se confirma en el resumen, según los asistentes y complementos.</p></section>';
+		}
+		html += '</div></div>';
+		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--back" data-action="welcome-back">Regresar</button><button type="button" class="mo-booking__button mo-booking__button--primary mo-booking__button--next" data-action="to-details"' + (s.selectedSlot ? '' : ' disabled') + '>Continuar</button></div>';
 		return html;
 	};
 
@@ -376,10 +404,11 @@
 		});
 		var items = [];
 		if (has.presale) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--presale" aria-hidden="true"></span> Precio de preventa</li>'); }
-		if (has.regular) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--regular" aria-hidden="true"></span> ' + (has.presale ? 'Precio regular' : 'Disponible') + '</li>'); }
+		if (has.regular) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--regular" aria-hidden="true"></span> ' + (has.presale ? 'Precio regular' : 'Fecha disponible') + '</li>'); }
 		if (has.special) { items.push('<li>' + TAG_ICON + ' Precio especial por fecha</li>'); }
 		if (has.soldout) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--soldout" aria-hidden="true">✕</span> ' + esc(this.text('slot_taken', 'No disponible')) + '</li>'); }
-		return items.length ? '<ul class="mo-booking__legend" aria-label="Significado de los colores">' + items.join('') + '</ul>' : '';
+		items.push('<li><span class="mo-booking__swatch mo-booking__swatch--closed" aria-hidden="true"></span> Sin horarios</li>');
+		return '<ul class="mo-booking__legend" aria-label="Significado de los colores">' + items.join('') + '</ul>';
 	};
 
 	App.prototype.dateLabel = function (date) {
@@ -399,33 +428,58 @@
 			(help ? '<p class="mo-booking__help">' + help + '</p>' : '') + '<p class="mo-booking__field-error" data-error-for="' + name + '" role="alert"></p></div>';
 	};
 
+	/** Encabezado de tarjeta con ícono. */
+	App.prototype.cardTitle = function (iconName, title, id) {
+		return '<h4 class="mo-booking__card-title"' + (id ? ' id="' + id + '"' : '') + '>' + M.icon(iconName, 'mo-booking__card-icon') + '<span>' + esc(title) + '</span></h4>';
+	};
+
 	App.prototype.renderDetails = function () {
 		var s = this.state;
 		var svc = s.service;
 		var f = s.form;
 		var self = this;
-		var html = '<form class="mo-booking__panel" data-form="details" novalidate aria-labelledby="mo-step-2">';
-		html += '<h3 class="mo-booking__panel-title" id="mo-step-2" tabindex="-1" data-step-heading>Tus datos</h3>';
-		// 6.3, campo 1: fecha elegida y "Cambiar" (vuelve al calendario sin perder lo capturado).
-		html += '<p class="mo-booking__selected">Fecha de sesión: <strong>' + esc(this.dateLabel(s.selectedDate)) + ', ' + esc(s.selectedSlot.time) + ' h</strong> - <button type="button" class="mo-booking__link" data-action="to-calendar">Cambiar</button></p>';
-		// Campo 2: número de asistentes = niños + adultos (calculado, sin valor predeterminado).
-		html += '<p class="mo-booking__total-people" aria-live="polite">Número de asistentes: <output name="attendees" data-attendees>' + esc(this.attendees()) + '</output></p>';
-		var num = function (name, label, value, extra) {
-			return self.field(name, label, '<input class="mo-booking__input" type="number" inputmode="numeric" pattern="[0-9]*" step="1" min="0" id="mo-f-' + name + '" name="' + name + '" value="' + esc(value) + '"' + (extra || '') + '>');
-		};
-		html += num('children', 'Niños', f.children);
-		html += num('adults', 'Adultos', f.adults);
-		if (svc.pets_allowed) {
-			html += num('pets', 'Mascotas', f.pets, svc.pets_max ? ' max="' + svc.pets_max + '"' : '');
-		}
-		html += this.field('important_info', 'Alguna información importante que debamos saber antes de tu sesión:', '<textarea class="mo-booking__input" id="mo-f-important_info" name="important_info" rows="4" maxlength="2000">' + esc(f.important_info) + '</textarea>', '(Opcional. Máximo 2,000 caracteres.)');
+		var html = '<form data-form="details" novalidate aria-labelledby="mo-step-2">';
+		html += '<h3 class="mo-booking__sr" id="mo-step-2" tabindex="-1" data-step-heading>Tus datos</h3>';
+		html += '<div class="mo-booking__grid"><div class="mo-booking__col">';
+
+		// 1. Sesión elegida y "Cambiar" (vuelve al calendario sin perder lo capturado).
+		html += '<section class="mo-booking__panel">' + this.cardTitle('calendar', 'Sesión seleccionada');
+		html += '<div class="mo-booking__selected">' + M.icon('clock', 'mo-booking__selected-icon') + '<div><span class="mo-booking__caps">Fecha y horario</span><strong>' + esc(this.dateLabel(s.selectedDate)) + ' · ' + esc(s.selectedSlot.time) + ' h</strong>' +
+			'<button type="button" class="mo-booking__link" data-action="to-calendar">Cambiar fecha</button></div></div></section>';
+
+		// 2. Datos de contacto (primero, a petición del estudio).
+		html += '<section class="mo-booking__panel">' + this.cardTitle('user', 'Información de contacto');
 		html += this.field('name', 'Nombre y apellido:', '<input class="mo-booking__input" type="text" id="mo-f-name" name="name" autocomplete="name" value="' + esc(f.name) + '" required>');
 		html += this.field('email', 'Correo electrónico:', '<input class="mo-booking__input" type="email" id="mo-f-email" name="email" autocomplete="email" value="' + esc(f.email) + '" required' + (s.frequentToken && s.locked.email ? ' readonly' : '') + '>', s.frequentToken && s.locked.email ? 'Es el correo con el que reconocimos tu tarifa de cliente frecuente; para usar otro, vuelve al inicio.' : 'Aquí te enviaremos la confirmación y tu enlace privado.');
 		html += '<div class="mo-booking__field"><label class="mo-booking__label" for="mo-f-phone">Teléfono (WhatsApp):</label><div class="mo-booking__phone">' +
 			'<select class="mo-booking__input mo-booking__country" name="phone_country" aria-label="País del teléfono"><option value="MX"' + (f.phone_country === 'MX' ? ' selected' : '') + '>México +52</option><option value="US"' + (f.phone_country === 'US' ? ' selected' : '') + '>EE. UU. +1</option></select>' +
 			'<input class="mo-booking__input" type="tel" id="mo-f-phone" name="phone" autocomplete="tel-national" inputmode="tel" value="' + esc(f.phone) + '" required aria-describedby="mo-help-phone"' + (s.frequentToken && s.locked.phone ? ' readonly' : '') + '></div>' +
 			'<p class="mo-booking__help" id="mo-help-phone">' + (s.frequentToken && s.locked.phone ? 'Es el teléfono con el que reconocimos tu tarifa de cliente frecuente; para usar otro, vuelve al inicio.' : '10 dígitos. Si es de otro país, escribe el número completo con "+".') + '</p><p class="mo-booking__field-error" data-error-for="phone" role="alert"></p></div>';
-		// 6.4: preguntas adicionales después de los datos principales y antes de entrega rápida.
+		html += '</section>';
+
+		// 3. Asistentes = niños + adultos (sin valor predeterminado), con botones − / +.
+		html += '<section class="mo-booking__panel">' + this.cardTitle('users', 'Número de asistentes');
+		var counter = function (name, label, iconName, value, max) {
+			return '<div class="mo-booking__counter">' + M.icon(iconName, 'mo-booking__counter-icon') + '<label class="mo-booking__label" for="mo-f-' + name + '">' + label + '</label>' +
+				'<div class="mo-booking__stepper"><button type="button" class="mo-booking__step-btn" tabindex="-1" data-count="' + name + '" data-delta="-1" aria-label="' + label + ': uno menos">' + M.icon('minus') + '</button>' +
+				'<input class="mo-booking__input" type="number" inputmode="numeric" pattern="[0-9]*" step="1" min="0"' + (max ? ' max="' + max + '"' : '') + ' id="mo-f-' + name + '" name="' + name + '" value="' + esc(value) + '" placeholder="0">' +
+				'<button type="button" class="mo-booking__step-btn" tabindex="-1" data-count="' + name + '" data-delta="1" aria-label="' + label + ': uno más">' + M.icon('add') + '</button></div>' +
+				'<p class="mo-booking__field-error" data-error-for="' + name + '" role="alert"></p></div>';
+		};
+		html += counter('children', 'Niños', 'sparkle', f.children);
+		html += counter('adults', 'Adultos', 'user', f.adults);
+		if (svc.pets_allowed) {
+			html += counter('pets', 'Mascotas', 'paw', f.pets, svc.pets_max || 0);
+		}
+		html += '<p class="mo-booking__total-people" aria-live="polite">Número de asistentes: <output name="attendees" data-attendees>' + esc(this.attendees()) + '</output></p>';
+		html += '<p class="mo-booking__help">La sesión incluye hasta ' + esc(svc.participants_included) + ' ' + (svc.participants_included === 1 ? 'persona' : 'personas') +
+			(svc.participants_max > svc.participants_included ? '; ' + esc(svc.extra_participant_txt) + ' por persona adicional, máximo ' + esc(svc.participants_max) + '.' : '.') + '</p>';
+		html += '</section>';
+		html += '</div><div class="mo-booking__col">';
+
+		// 4. Detalles adicionales y preguntas del servicio.
+		html += '<section class="mo-booking__panel">' + this.cardTitle('edit', 'Detalles adicionales');
+		html += this.field('important_info', 'Alguna información importante que debamos saber antes de tu sesión:', '<textarea class="mo-booking__input" id="mo-f-important_info" name="important_info" rows="4" maxlength="2000" placeholder="Por ejemplo: edades de los niños o algo que debamos considerar">' + esc(f.important_info) + '</textarea>', '(Opcional. Máximo 2,000 caracteres.)');
 		(svc.questions || []).forEach(function (q) {
 			var name = 'answers.' + q.key;
 			var id = 'mo-f-' + name;
@@ -445,27 +499,41 @@
 			}
 			html += '<div class="mo-booking__field"><label class="mo-booking__label" for="' + id + '">' + label + '</label>' + input + '<p class="mo-booking__field-error" data-error-for="' + name + '" role="alert"></p></div>';
 		});
-		(svc.extras || []).forEach(function (ex) {
-			var opts = '';
-			for (var q = 0; q <= ex.max_qty; q++) { opts += '<option value="' + q + '"' + ((f.extras[ex.key] || 0) === q ? ' selected' : '') + '>' + q + '</option>'; }
-			html += self.field('extra-' + ex.key, esc(ex.label) + ' (' + esc(ex.price_txt) + ')', '<select class="mo-booking__input" id="mo-f-extra-' + esc(ex.key) + '" name="extra:' + esc(ex.key) + '">' + opts + '</select>', esc(ex.description || ''));
-		});
-		// Campo 10: entrega rápida al final, como extra con precio, nunca marcada de inicio.
-		if (svc.fast_delivery) {
-			var fd = svc.fast_delivery;
-			html += '<fieldset class="mo-booking__field mo-booking__fast"><legend class="mo-booking__label">' + esc(fd.question) + '</legend>' +
-				'<label class="mo-booking__check"><input type="checkbox" name="fast_delivery" id="mo-f-fast_delivery"' + (f.fast_delivery ? ' checked' : '') + ' aria-describedby="mo-help-fast"> Sí, agregar ' + esc(fd.label) + ' (+' + esc(fd.price_txt) + ')</label>' +
-				(fd.regular_text ? '<p class="mo-booking__help" id="mo-help-fast">' + esc(fd.regular_text) + '</p>' : '') + '</fieldset>';
+		html += '</section>';
+
+		// 5. Complementos: extras y entrega rápida (nunca marcada de inicio).
+		if ((svc.extras || []).length || svc.fast_delivery) {
+			html += '<section class="mo-booking__panel">' + this.cardTitle('gift', 'Personaliza tu sesión');
+			(svc.extras || []).forEach(function (ex) {
+				var opts = '';
+				for (var q = 0; q <= ex.max_qty; q++) { opts += '<option value="' + q + '"' + ((f.extras[ex.key] || 0) === q ? ' selected' : '') + '>' + q + '</option>'; }
+				html += '<div class="mo-booking__extra">' + M.icon('plus', 'mo-booking__extra-icon') + '<div class="mo-booking__extra-text"><label class="mo-booking__label" for="mo-f-extra-' + esc(ex.key) + '">' + esc(ex.label) + '</label>' +
+					(ex.description ? '<p class="mo-booking__help">' + esc(ex.description) + '</p>' : '') + '</div><span class="mo-booking__extra-price">' + esc(ex.price_txt) + '</span>' +
+					'<select class="mo-booking__input mo-booking__extra-qty" id="mo-f-extra-' + esc(ex.key) + '" name="extra:' + esc(ex.key) + '" aria-label="Cantidad de ' + esc(ex.label) + '">' + opts + '</select></div>';
+			});
+			if (svc.fast_delivery) {
+				var fd = svc.fast_delivery;
+				html += '<fieldset class="mo-booking__field mo-booking__fast"><legend class="mo-booking__label">' + esc(fd.question) + '</legend>' +
+					'<label class="mo-booking__extra mo-booking__extra--toggle">' + M.icon('bolt', 'mo-booking__extra-icon') + '<span class="mo-booking__extra-text"><span class="mo-booking__extra-name">Sí, agregar ' + esc(fd.label) + '</span>' +
+					(fd.regular_text ? '<span class="mo-booking__help" id="mo-help-fast">' + esc(fd.regular_text) + '</span>' : '') + '</span><span class="mo-booking__extra-price">+' + esc(fd.price_txt) + '</span>' +
+					'<input type="checkbox" class="mo-booking__switch" name="fast_delivery" id="mo-f-fast_delivery"' + (f.fast_delivery ? ' checked' : '') + ' aria-describedby="mo-help-fast"></label></fieldset>';
+			}
+			html += '</section>';
 		}
-		// 6.5: contrato en acordeón, debajo del formulario; aceptarlo es obligatorio.
+
+		// 6. Contrato en acordeón; aceptarlo es obligatorio.
 		if (svc.contract) {
+			html += '<section class="mo-booking__panel">' + this.cardTitle('file', 'Contrato y aceptación');
 			var notice = this.text('contract_notice', '');
 			if (notice) { html += '<p class="mo-booking__contract-notice">' + M.lines(notice) + '</p>'; }
-			html += '<details class="mo-booking__policies mo-booking__contract"><summary>' + esc(svc.contract.title) + '</summary><div class="mo-booking__contract-body">' + svc.contract.body + '</div></details>';
-			html += '<label class="mo-booking__check"><input type="checkbox" name="accept_contract" id="mo-f-accept_contract"' + (f.accept_contract ? ' checked' : '') + ' required> He leído y acepto el contrato «' + esc(svc.contract.title) + '»' + (svc.privacy_url ? ' y el <a href="' + esc(svc.privacy_url) + '" target="_blank" rel="noopener noreferrer">aviso de privacidad</a>' : '') + '</label>';
+			html += '<details class="mo-booking__policies mo-booking__contract"><summary>' + M.icon('file') + '<span>Consultar contrato completo: ' + esc(svc.contract.title) + '</span></summary><div class="mo-booking__contract-body">' + svc.contract.body + '</div></details>';
+			html += '<label class="mo-booking__check"><input type="checkbox" name="accept_contract" id="mo-f-accept_contract"' + (f.accept_contract ? ' checked' : '') + ' required> <span>He leído y acepto el contrato «' + esc(svc.contract.title) + '»' + (svc.privacy_url ? ' y el <a href="' + esc(svc.privacy_url) + '" target="_blank" rel="noopener noreferrer">aviso de privacidad</a>' : '') + '</span></label>';
 			html += '<p class="mo-booking__field-error" data-error-for="accept_contract" role="alert"></p>';
+			html += '</section>';
 		}
-		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="to-calendar">Atrás</button><button type="submit" class="mo-booking__button mo-booking__button--primary">Ver resumen</button></div>';
+		html += '<p class="mo-booking__hint">' + M.icon('info') + '<span>En el siguiente paso puedes revisar todo antes de enviar tu solicitud.</span></p>';
+		html += '</div></div>';
+		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--back" data-action="to-calendar">Regresar</button><button type="submit" class="mo-booking__button mo-booking__button--primary mo-booking__button--next">Ver resumen</button></div>';
 		html += '</form>';
 		return html;
 	};
@@ -483,22 +551,26 @@
 		var q = s.quote;
 		var svc = s.service;
 		var f = s.form;
-		var html = '<form class="mo-booking__panel" data-form="summary" novalidate aria-labelledby="mo-step-3">';
-		html += '<h3 class="mo-booking__panel-title" id="mo-step-3" tabindex="-1" data-step-heading>Revisa tu reserva</h3>';
-		html += '<dl class="mo-booking__summary">';
-		html += '<dt>Servicio</dt><dd>' + esc(q.service) + '</dd>';
-		html += '<dt>Fecha y hora</dt><dd>' + esc(q.date_txt) + ', ' + esc(q.time_txt) + ' h (' + esc(q.timezone) + ')</dd>';
-		html += '<dt>Niños</dt><dd>' + esc(f.children === '' ? 0 : f.children) + '</dd>';
-		html += '<dt>Adultos</dt><dd>' + esc(f.adults === '' ? 0 : f.adults) + '</dd>';
-		html += '<dt>Total de asistentes</dt><dd>' + esc(this.attendees()) + '</dd>';
-		if (svc.pets_allowed) { html += '<dt>Mascotas</dt><dd>' + esc(f.pets === '' ? 0 : f.pets) + '</dd>'; }
-		if (f.important_info) { html += '<dt>Información importante</dt><dd>' + M.lines(f.important_info) + '</dd>'; }
-		html += '<dt>Nombre y apellido</dt><dd>' + esc(f.name) + '</dd>';
-		html += '<dt>Contacto</dt><dd>' + esc(f.email) + '<br>' + esc(f.phone) + '</dd>';
-		html += '</dl>';
+		var row = function (label, value) { return '<dt>' + esc(label) + '</dt><dd>' + value + '</dd>'; };
+		var group = function (iconName, title, action, rows) {
+			return '<div class="mo-booking__group"><div class="mo-booking__group-head">' + M.icon(iconName, 'mo-booking__card-icon') + '<h5>' + esc(title) + '</h5>' +
+				(action ? '<button type="button" class="mo-booking__link" data-action="' + action + '">Cambiar</button>' : '') + '</div><dl class="mo-booking__summary">' + rows + '</dl></div>';
+		};
+		var html = '<form data-form="summary" novalidate aria-labelledby="mo-step-3">';
+		html += '<h3 class="mo-booking__sr" id="mo-step-3" tabindex="-1" data-step-heading>Revisa tu reserva</h3>';
+		html += '<div class="mo-booking__grid"><section class="mo-booking__panel">' + this.cardTitle('camera', 'Detalles de la sesión');
+		html += group('calendar', 'Fecha y horario', 'to-calendar', row('Servicio', esc(q.service)) + row('Fecha', esc(q.date_txt)) + row('Hora', esc(q.time_txt) + ' h (' + esc(q.timezone) + ')'));
+		var people = row('Niños', esc(f.children === '' ? 0 : f.children)) + row('Adultos', esc(f.adults === '' ? 0 : f.adults)) + row('Total de asistentes', esc(this.attendees()));
+		if (svc.pets_allowed) { people += row('Mascotas', esc(f.pets === '' ? 0 : f.pets)); }
+		if (f.important_info) { people += row('Información importante', M.lines(f.important_info)); }
+		html += group('users', 'Asistentes', 'to-details', people);
+		html += group('user', 'Tus datos', 'to-details', row('Nombre y apellido', esc(f.name)) + row('Correo', esc(f.email)) + row('WhatsApp', esc(f.phone)));
+		html += '</section>';
+
+		html += '<div class="mo-booking__side"><section class="mo-booking__panel mo-booking__invest">' + this.cardTitle('receipt', 'Resumen de inversión');
 		html += '<table class="mo-booking__lines"><caption class="mo-booking__sr">Desglose del precio</caption><tbody>';
-		q.lines.forEach(function (l) { html += '<tr><th scope="row">' + esc(l.label) + '</th><td>' + esc(l.amount_txt) + '</td></tr>'; });
-		html += '</tbody><tfoot><tr><th scope="row">Total</th><td>' + esc(q.total_txt) + '</td></tr>';
+		html += q.price_rows ? M.priceRows(q.price_rows) : q.lines.map(function (l) { return '<tr><th scope="row">' + esc(l.label) + '</th><td>' + esc(l.amount_txt) + '</td></tr>'; }).join('');
+		html += '</tbody><tfoot><tr class="mo-booking__row--total"><th scope="row">Total</th><td>' + esc(q.total_txt) + '</td></tr>';
 		html += '<tr><th scope="row">Anticipo requerido</th><td>' + esc(q.deposit_txt) + '</td></tr>';
 		html += '<tr><th scope="row">Saldo</th><td>' + esc(q.balance_txt) + '</td></tr></tfoot></table>';
 		if (s.frequentToken) {
@@ -506,9 +578,12 @@
 		} else if (f.frequent_claim) {
 			html += '<p class="mo-booking__note">' + esc(this.config.frequentReview || 'Revisaremos tu tarifa de cliente frecuente antes de confirmar.') + '</p>';
 		}
+		html += '</section>';
+
+		html += '<section class="mo-booking__panel">';
 		(q.notices || []).forEach(function (n) { html += '<p class="mo-booking__notice">' + esc(n) + '</p>'; });
 		if (q.deposit > 0) {
-			html += '<p class="mo-booking__note">Al enviar la solicitud apartamos tu horario por <strong>' + esc(q.hold_hours) + ' horas</strong> para que transfieras el anticipo y subas tu comprobante. Si no lo recibimos a tiempo, el horario se libera.</p>';
+			html += '<p class="mo-booking__hold">' + M.icon('hourglass') + '<span>Al enviar la solicitud apartamos tu horario por <strong>' + esc(q.hold_hours) + ' horas</strong> para que transfieras el anticipo y subas tu comprobante. Si no lo recibimos a tiempo, el horario se libera.</span></p>';
 		}
 		if (this.config.showPolicies && svc.policies && svc.policies.length) {
 			html += '<details class="mo-booking__policies"><summary>Políticas de cambios y cancelación</summary>';
@@ -516,12 +591,13 @@
 			html += '</details>';
 		}
 		if (svc.contract) {
-			html += '<p class="mo-booking__note">Contrato aceptado: «' + esc(svc.contract.title) + '».</p>';
+			html += '<p class="mo-booking__note">' + M.icon('check') + ' Contrato aceptado: «' + esc(svc.contract.title) + '».</p>';
 		}
 		var consentRequired = this.text('consent_required', true);
-		html += '<label class="mo-booking__check"><input type="checkbox" name="whatsapp_consent" id="mo-f-whatsapp_consent"' + (f.whatsapp_consent ? ' checked' : '') + (consentRequired ? ' required' : '') + '> ' + esc(this.text('whatsapp_consent', 'Acepto recibir por WhatsApp y por correo los avisos de mi reserva')) + (consentRequired ? '' : ' (opcional)') + '</label>';
+		html += '<label class="mo-booking__check"><input type="checkbox" name="whatsapp_consent" id="mo-f-whatsapp_consent"' + (f.whatsapp_consent ? ' checked' : '') + (consentRequired ? ' required' : '') + '> <span>' + esc(this.text('whatsapp_consent', 'Acepto recibir por WhatsApp y por correo los avisos de mi reserva')) + (consentRequired ? '' : ' (opcional)') + '</span></label>';
 		html += '<p class="mo-booking__field-error" data-error-for="whatsapp_consent" role="alert"></p>';
-		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-action="to-details">Atrás</button><button type="submit" class="mo-booking__button mo-booking__button--primary">' + (this.config.preview ? 'Enviar (demostración)' : 'Enviar solicitud') + '</button></div>';
+		html += '</section></div></div>';
+		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--back" data-action="to-details">Regresar</button><button type="submit" class="mo-booking__button mo-booking__button--primary mo-booking__button--next">' + (this.config.preview ? 'Enviar (demostración)' : 'Enviar solicitud') + '</button></div>';
 		html += '</form>';
 		return html;
 	};
@@ -576,6 +652,20 @@
 			identify.addEventListener('submit', function (ev) { ev.preventDefault(); self.submitIdentify(identify); });
 		}
 		var details = root.querySelector('[data-form=details]');
+		// Botones − / + de asistentes: cambian el número del campo (que también se puede escribir).
+		root.querySelectorAll('[data-count]').forEach(function (btn) {
+			btn.addEventListener('click', function () {
+				var input = root.querySelector('[name="' + btn.getAttribute('data-count') + '"]');
+				if (!input) { return; }
+				var current = /^\d+$/.test(input.value) ? parseInt(input.value, 10) : 0;
+				var next = Math.max(0, current + parseInt(btn.getAttribute('data-delta'), 10));
+				var max = input.getAttribute('max');
+				if (max && +max > 0) { next = Math.min(next, +max); }
+				input.value = String(next);
+				input.removeAttribute('aria-invalid');
+				input.dispatchEvent(new window.Event('input', { bubbles: true }));
+			});
+		});
 		if (details) {
 			details.addEventListener('submit', function (ev) { ev.preventDefault(); self.collect(details); self.requestQuote(); });
 			details.addEventListener('change', function () { self.collect(details); });
@@ -660,7 +750,9 @@
 		if (invalid) { this.showFieldError(invalid[0], invalid[1]); return; }
 		if (this.config.preview) {
 			s.quote = { service: s.service.title, date_txt: this.dateLabel(s.selectedDate), time_txt: s.selectedSlot.time, timezone: s.service.timezone,
-				lines: [{ label: 'Tarifa (demostración)', amount_txt: '$1,400 MXN' }], total_txt: '$1,400 MXN', deposit: 50000, deposit_txt: '$500 MXN', balance_txt: '$900 MXN', hold_hours: 12, notices: [] };
+				lines: [{ label: 'Tarifa (demostración)', amount_txt: '$1,400 MXN' }],
+				price_rows: [{ kind: 'reference', label: 'Precio', amount_txt: '$1,800 MXN' }, { kind: 'discount', label: 'Descuento por fecha anticipada', amount_txt: '−$200 MXN' }, { kind: 'discount', label: 'Descuento por preventa', amount_txt: '−$200 MXN' }, { kind: 'discounted', label: 'Precio con descuento', amount_txt: '$1,400 MXN' }],
+				total_txt: '$1,400 MXN', deposit: 50000, deposit_txt: '$500 MXN', balance_txt: '$900 MXN', hold_hours: 12, notices: [] };
 			this.setStep(3);
 			return;
 		}

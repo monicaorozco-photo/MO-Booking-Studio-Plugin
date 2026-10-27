@@ -16,6 +16,8 @@ const log = (...a) => console.log('•', ...a);
   await Promise.all([page.waitForNavigation(), page.click('button:has-text("Guardar servicio")')]);
   log('Rangos encimados:', (await page.locator('.notice-error').first().innerText()).split('\n')[0]);
   log('Formulario conserva lo escrito:', await page.inputValue('input[name="price_table[rows][1][from]"]'));
+  // beta.5: tras un error, los importes se muestran en pesos tal como se escribieron (antes el anticipo $500 se volvía $5).
+  log('Importes tras el error (anticipo, entrega rápida):', await page.inputValue('[name=deposit_value]'), await page.inputValue('[name="fast_delivery[price]"]'));
   await page.fill('input[name="price_table[rows][1][from]"]', '2026-12-05');
   await page.fill('#mo-price-table-presale-until', '2026-10-25T18:00');
   await Promise.all([page.waitForNavigation(), page.click('button:has-text("Guardar servicio")')]);

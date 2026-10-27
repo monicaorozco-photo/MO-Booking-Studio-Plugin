@@ -138,12 +138,12 @@ final class PrintView {
 	}
 
 	private static function page( string $title, string $body ): string {
-		$css = 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1d2327;max-width:780px;margin:0 auto;padding:24px 16px;line-height:1.5;background:#fff}'
-			. 'h1{font-size:24px;margin:4px 0 12px}h2{font-size:18px;border-bottom:1px solid #dcdcde;padding-bottom:4px;margin-top:28px}h3{font-size:15px}'
-			. '.brand{text-transform:uppercase;letter-spacing:.08em;font-size:12px;color:#50575e;margin:0}'
-			. 'table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #f0f0f1;vertical-align:top}th{width:38%;font-weight:600}'
+		$css = 'body{font-family:Montserrat,"Helvetica Neue",Arial,sans-serif;color:#2E2018;max-width:780px;margin:0 auto;padding:24px 16px;line-height:1.5;background:#fff}'
+			. 'h1,h2{font-family:"Cormorant Garamond",Georgia,serif;font-weight:500}h1{font-size:34px;margin:4px 0 12px}h2{font-size:24px;border-bottom:1px solid #EADCCF;padding-bottom:4px;margin-top:28px}h3{font-size:15px}'
+			. '.brand{text-transform:uppercase;letter-spacing:.2em;font-size:11px;color:#75655A;margin:0}'
+			. 'table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #F1E8DE;vertical-align:top}th{width:38%;font-weight:600}'
 			. '.total th,.total td{font-weight:700}.reference td{text-decoration:line-through;color:#646970}.discounted th,.discounted td{font-weight:600}.meta{color:#3c434a}.hash{font-size:11px;color:#646970;word-break:break-all}'
-			. 'button{font:inherit;padding:10px 16px;border-radius:6px;border:0;background:#2271b1;color:#fff;cursor:pointer}.actions span{color:#50575e;font-size:14px}'
+			. 'button{font:inherit;padding:10px 16px;border-radius:6px;border:0;background:#654528;color:#FAF7F2;cursor:pointer}.actions span{color:#50575e;font-size:14px}'
 			. 'footer{margin-top:32px;font-size:12px;color:#646970}'
 			. '@media print{.no-print{display:none}body{padding:0}h2{break-after:avoid}.contract{break-before:page}}';
 		return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>' . esc_html( $title ) . '</title><style>' . $css . '</style></head><body>' . $body . '</body></html>';

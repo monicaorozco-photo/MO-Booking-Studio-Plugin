@@ -105,7 +105,8 @@ async function fillDetails(page, email) {
 
   // AC-01: orden exacto y sin valores predeterminados.
   const order = await m.evaluate(() => Array.from(document.querySelectorAll('[data-form=details] .mo-booking__selected, [data-form=details] .mo-booking__total-people, [data-form=details] label.mo-booking__label, [data-form=details] legend')).map(e => e.textContent.replace(/\s+/g, ' ').trim()));
-  const expected = ['Fecha de sesión:', 'Número de asistentes:', 'Niños', 'Adultos', 'Mascotas', 'Alguna información importante que debamos saber antes de tu sesión:', 'Nombre y apellido:', 'Correo electrónico:', 'Teléfono (WhatsApp):', '¿Deseas agregar entrega rápida de 2 días hábiles a tu sesión?'];
+  // Rediseño (beta.5): a petición del estudio, primero los datos de contacto y después los asistentes.
+  const expected = ['Fecha y horario', 'Nombre y apellido:', 'Correo electrónico:', 'Teléfono (WhatsApp):', 'Niños', 'Adultos', 'Mascotas', 'Número de asistentes:', 'Alguna información importante que debamos saber antes de tu sesión:', '¿Deseas agregar entrega rápida de 2 días hábiles a tu sesión?'];
   const positions = expected.map(t => order.findIndex(o => o.indexOf(t) === 0));
   ok(positions.every(p => p >= 0) && positions.every((p, i) => i === 0 || p > positions[i - 1]), 'AC-01 orden exacto de los 10 campos', JSON.stringify(order));
   ok(order[order.length - 1].indexOf('¿Deseas agregar entrega rápida') === 0, 'AC-01 entrega rápida es el último campo');
@@ -183,13 +184,13 @@ async function fillDetails(page, email) {
   ok(/ya no está disponible|alguien acaba de apartar/.test(loserMsg.join(' ')), 'AC-02 la otra recibe un mensaje claro', loserMsg.join(' ').slice(0, 120));
   const winner = mWon ? m : other;
   await winner.waitForSelector('.mo-booking__welcome-new', { timeout: 15000 });
-  ok(/mo_nuevo/.test(winner.url()) === false && /Recibimos tu solicitud/.test(await winner.locator('.mo-booking__welcome-new').innerText()), 'Al enviar llega a su vista de reserva (sin token en la dirección)', winner.url());
+  ok(/mo_nuevo/.test(winner.url()) === false && /horario está apartado/.test(await winner.locator('.mo-booking__welcome-new').innerText()), 'Al enviar llega a su vista de reserva (sin token en la dirección)', winner.url());
   const portalText = await winner.locator('.mo-booking-portal').innerText();
   ok(!/Indicaciones/.test(portalText) && (!/Lugar/.test(portalText) || /Te lo compartiremos/.test(portalText)), 'Ubicación e indicaciones ocultas hasta confirmar');
   ok(await winner.locator('.mo-booking__contract summary').count() === 1, 'Contrato aceptado en la vista de reserva');
   await winner.screenshot({ path: SHOTS + '/p3-confirmacion.png', fullPage: true });
   const deadline = await winner.locator('.mo-booking__deadline').innerText();
-  ok(/antes del .*\d{1,2}:\d{2}/.test(deadline), 'AC-03 muestra la hora exacta de vencimiento', deadline.replace(/\s+/g, ' '));
+  ok(/antes del .*\d{1,2}:\d{2}/i.test(deadline), 'AC-03 muestra la hora exacta de vencimiento', deadline.replace(/\s+/g, ' '));
   const ref = await winner.locator('.mo-booking__ref strong').innerText();
 
   // AC-04: carga del comprobante desde la confirmación (enlace privado).
@@ -238,7 +239,7 @@ async function fillDetails(page, email) {
     await kb.keyboard.press('Tab');
     seq.push(await kb.evaluate(() => document.activeElement.name || document.activeElement.id));
   }
-  ok(JSON.stringify(seq.slice(0, 9)) === JSON.stringify(['children', 'adults', 'pets', 'important_info', 'name', 'email', 'phone_country', 'phone', 'fast_delivery']), 'AC-18 el tabulador sigue el orden del formulario', seq.join(' → '));
+  ok(JSON.stringify(seq.slice(0, 9)) === JSON.stringify(['name', 'email', 'phone_country', 'phone', 'children', 'adults', 'pets', 'important_info', 'fast_delivery']), 'AC-18 el tabulador sigue el orden del formulario', seq.join(' → '));
   await kb.keyboard.type(' ');
   ok(await kb.isChecked('#mo-f-fast_delivery'), 'AC-18 la casilla se marca con teclado');
 

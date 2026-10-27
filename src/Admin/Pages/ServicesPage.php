@@ -40,6 +40,10 @@ final class ServicesPage {
 		$v = static function ( string $key, $default = '' ) use ( $old, $s ) {
 			return array_key_exists( $key, $old ) ? $old[ $key ] : ( $s[ $key ] ?? $default );
 		};
+		// Importes: tras un error se muestra lo que se escribió (en pesos), no se vuelve a convertir de centavos.
+		$amount = static function ( string $posted, string $cents ) use ( $old, $s ): string {
+			return array_key_exists( $posted, $old ) ? (string) $old[ $posted ] : Money::toInput( (int) ( $s[ $cents ] ?? 0 ) );
+		};
 
 		Ui::header( $service ? 'Editar servicio: ' . $service['title'] : 'Nuevo servicio', ' <a class="page-title-action" href="' . esc_url( Ui::url( 'mo-booking-services' ) ) . '">Volver</a>' );
 		echo Ui::formOpen( 'save_service', array( 'service_id' => (int) $s['id'] ), 'mo-service-form' ); // phpcs:ignore WordPress.Security.EscapeOutput
@@ -87,14 +91,14 @@ final class ServicesPage {
 
 		$people  = Ui::row( 'Personas incluidas', Ui::input( 'participants_included', $v( 'participants_included' ), 'number', array( 'min' => 1 ) ), '', 'participants_included' );
 		$people .= Ui::row( 'Máximo de personas', Ui::input( 'participants_max', $v( 'participants_max' ), 'number', array( 'min' => 1 ) ), '', 'participants_max' );
-		$people .= Ui::row( 'Costo por persona adicional ($)', Ui::input( 'extra_participant', Money::toInput( (int) $v( 'extra_participant_cents', 0 ) ), 'text', array( 'inputmode' => 'decimal' ) ), '', 'extra_participant' );
+		$people .= Ui::row( 'Costo por persona adicional ($)', Ui::input( 'extra_participant', $amount( 'extra_participant', 'extra_participant_cents' ), 'text', array( 'inputmode' => 'decimal' ) ), '', 'extra_participant' );
 		$people .= Ui::row( 'Mascotas', Ui::checkbox( 'pets_allowed', (bool) $v( 'pets_allowed' ), 'Pet friendly (se admiten mascotas)' ) . '<br>' . Ui::checkbox( 'pets_count_as_participants', (bool) $v( 'pets_count_as_participants' ), 'Las mascotas cuentan como asistentes (para el límite y el precio)' ), 'En el formulario la clienta ve "Pet friendly" y un campo de mascotas aparte; el renglón "Número de asistentes" solo suma personas.' );
 		$people .= Ui::row( 'Máximo de mascotas', Ui::input( 'pets_max', $v( 'pets_max' ), 'number', array( 'min' => 0 ) ), '0 = sin límite.', 'pets_max' );
-		$people .= Ui::row( 'Costo por mascota ($)', Ui::input( 'pet_fee', Money::toInput( (int) $v( 'pet_fee_cents', 0 ) ), 'text', array( 'inputmode' => 'decimal' ) ), '', 'pet_fee' );
+		$people .= Ui::row( 'Costo por mascota ($)', Ui::input( 'pet_fee', $amount( 'pet_fee', 'pet_fee_cents' ), 'text', array( 'inputmode' => 'decimal' ) ), '', 'pet_fee' );
 		echo Ui::card( 'Personas y mascotas', $people ); // phpcs:ignore WordPress.Security.EscapeOutput
 
-		$depositValue = 'percent' === $v( 'deposit_type' ) ? (string) $v( 'deposit_value' ) : Money::toInput( (int) $v( 'deposit_value', 0 ) );
-		$pay          = Ui::row( 'Precio base ($ MXN)', Ui::input( 'price', Money::toInput( (int) $v( 'price_cents', 0 ) ), 'text', array( 'inputmode' => 'decimal', 'required' => 'required' ) ), 'Se usa cuando ninguna tarifa especial aplica. Las tarifas por fecha, preventa o cliente frecuente se configuran en "Tarifas y descuentos".', 'price' );
+		$depositValue = 'percent' === $v( 'deposit_type' ) || array_key_exists( 'deposit_value', $old ) ? (string) $v( 'deposit_value' ) : Money::toInput( (int) $v( 'deposit_value', 0 ) );
+		$pay          = Ui::row( 'Precio base ($ MXN)', Ui::input( 'price', $amount( 'price', 'price_cents' ), 'text', array( 'inputmode' => 'decimal', 'required' => 'required' ) ), 'Se usa cuando ninguna tarifa especial aplica. Las tarifas por fecha, preventa o cliente frecuente se configuran en "Tarifas y descuentos".', 'price' );
 		$pay         .= Ui::row( 'Anticipo', Ui::select( 'deposit_type', array( 'fixed' => 'Importe fijo ($)', 'percent' => 'Porcentaje del total (%)', 'full' => 'Pago total', 'none' => 'Sin anticipo' ), $v( 'deposit_type' ) ) . ' ' . Ui::input( 'deposit_value', $depositValue, 'text', array( 'inputmode' => 'decimal', 'class' => 'small-text' ) ), 'El anticipo nunca supera el total.', 'deposit_type' );
 		$pay         .= Ui::row( 'Horas para pagar el anticipo', Ui::input( 'hold_hours', (float) $v( 'hold_hours' ) ?: '', 'number', array( 'min' => 0, 'step' => '0.5', 'placeholder' => (string) \MOBookingStudio\Infrastructure\Settings::get( 'hold_hours' ) ) ), 'Vacío = valor general de Ajustes. Durante este tiempo el horario queda apartado.', 'hold_hours' );
 		$pay         .= Ui::row( 'Confirmación', Ui::select( 'confirmation_mode', array( 'manual' => 'Manual: confirmo yo al revisar el pago', 'auto' => 'Automática al aprobar el pago' ), $v( 'confirmation_mode' ) ), '', 'confirmation_mode' );
@@ -154,7 +158,7 @@ final class ServicesPage {
 		$fast  = (array) $v( 'fast_delivery', array() );
 		$fbody = Ui::row( 'Ofrecer', Ui::checkbox( 'fast_delivery[enabled]', ! empty( $fast['enabled'] ), 'Mostrar la entrega rápida al final del formulario (sin marcar de inicio)' ) );
 		$fbody .= Ui::row( 'Nombre', Ui::input( 'fast_delivery[label]', $fast['label'] ?? 'Entrega rápida', 'text', array( 'class' => 'regular-text' ) ) );
-		$fbody .= Ui::row( 'Precio ($)', Ui::input( 'fast_delivery[price]', Money::toInput( (int) ( $fast['price_cents'] ?? 0 ) ), 'text', array( 'class' => 'small-text', 'inputmode' => 'decimal' ) ) );
+		$fbody .= Ui::row( 'Precio ($)', Ui::input( 'fast_delivery[price]', isset( $fast['price'] ) ? (string) $fast['price'] : Money::toInput( (int) ( $fast['price_cents'] ?? 0 ) ), 'text', array( 'class' => 'small-text', 'inputmode' => 'decimal' ) ) );
 		$fbody .= Ui::row( 'Pregunta (plazo rápido)', Ui::input( 'fast_delivery[question]', $fast['question'] ?? '', 'text', array( 'class' => 'large-text' ) ) );
 		$fbody .= Ui::row( 'Texto inferior (plazo regular)', Ui::input( 'fast_delivery[regular_text]', $fast['regular_text'] ?? '', 'text', array( 'class' => 'large-text' ) ) );
 		echo Ui::card( 'Entrega rápida', $fbody . '<p class="description">Cambiar el precio no altera las reservas existentes: cada una guarda el nombre y el precio contratados.</p>' ); // phpcs:ignore WordPress.Security.EscapeOutput

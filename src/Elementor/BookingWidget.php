@@ -55,7 +55,7 @@ class BookingWidget extends \Elementor\Widget_Base {
 		$this->add_control( 'intro', array( 'label' => 'Texto de introducción', 'type' => \Elementor\Controls_Manager::TEXTAREA, 'default' => '' ) );
 		$this->add_control( 'show_description', array( 'label' => 'Mostrar descripción del servicio', 'type' => \Elementor\Controls_Manager::SWITCHER, 'default' => 'yes' ) );
 		$this->add_control( 'show_policies', array( 'label' => 'Mostrar reglas de cancelación en el resumen', 'type' => \Elementor\Controls_Manager::SWITCHER, 'default' => '', 'description' => 'Normalmente apagado: la clienta ve y acepta tu contrato.' ) );
-		$this->add_control( 'layout', array( 'label' => 'Disposición', 'type' => \Elementor\Controls_Manager::SELECT, 'options' => array( 'stacked' => 'Apilada', 'columns' => 'Columnas en escritorio' ), 'default' => 'stacked' ) );
+		$this->add_control( 'layout', array( 'label' => 'Disposición', 'type' => \Elementor\Controls_Manager::SELECT, 'options' => array( 'columns' => 'Dos columnas en computadora', 'stacked' => 'Una columna' ), 'default' => 'columns' ) );
 		$this->end_controls_section();
 
 		// DEC-10: textos de la bienvenida. Deja un subtítulo vacío para ocultarlo.
@@ -88,7 +88,7 @@ class BookingWidget extends \Elementor\Widget_Base {
 				'preview'          => $preview || ( isset( $_GET['elementor-preview'] ) ), // phpcs:ignore WordPress.Security.NonceVerification
 				'show_description' => 'yes' === ( $s['show_description'] ?? 'yes' ),
 				'show_policies'    => 'yes' === ( $s['show_policies'] ?? '' ),
-				'layout'           => (string) ( $s['layout'] ?? 'stacked' ),
+				'layout'           => (string) ( $s['layout'] ?? 'columns' ),
 				'texts'            => array_intersect_key( $s, Frontend::WELCOME_TEXTS ),
 			)
 		);

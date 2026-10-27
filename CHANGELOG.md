@@ -1,5 +1,12 @@
 # Cambios
 
+## 0.2.0-beta.4.1 — 27 de octubre de 2026
+
+Solo estilos (sin cambios de datos).
+- Blindaje contra los estilos de botones del tema y de Elementor: días, horarios, botones y opciones del formulario y de la vista de reserva conservan sus colores aunque el tema use `!important` (probado con un tema que pinta todos los botones de negro: `tests/e2e/tema-agresivo.js`).
+- El horario seleccionado conserva su color al pasar el cursor.
+- Los colores de botones del widget de Elementor ahora se aplican como variables (siguen funcionando con el blindaje).
+
 ## 0.2.0-beta.4 — 26 de octubre de 2026 (lanzamiento de la preventa)
 
 Sin cambios de base de datos (esquema 4). Guía: `docs/entrega-beta4.md`.

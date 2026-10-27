@@ -61,12 +61,14 @@ trait StyleControls {
 		}
 
 		$this->start_controls_section( 'style_buttons', array( 'label' => 'Botones', 'tab' => \Elementor\Controls_Manager::TAB_STYLE ) );
-		$this->color( 'btn_bg', 'Botón principal: fondo', '.mo-booking .mo-booking__button--primary', 'background-color' );
-		$this->color( 'btn_text', 'Botón principal: texto', '.mo-booking .mo-booking__button--primary', 'color' );
-		$this->color( 'btn2_bg', 'Botón secundario: fondo', '.mo-booking .mo-booking__button:not(.mo-booking__button--primary)', 'background-color' );
-		$this->color( 'btn2_text', 'Botón secundario: texto', '.mo-booking .mo-booking__button:not(.mo-booking__button--primary)', 'color' );
+		// Variables: los botones del plugin están blindados contra el tema y usan estos valores.
+		$this->color( 'btn_bg', 'Botón principal: fondo', '.mo-booking', '--mo-btn-bg' );
+		$this->color( 'btn_text', 'Botón principal: texto', '.mo-booking', '--mo-btn-text' );
+		$this->color( 'btn_border', 'Botón principal: borde', '.mo-booking', '--mo-btn-border' );
+		$this->color( 'btn2_bg', 'Botón secundario: fondo', '.mo-booking', '--mo-btn2-bg' );
+		$this->color( 'btn2_text', 'Botón secundario: texto', '.mo-booking', '--mo-btn2-text' );
+		$this->color( 'btn2_border', 'Botón secundario: borde', '.mo-booking', '--mo-btn2-border' );
 		$this->add_group_control( \Elementor\Group_Control_Typography::get_type(), array( 'name' => 'button_typo', 'label' => 'Tipografía', 'selector' => '{{WRAPPER}} .mo-booking__button, {{WRAPPER}} .mo-booking__choice' ) );
-		$this->add_group_control( \Elementor\Group_Control_Border::get_type(), array( 'name' => 'button_border', 'label' => 'Borde', 'selector' => '{{WRAPPER}} .mo-booking__button' ) );
 		$this->add_control( 'button_radius', array( 'label' => 'Esquinas', 'type' => \Elementor\Controls_Manager::SLIDER, 'size_units' => array( 'px' ), 'range' => array( 'px' => array( 'min' => 0, 'max' => 40 ) ), 'selectors' => array( '{{WRAPPER}} .mo-booking__button' => 'border-radius: {{SIZE}}{{UNIT}};' ) ) );
 		$this->end_controls_section();
 

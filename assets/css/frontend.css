@@ -200,3 +200,38 @@
 .mo-booking__welcome-new .mo-booking__panel-title { color: inherit; margin-bottom: 4px; }
 .mo-booking__contract-notice { background: var(--mo-notice-bg); color: var(--mo-notice); border-radius: 8px; padding: 10px 12px; margin: var(--mo-gap) 0 8px; }
 .mo-booking__payments, .mo-booking__proofs { padding-left: 1.2em; }
+
+/* beta.4.1: blindaje contra los estilos de botones del tema y de Elementor.
+   Los colores de los botones del plugin se fijan con !important a partir de variables,
+   así el tema no los puede cambiar, pero tú sí desde el widget de Elementor (que cambia
+   las variables) o con CSS propio que cambie esas mismas variables. La tipografía se deja
+   libre para que el widget de Elementor la siga controlando. */
+.mo-booking {
+	--mo-btn-bg: var(--mo-primary);
+	--mo-btn-text: var(--mo-primary-contrast);
+	--mo-btn-border: var(--mo-primary);
+	--mo-btn2-bg: var(--mo-bg);
+	--mo-btn2-text: var(--mo-primary);
+	--mo-btn2-border: var(--mo-primary);
+}
+.mo-booking button, .mo-booking a.mo-booking__button, .mo-booking input[type="submit"] { box-shadow: none !important; text-shadow: none !important; filter: none !important; }
+.mo-booking .mo-booking__button, .mo-booking .mo-booking__button:hover, .mo-booking .mo-booking__button:focus, .mo-booking .mo-booking__button:active, .mo-booking .mo-booking__button:visited { background: var(--mo-btn2-bg) !important; color: var(--mo-btn2-text) !important; border-color: var(--mo-btn2-border) !important; }
+.mo-booking .mo-booking__button--primary, .mo-booking .mo-booking__button--primary:hover, .mo-booking .mo-booking__button--primary:focus, .mo-booking .mo-booking__button--primary:active { background: var(--mo-btn-bg) !important; color: var(--mo-btn-text) !important; border-color: var(--mo-btn-border) !important; }
+.mo-booking .mo-booking__button:hover:not(:disabled) { opacity: 0.9; }
+.mo-booking .mo-booking__link, .mo-booking .mo-booking__link:hover, .mo-booking .mo-booking__link:focus { background: transparent !important; color: var(--mo-primary) !important; border-color: transparent !important; }
+.mo-booking .mo-booking__nav, .mo-booking .mo-booking__nav:hover, .mo-booking .mo-booking__nav:focus, .mo-booking .mo-booking__nav:active { background: var(--mo-bg) !important; color: var(--mo-text) !important; border-color: var(--mo-border) !important; }
+.mo-booking .mo-booking__choice, .mo-booking .mo-booking__choice:focus, .mo-booking .mo-booking__choice:active { background: var(--mo-bg) !important; color: var(--mo-text) !important; border-color: var(--mo-border) !important; }
+.mo-booking .mo-booking__choice:hover, .mo-booking .mo-booking__choice:focus-visible { background: var(--mo-bg) !important; color: var(--mo-text) !important; border-color: var(--mo-primary) !important; }
+/* Calendario. */
+.mo-booking .mo-booking__days .mo-booking__day--regular, .mo-booking .mo-booking__days .mo-booking__day--regular:hover, .mo-booking .mo-booking__days .mo-booking__day--regular:focus, .mo-booking .mo-booking__days .mo-booking__day--regular:active { background: var(--mo-day-open-bg) !important; color: var(--mo-day-open-text) !important; border-color: var(--mo-day-open-border) !important; }
+.mo-booking .mo-booking__days .mo-booking__day--presale, .mo-booking .mo-booking__days .mo-booking__day--presale:hover, .mo-booking .mo-booking__days .mo-booking__day--presale:focus, .mo-booking .mo-booking__days .mo-booking__day--presale:active { background: var(--mo-presale) !important; color: var(--mo-presale-text) !important; border-color: var(--mo-presale-text) !important; }
+.mo-booking .mo-booking__days .mo-booking__day--closed, .mo-booking .mo-booking__days .mo-booking__day--closed:hover, .mo-booking .mo-booking__days .mo-booking__day--closed:disabled { background: var(--mo-day-closed-bg) !important; color: var(--mo-day-closed-text) !important; border-color: transparent !important; opacity: 1 !important; }
+.mo-booking .mo-booking__days .mo-booking__day--soldout, .mo-booking .mo-booking__days .mo-booking__day--soldout:hover, .mo-booking .mo-booking__days .mo-booking__day--soldout:disabled { background: var(--mo-soldout-bg) !important; color: var(--mo-soldout) !important; border-color: transparent !important; opacity: 1 !important; }
+.mo-booking .mo-booking__days .mo-booking__day--blank { background: transparent !important; border-color: transparent !important; }
+.mo-booking .mo-booking__days .mo-booking__day--selected, .mo-booking .mo-booking__days .mo-booking__day--selected:hover, .mo-booking .mo-booking__days .mo-booking__day--selected:focus, .mo-booking .mo-booking__days .mo-booking__day--selected:active { background: var(--mo-selected) !important; color: var(--mo-primary-contrast) !important; border-color: var(--mo-selected) !important; }
+/* Horarios. */
+.mo-booking .mo-booking__slots .mo-booking__slot, .mo-booking .mo-booking__slots .mo-booking__slot:focus, .mo-booking .mo-booking__slots .mo-booking__slot:active { background: var(--mo-slot-bg) !important; color: var(--mo-slot-text) !important; border-color: var(--mo-slot-text) !important; }
+.mo-booking .mo-booking__slots .mo-booking__slot:hover:not(:disabled):not(.mo-booking__slot--selected) { background: var(--mo-surface) !important; color: var(--mo-slot-text) !important; border-color: var(--mo-slot-text) !important; }
+.mo-booking .mo-booking__slots .mo-booking__slot--off, .mo-booking .mo-booking__slots .mo-booking__slot--off:hover, .mo-booking .mo-booking__slots .mo-booking__slot--off:disabled { background: var(--mo-slot-off-bg) !important; color: var(--mo-slot-off-text) !important; border-color: var(--mo-border) !important; opacity: 1 !important; }
+.mo-booking .mo-booking__slots .mo-booking__slot--selected, .mo-booking .mo-booking__slots .mo-booking__slot--selected:hover, .mo-booking .mo-booking__slots .mo-booking__slot--selected:focus, .mo-booking .mo-booking__slots .mo-booking__slot--selected:active { background: var(--mo-selected) !important; color: var(--mo-primary-contrast) !important; border-color: var(--mo-selected) !important; }
+.mo-booking button:focus-visible, .mo-booking a:focus-visible { outline: 2px solid var(--mo-selected) !important; outline-offset: 2px; }

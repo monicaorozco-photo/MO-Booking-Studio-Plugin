@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       MO Booking Studio
  * Description:       Reservas, disponibilidad, pagos por transferencia y administración para estudio fotográfico.
- * Version:           0.2.0-beta.4
+ * Version:           0.2.0-beta.4.1
  * Requires at least: 6.4
  * Requires PHP:      7.4
  * Author:            Mónica Orozco
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MO_BOOKING_VERSION', '0.2.0-beta.4' );
+define( 'MO_BOOKING_VERSION', '0.2.0-beta.4.1' );
 define( 'MO_BOOKING_MIN_PHP', '7.4' );
 define( 'MO_BOOKING_FILE', __FILE__ );
 define( 'MO_BOOKING_DIR', plugin_dir_path( __FILE__ ) );

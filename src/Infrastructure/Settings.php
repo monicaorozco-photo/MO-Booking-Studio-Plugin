@@ -76,7 +76,7 @@ final class Settings {
 	}
 
 	public static function all(): array {
-		$stored = get_option( self::OPTION, array() );
+		$stored = OptionStore::load( self::OPTION, array() );
 		return array_merge( self::defaults(), is_array( $stored ) ? $stored : array() );
 	}
 
@@ -92,7 +92,7 @@ final class Settings {
 				$current[ $key ] = $value;
 			}
 		}
-		update_option( self::OPTION, $current, false );
+		OptionStore::save( self::OPTION, $current );
 	}
 
 	/**

@@ -143,7 +143,7 @@ final class NotificationsPage {
 			$editor = (string) ob_get_clean();
 			$editor = str_replace( '<textarea class="', '<textarea data-mo-codes="1" class="', $editor );
 		} else {
-			$editor = Ui::textarea( $name, \MOBookingStudio\Domain\Contact::decodeEmoji( $value ), $rows, array( 'data-mo-codes' => '1' ) );
+			$editor = Ui::textarea( $name, $value, $rows, array( 'data-mo-codes' => '1' ) );
 		}
 		$control = '<div class="mo-editor"><div class="mo-editor__text">' . $editor . '<p class="mo-code-warning" data-warning-for="' . esc_attr( $id ) . '" role="status" hidden></p>' .
 			'<p><button type="button" class="button button-small" data-mo-preview="' . esc_attr( $id ) . '">Vista previa con datos de ejemplo</button></p><div class="mo-preview-text' . ( $rich ? ' mo-preview-text--html' : '' ) . '" data-preview-for="' . esc_attr( $id ) . '" hidden></div>' . ( $help ? '<p class="description">' . esc_html( $help ) . '</p>' : '' ) . '</div>' . $guide . '</div>';

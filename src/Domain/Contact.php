@@ -76,14 +76,7 @@ final class Contact {
 	 * Solo toca entidades numéricas; el resto del texto queda igual.
 	 */
 	public static function decodeEmoji( string $text ): string {
-		return (string) preg_replace_callback(
-			'/&#(x[0-9a-f]+|[0-9]+);/i',
-			static function ( $m ) {
-				$code = 'x' === strtolower( $m[1][0] ) ? hexdec( substr( $m[1], 1 ) ) : (int) $m[1];
-				return $code > 0 && $code <= 0x10FFFF ? html_entity_decode( '&#' . $code . ';', ENT_QUOTES | ENT_HTML5, 'UTF-8' ) : $m[0];
-			},
-			$text
-		);
+		return \MOBookingStudio\Infrastructure\OptionStore::decodeText( $text );
 	}
 
 	/** Número para enlaces de WhatsApp: solo dígitos. */

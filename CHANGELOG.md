@@ -1,5 +1,16 @@
 # Cambios
 
+## 0.2.0-beta.6 — 28 de octubre de 2026
+
+Sin cambios de base de datos (esquema 4). Guía: `docs/entrega-beta6.md`.
+
+- Corrección: los avisos (y los ajustes) volvían a los textos originales al guardar si llevaban emojis y la tabla de opciones del hosting es utf8 sin "mb4". Ahora los emojis se guardan de forma compatible con cualquier base de datos y, si algo no se guarda, el panel muestra un error.
+- Avisos: `{{nombre}}` es el primer nombre ("Hola María"); `{{nombre_completo}}` da el nombre entero. En tus avisos internos sigue llegando el nombre completo.
+- Cortesía (solo en el panel): confirma la cita con total y anticipo en $0, sin avisos ni invitación de Google a la clienta; etiqueta "Cortesía" en la lista y en la reserva; no se permite si ya hay pagos; se puede deshacer.
+- Registro de mensajes paginado (25 por página).
+- Cambio de fecha por la clienta desde "Mi reserva" (apagado por omisión, en Ajustes): ventana con la política editable, una sola vez, con anticipación mínima (36 h por omisión), recalcula el precio conservando su tipo de cliente y su preventa, pide aceptar la diferencia si cuesta más, aplica la regla de cambio de su reserva, actualiza Google Calendar y te avisa. Después queda un aviso fijo editable.
+- Elementor y shortcodes: mostrar u ocultar la marca y el nombre del servicio, por separado en el formulario y en "Mi reserva" (`show_brand="no"`, `show_title="no"`).
+
 ## 0.2.0-beta.5.1 — 28 de octubre de 2026
 
 - WhatsApp: los emojis ya no se pierden. Los enlaces usan api.whatsapp.com en lugar de wa.me (que en computadora los convertía en "�"), y si la base de datos del hosting no admite emojis se guardan de forma segura y se recuperan al enviar.

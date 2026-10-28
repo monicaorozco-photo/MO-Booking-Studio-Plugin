@@ -322,7 +322,7 @@ final class Beta3Test extends IntegrationTestCase {
 		} ) );
 		$this->assertCount( 1, $rows, 'Se envía junto con el evento.' );
 		$stored = Notifications::storedText( $rows[0] );
-		$this->assertSame( 'Gracias Ana Prueba por tu reserva ' . $booking['public_ref'], $stored['text'] );
+		$this->assertSame( 'Gracias Ana por tu reserva ' . $booking['public_ref'], $stored['text'] );
 
 		// Cambiar o quitar la plantilla no altera el texto guardado.
 		Notifications::saveCustom( $r['id'], array( 'name' => 'Bienvenida preventa', 'channel' => 'email', 'trigger' => 'booking_created', 'subject' => 'Otro', 'body' => 'Texto nuevo', 'enabled' => 1 ) );
@@ -338,7 +338,7 @@ final class Beta3Test extends IntegrationTestCase {
 		$booking = $this->book( $service, self::NOV20 )['booking'];
 		$this->assertSame( 'manual', Notifications::customTemplates()[ $r['id'] ]['trigger'], 'WhatsApp siempre es manual.' );
 		$this->assertTrue( Notifications::whatsappEventAllowed( 'custom_' . $r['id'] ) );
-		$this->assertStringContainsString( 'Hola Ana Prueba, tu saldo es', Notifications::whatsappText( $booking, 'custom_' . $r['id'] ) );
+		$this->assertStringContainsString( 'Hola Ana, tu saldo es', Notifications::whatsappText( $booking, 'custom_' . $r['id'] ) );
 
 		$unknown = Notifications::saveTemplates( array( 'reminder' => array( 'enabled' => 1, 'subject' => 'Recordatorio {{fehca}}', 'body' => 'x', 'admin' => '' ) ) );
 		$this->assertSame( array( '{{fehca}}' ), $unknown );

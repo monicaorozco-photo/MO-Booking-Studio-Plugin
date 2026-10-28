@@ -41,7 +41,8 @@ final class Notifications {
 
 	public static function variables(): array {
 		return array(
-			'nombre'             => 'Nombre de la persona',
+			'nombre'             => 'Primer nombre de la persona (para saludar)',
+			'nombre_completo'    => 'Nombre completo de la persona',
 			'negocio'            => 'Nombre comercial del servicio',
 			'servicio'           => 'Nombre del servicio',
 			'referencia'         => 'Número de reserva',
@@ -247,7 +248,8 @@ final class Notifications {
 	/** Datos de ejemplo para la vista previa. */
 	public static function sampleVars(): array {
 		return array(
-			'nombre'             => 'Ana López',
+			'nombre'             => 'Ana',
+			'nombre_completo'    => 'Ana López',
 			'negocio'            => (string) Settings::get( 'business_name' ),
 			'servicio'           => 'Minis navideñas',
 			'referencia'         => 'MO-AB12CD',
@@ -453,7 +455,8 @@ final class Notifications {
 		$summary = Bookings::summary( $booking );
 		$brand   = ( $service && $service['brand'] ) ? $service['brand'] : (string) Settings::get( 'business_name' );
 		return array(
-			'nombre'             => $booking['contact']['name'] ?? '',
+			'nombre'             => \MOBookingStudio\Domain\Names::first( (string) ( $booking['contact']['name'] ?? '' ) ),
+			'nombre_completo'    => (string) ( $booking['contact']['name'] ?? '' ),
 			'negocio'            => $brand,
 			'servicio'           => $service ? $service['title'] : ( $booking['quote']['service_title'] ?? '' ),
 			'referencia'         => $booking['public_ref'],
@@ -635,7 +638,11 @@ final class Notifications {
 			$set( array( 'status' => 'skipped', 'last_error' => 'La plantilla ya no existe.' ) );
 			return false;
 		}
-		$vars    = self::varsFor( $booking, (array) ( $payload['extra'] ?? array() ) );
+		$vars = self::varsFor( $booking, (array) ( $payload['extra'] ?? array() ) );
+		if ( 'admin' === $audience ) {
+			// En tus avisos internos, {{nombre}} es el nombre completo para identificarla.
+			$vars['nombre'] = $vars['nombre_completo'];
+		}
 		$subject = self::render( $tpl['subject'], $vars );
 		$html    = '';
 		if ( 'admin' === $audience ) {

@@ -122,10 +122,10 @@ final class Beta4Test extends IntegrationTestCase {
 			return 'booking_created' === $n['event'] && 'email' === $n['channel'];
 		} ) )[0];
 		$payload = json_decode( $row['payload'], true );
-		$this->assertStringContainsString( '<strong>Hola Ana Prueba</strong>', $payload['html'] );
-		$this->assertStringContainsString( 'Hola Ana Prueba', $payload['text'] );
+		$this->assertStringContainsString( '<strong>Hola Ana</strong>', $payload['html'] );
+		$this->assertStringContainsString( 'Hola Ana', $payload['text'] );
 		$this->assertStringNotContainsString( '<strong>', $payload['text'] );
-		$this->assertSame( "Hola *Ana Prueba* 👋\nTu reserva " . $booking['public_ref'], Notifications::whatsappText( $booking, 'booking_created' ) );
+		$this->assertSame( "Hola *Ana* 👋\nTu reserva " . $booking['public_ref'], Notifications::whatsappText( $booking, 'booking_created' ) );
 		$url = Notifications::whatsappUrl( $booking, 'booking_created' );
 		$this->assertStringContainsString( '%0A', $url, 'El salto de línea va codificado en el enlace.' );
 		$this->assertStringContainsString( rawurlencode( '👋' ), $url );

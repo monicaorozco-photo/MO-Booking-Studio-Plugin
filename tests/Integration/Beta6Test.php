@@ -33,4 +33,25 @@ final class Beta6Test extends IntegrationTestCase {
 		$this->assertSame( 'a 🎄 b', OptionStore::decodeText( 'a &#x1f384; b' ) );
 		$this->assertSame( 'a 🎄 b', OptionStore::decodeText( 'a &#127876; b' ) );
 	}
+
+	public function test_nombre_is_first_name_and_full_name_available(): void {
+		Notifications::saveTemplates(
+			array(
+				'booking_created' => array( 'enabled' => 1, 'subject' => 'Hola {{nombre}}', 'body' => '<p>Hola {{nombre}} ({{nombre_completo}})</p>', 'admin' => 'Nueva solicitud de {{nombre}}', 'whatsapp' => 'Hola {{nombre}}' ),
+			)
+		);
+		$booking = $this->book( $this->christmasService(), self::NOV20, array( 'name' => 'María José González' ) )['booking'];
+		$this->assertSame( 'Hola María', Notifications::whatsappText( $booking, 'booking_created' ) );
+		$rows = Notifications::forBooking( $booking['id'] );
+		$byAudience = array();
+		foreach ( $rows as $n ) {
+			if ( 'booking_created' === $n['event'] && 'email' === $n['channel'] ) {
+				$p = json_decode( $n['payload'], true );
+				$byAudience[ $p['audience'] ?? 'client' ] = $p;
+			}
+		}
+		$this->assertStringContainsString( 'Hola María (María José González)', $byAudience['client']['text'] );
+		$this->assertStringContainsString( 'Nueva solicitud de María José González', $byAudience['admin']['text'] ?? '', 'En tus avisos internos va el nombre completo.' );
+		$this->assertSame( 'María', \MOBookingStudio\Domain\Names::first( '  María   José ' ) );
+	}
 }

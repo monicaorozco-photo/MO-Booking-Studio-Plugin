@@ -35,6 +35,15 @@ final class Names {
 	}
 
 	/**
+	 * Primer nombre para saludar en los avisos: la primera palabra tal como se escribió
+	 * ("María José González" → "María"). Si no hay nombre, cadena vacía.
+	 */
+	public static function first( string $full ): string {
+		$parts = preg_split( '/\s+/u', trim( $full ) );
+		return (string) ( $parts[0] ?? '' );
+	}
+
+	/**
 	 * Al menos una palabra de 3 o más letras en común, admitiendo faltas leves en palabras
 	 * largas ("Angelic" escrito como "Angelik", "Gonzalez" como "Gonzales").
 	 */

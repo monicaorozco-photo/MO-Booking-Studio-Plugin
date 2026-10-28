@@ -1,5 +1,9 @@
 # Cambios
 
+## 0.2.0-beta.6.2 — 28 de octubre de 2026
+
+- Datos para transferencia: el renglón "Banco" se muestra sin botón de copiar y los datos se ven en letra más pequeña.
+
 ## 0.2.0-beta.6.1 — 28 de octubre de 2026
 
 - Avisos más cortos: `{{hora}}` dice "10:30 hrs" y `{{vencimiento}}` termina en "hrs", sin zona horaria. Las plantillas originales ya no llevan `({{zona}})`; en tus plantillas propias bórralo si no lo quieres.

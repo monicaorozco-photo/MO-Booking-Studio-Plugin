@@ -298,7 +298,8 @@
 .mo-booking__summary--plain { margin-bottom: 12px; }
 .mo-booking__copybox { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; margin: 0 0 10px; border: 1px solid var(--mo-border); border-radius: var(--mo-radius-sm); background: var(--mo-surface); }
 .mo-booking__copybox p { margin: 0 !important; min-width: 0; font-size: 14px; }
-.mo-booking__copybox strong { display: block; font-size: 16px; letter-spacing: 0.04em; }
+.mo-booking__copybox strong { display: block; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+.mo-booking__copybox .mo-booking__caps { font-size: 10px; margin-bottom: 2px; }
 .mo-booking__copy { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 36px; padding: 6px 12px; border: 1px solid var(--mo-taupe); border-radius: 8px; background: var(--mo-bg); color: var(--mo-primary); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .mo-booking__copy .mo-booking__icon { width: 15px; height: 15px; }
 .mo-booking__stack { display: grid; gap: 10px; }

@@ -208,6 +208,11 @@
 			var m = /^([^:]{1,40}):\s*(.+)$/.exec(t);
 			if (!m) { html += '<p class="mo-booking__bank-text">' + esc(t) + '</p>'; return; }
 			var value = m[2].trim();
+			// El nombre del banco no hace falta copiarlo: se muestra igual, sin botón.
+			if (/^banco$/i.test(m[1].trim())) {
+				html += '<div class="mo-booking__copybox mo-booking__copybox--plain"><p><span class="mo-booking__caps">' + esc(m[1].trim()) + '</span><strong>' + esc(value) + '</strong></p></div>';
+				return;
+			}
 			var digits = value.replace(/[\s-]/g, '');
 			var toCopy = /^\d{8,}$/.test(digits) ? digits : value;
 			html += '<div class="mo-booking__copybox"><p><span class="mo-booking__caps">' + esc(m[1].trim()) + '</span><strong>' + esc(value) + '</strong></p>' +

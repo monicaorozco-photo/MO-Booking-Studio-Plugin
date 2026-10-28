@@ -1,5 +1,11 @@
 # Cambios
 
+## 0.2.0-beta.6.1 — 28 de octubre de 2026
+
+- Avisos más cortos: `{{hora}}` dice "10:30 hrs" y `{{vencimiento}}` termina en "hrs", sin zona horaria. Las plantillas originales ya no llevan `({{zona}})`; en tus plantillas propias bórralo si no lo quieres.
+- Datos para transferencia: un botón "Copiar" por renglón ("Etiqueta: valor"); copia solo el valor y los números largos (CLABE, tarjeta) sin espacios ni guiones.
+- Bienvenida: nuevo aviso debajo de las opciones, editable en el widget de Elementor (vacío = no se muestra), en lugar de "El proceso es el mismo en ambos casos…".
+
 ## 0.2.0-beta.6 — 28 de octubre de 2026
 
 Sin cambios de base de datos (esquema 4). Guía: `docs/entrega-beta6.md`.

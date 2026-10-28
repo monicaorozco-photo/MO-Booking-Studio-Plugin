@@ -119,7 +119,7 @@ final class SelfReschedule {
 		$oldLocal = $booking['start']->setTimezone( Settings::timezone() );
 		$updated  = Bookings::reschedule( $bookingId, $newStart, self::REASON, (int) $booking['version'], true );
 		Audit::log( 'booking', $bookingId, 'self_rescheduled', array( 'from' => $booking['start_utc'], 'to' => $updated['start_utc'], 'difference' => $preview['difference'] ) );
-		Notifications::bookingEvent( 'client_rescheduled', $updated, array( 'reason' => Catalog::dateText( $oldLocal ) . ' ' . $oldLocal->format( 'H:i' ) ) );
+		Notifications::bookingEvent( 'client_rescheduled', $updated, array( 'reason' => Catalog::dateText( $oldLocal ) . ' ' . $oldLocal->format( 'H:i' ) . ' hrs' ) );
 		return $updated;
 	}
 }

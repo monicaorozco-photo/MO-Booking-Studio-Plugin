@@ -230,7 +230,9 @@
 			html += '<button type="button" class="mo-booking__choice" data-action="new-client">' + M.icon('sparkle', 'mo-booking__choice-icon') + '<span class="mo-booking__choice-eyebrow">Primera sesión</span><span class="mo-booking__choice-title">' + esc(t('new_title', 'Soy cliente nuevo')) + '</span>' + sub(t('new_text', 'Ver fechas y precios', true)) + M.icon('arrow', 'mo-booking__choice-arrow') + '</button>';
 			html += '<button type="button" class="mo-booking__choice" data-action="returning">' + M.icon('heart', 'mo-booking__choice-icon') + '<span class="mo-booking__choice-eyebrow">Ya nos conocemos</span><span class="mo-booking__choice-title">' + esc(t('returning_title', 'Ya me he tomado fotos con ustedes')) + '</span>' + sub(t('returning_text', 'Revisamos si aplica tu precio de cliente frecuente', true)) + M.icon('arrow', 'mo-booking__choice-arrow') + '</button>';
 			html += '</div>';
-			html += '<p class="mo-booking__hint">' + M.icon('info') + '<span>El proceso es el mismo en ambos casos; solo cambia el precio que te mostramos.</span></p>';
+			// beta.6.1: texto editable en el widget (vacío = no se muestra).
+			var hint = t('hint', '¿Ya te has tomado fotos con nosotros? Elige "Ya me he tomado fotos con ustedes" para que tus sesiones queden registradas y puedas aprovechar promociones futuras.', true);
+			if (hint) { html += '<p class="mo-booking__hint">' + M.icon('info') + '<span>' + esc(hint) + '</span></p>'; }
 		} else if (s.welcome === 'identify') {
 			var id = s.identify;
 			html += '<form data-form="identify" novalidate>';

@@ -149,4 +149,16 @@ final class Beta6Test extends IntegrationTestCase {
 		} ) );
 		$this->assertSame( 'Tu horario actual', $current[0]['label'] ?? null );
 	}
+
+	/** beta.6.1: avisos con hora corta "10:00 hrs", sin zona horaria. */
+	public function test_notifications_use_short_time_without_zone(): void {
+		$booking = $this->book( $this->christmasService(), self::NOV20 )['booking'];
+		$vars    = Notifications::varsFor( $booking );
+		$this->assertSame( '10:00 hrs', $vars['hora'] );
+		$this->assertStringEndsWith( ' hrs', $vars['vencimiento'] );
+		$this->assertStringNotContainsString( 'America/', $vars['vencimiento'] );
+		foreach ( Notifications::defaultTemplates() as $tpl ) {
+			$this->assertStringNotContainsString( '{{zona}}', $tpl['body'] );
+		}
+	}
 }

@@ -144,7 +144,7 @@
 		// Datos para transferencia con botones para copiar.
 		if (b.bank) {
 			html += '<section class="mo-booking__panel mo-booking__bank">' + title('bank', 'Datos para transferencia');
-			html += '<div class="mo-booking__copybox"><p>' + M.lines(b.bank) + '</p><button type="button" class="mo-booking__copy" data-copy="' + esc(b.bank) + '">' + I('copy') + '<span>Copiar</span></button></div>';
+			html += bankRows(b.bank);
 			html += '<div class="mo-booking__copybox mo-booking__copybox--ref"><p><span class="mo-booking__caps">Referencia</span><strong>' + esc(b.reference) + '</strong></p><button type="button" class="mo-booking__copy" data-copy="' + esc(b.reference) + '">' + I('copy') + '<span>Copiar</span></button></div>';
 			if (b.payment_ref) { html += '<p class="mo-booking__note">' + esc(b.payment_ref) + '</p>'; }
 			html += '</section>';
@@ -194,6 +194,27 @@
 		this.root.innerHTML = html;
 		this.bind();
 	};
+
+	/**
+	 * beta.6.1: datos bancarios por renglón. "Etiqueta: valor" lleva su propio botón y
+	 * copia solo el valor; los números largos (CLABE, tarjeta, cuenta) se copian sin espacios.
+	 */
+	function bankRows(text) {
+		var copy = '<svg class="mo-booking__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-3a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 5.5V14A1.5 1.5 0 0 0 6 15.5h2.5"/></svg>';
+		var html = '';
+		String(text || '').split(/\n/).forEach(function (line) {
+			var t = line.trim();
+			if (!t) { return; }
+			var m = /^([^:]{1,40}):\s*(.+)$/.exec(t);
+			if (!m) { html += '<p class="mo-booking__bank-text">' + esc(t) + '</p>'; return; }
+			var value = m[2].trim();
+			var digits = value.replace(/[\s-]/g, '');
+			var toCopy = /^\d{8,}$/.test(digits) ? digits : value;
+			html += '<div class="mo-booking__copybox"><p><span class="mo-booking__caps">' + esc(m[1].trim()) + '</span><strong>' + esc(value) + '</strong></p>' +
+				'<button type="button" class="mo-booking__copy" data-copy="' + esc(toCopy) + '" aria-label="Copiar ' + esc(m[1].trim()) + '">' + copy + '<span>Copiar</span></button></div>';
+		});
+		return html;
+	}
 
 	// ----- beta.6: cambio de fecha -----
 

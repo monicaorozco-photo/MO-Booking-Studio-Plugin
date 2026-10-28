@@ -45,6 +45,7 @@ final class Frontend {
 		'welcome_new_text'       => 'Ver fechas y precios',
 		'welcome_returning_title' => 'Ya me he tomado fotos con ustedes',
 		'welcome_returning_text' => 'Revisamos si aplica tu precio de cliente frecuente',
+		'welcome_hint'           => '¿Ya te has tomado fotos con nosotros? Elige "Ya me he tomado fotos con ustedes" para que tus sesiones queden registradas y puedas aprovechar promociones futuras.',
 		'welcome_identify_title' => '¡Qué gusto verte de nuevo!',
 		'welcome_identify_text'  => 'Escribe tu nombre y el correo y teléfono con los que reservaste antes.',
 	);

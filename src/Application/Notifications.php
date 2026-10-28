@@ -85,7 +85,7 @@ final class Notifications {
 			'booking_created'      => array(
 				'enabled' => true,
 				'subject' => 'Recibimos tu solicitud {{referencia}}',
-				'body'    => "Hola {{nombre}}:\n\nRecibimos tu solicitud para {{servicio}} el {{fecha}} a las {{hora}} ({{zona}}).\n\nTotal: {{total}}\nAnticipo para apartar: {{anticipo}}\nSaldo: {{saldo}}\n\nTu horario queda apartado hasta {{vencimiento}}. Para confirmarlo, transfiere el anticipo y sube tu comprobante desde tu enlace privado:\n{{enlace}}\n\n{{instrucciones_pago}}" . $sign,
+				'body'    => "Hola {{nombre}}:\n\nRecibimos tu solicitud para {{servicio}} el {{fecha}} a las {{hora}}.\n\nTotal: {{total}}\nAnticipo para apartar: {{anticipo}}\nSaldo: {{saldo}}\n\nTu horario queda apartado hasta {{vencimiento}}. Para confirmarlo, transfiere el anticipo y sube tu comprobante desde tu enlace privado:\n{{enlace}}\n\n{{instrucciones_pago}}" . $sign,
 				'admin'   => "Nueva solicitud {{referencia}}: {{servicio}}, {{fecha}} {{hora}}. {{nombre}}. Total {{total}}, anticipo {{anticipo}}. Vence: {{vencimiento}}.",
 			),
 			'proof_received'       => array(
@@ -115,7 +115,7 @@ final class Notifications {
 			'booking_confirmed'    => array(
 				'enabled' => true,
 				'subject' => '¡Tu cita está confirmada! ({{referencia}})',
-				'body'    => "Hola {{nombre}}:\n\nTu cita para {{servicio}} está confirmada:\n{{fecha}}, {{hora}} ({{zona}})\n{{ubicacion}}\n\nSaldo pendiente: {{saldo}}\n\n{{instrucciones}}\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
+				'body'    => "Hola {{nombre}}:\n\nTu cita para {{servicio}} está confirmada:\n{{fecha}}, {{hora}}\n{{ubicacion}}\n\nSaldo pendiente: {{saldo}}\n\n{{instrucciones}}\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
 				'admin'   => '',
 			),
 			'booking_rejected'     => array(
@@ -139,7 +139,7 @@ final class Notifications {
 			'booking_rescheduled'  => array(
 				'enabled' => true,
 				'subject' => 'Tu cita cambió de fecha ({{referencia}})',
-				'body'    => "Hola {{nombre}}:\n\nTu cita para {{servicio}} ahora es el {{fecha}} a las {{hora}} ({{zona}}).\n\nSaldo pendiente: {{saldo}}\n\nConsulta el detalle:\n{{enlace}}" . $sign,
+				'body'    => "Hola {{nombre}}:\n\nTu cita para {{servicio}} ahora es el {{fecha}} a las {{hora}}.\n\nSaldo pendiente: {{saldo}}\n\nConsulta el detalle:\n{{enlace}}" . $sign,
 				'admin'   => '',
 			),
 			'client_rescheduled'   => array(
@@ -151,7 +151,7 @@ final class Notifications {
 			'reminder'             => array(
 				'enabled' => true,
 				'subject' => 'Recordatorio: tu cita del {{fecha}}',
-				'body'    => "Hola {{nombre}}:\n\nTe recordamos tu cita para {{servicio}} el {{fecha}} a las {{hora}} ({{zona}}).\n{{ubicacion}}\n\n{{instrucciones}}\n\nSaldo pendiente: {{saldo}}\n{{enlace}}" . $sign,
+				'body'    => "Hola {{nombre}}:\n\nTe recordamos tu cita para {{servicio}} el {{fecha}} a las {{hora}}.\n{{ubicacion}}\n\n{{instrucciones}}\n\nSaldo pendiente: {{saldo}}\n{{enlace}}" . $sign,
 				'admin'   => '',
 			),
 		);
@@ -261,14 +261,14 @@ final class Notifications {
 			'servicio'           => 'Minis navideñas',
 			'referencia'         => 'MO-AB12CD',
 			'fecha'              => 'sábado 21 de noviembre de 2026',
-			'hora'               => '10:30',
+			'hora'               => '10:30 hrs',
 			'zona'               => 'America/Ciudad_Juarez',
 			'ubicacion'          => 'Estudio MO, Av. Ejemplo 123',
 			'instrucciones'      => 'Llega 10 minutos antes.',
 			'total'              => '$1,400.00 MXN',
 			'anticipo'           => '$500.00 MXN',
 			'saldo'              => '$900.00 MXN',
-			'vencimiento'        => 'viernes 20 de noviembre, 22:30 (America/Ciudad_Juarez)',
+			'vencimiento'        => 'viernes 20 de noviembre de 2026, 22:30 hrs',
 			'instrucciones_pago' => trim( (string) Settings::get( 'bank_instructions' ) ) ?: 'Banco Ejemplo · CLABE 000000000000000000',
 			'enlace'             => home_url( '/mi-reserva/#acceso=…' ),
 			'motivo'             => 'El comprobante no se lee completo.',
@@ -468,14 +468,15 @@ final class Notifications {
 			'servicio'           => $service ? $service['title'] : ( $booking['quote']['service_title'] ?? '' ),
 			'referencia'         => $booking['public_ref'],
 			'fecha'              => Catalog::dateText( $local ),
-			'hora'               => $local->format( 'H:i' ),
+			// beta.6.1: avisos más cortos, "10:30 hrs" (sin zona horaria).
+			'hora'               => $local->format( 'H:i' ) . ' hrs',
 			'zona'               => $booking['timezone'],
 			'ubicacion'          => $service ? $service['location'] : '',
 			'instrucciones'      => $service ? $service['instructions'] : '',
 			'total'              => Money::format( $booking['total_cents'] ),
 			'anticipo'           => Money::format( $booking['deposit_cents'] ),
 			'saldo'              => Money::format( $summary['balance_cents'] ),
-			'vencimiento'        => $booking['expires'] ? Catalog::dateTimeText( $booking['expires'] ) . ' (' . $booking['timezone'] . ')' : '',
+			'vencimiento'        => $booking['expires'] ? Catalog::dateText( $booking['expires']->setTimezone( $zone ) ) . ', ' . $booking['expires']->setTimezone( $zone )->format( 'H:i' ) . ' hrs' : '',
 			'instrucciones_pago' => trim( (string) Settings::get( 'bank_instructions' ) . "\n" . (string) Settings::get( 'payment_reference' ) . ' Referencia: ' . $booking['public_ref'] ),
 			'enlace'             => Bookings::portalUrl( $booking ),
 			'motivo'             => (string) ( $extra['reason'] ?? '' ),

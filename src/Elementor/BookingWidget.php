@@ -68,12 +68,13 @@ class BookingWidget extends \Elementor\Widget_Base {
 			'welcome_new_text'        => 'Subtítulo cliente nuevo (vacío = ocultar)',
 			'welcome_returning_title' => 'Botón cliente frecuente',
 			'welcome_returning_text'  => 'Subtítulo cliente frecuente (vacío = ocultar)',
+			'welcome_hint'            => 'Aviso debajo de las opciones (vacío = ocultar)',
 			'welcome_identify_title'  => 'Título al identificarse',
 			'welcome_identify_text'   => 'Instrucción al identificarse',
 		);
 		$this->start_controls_section( 'welcome', array( 'label' => 'Bienvenida' ) );
 		foreach ( Frontend::WELCOME_TEXTS as $key => $default ) {
-			$this->add_control( $key, array( 'label' => $labels[ $key ], 'type' => \Elementor\Controls_Manager::TEXT, 'default' => $default, 'label_block' => true ) );
+			$this->add_control( $key, array( 'label' => $labels[ $key ], 'type' => 'welcome_hint' === $key ? \Elementor\Controls_Manager::TEXTAREA : \Elementor\Controls_Manager::TEXT, 'default' => $default, 'label_block' => true ) );
 		}
 		$this->end_controls_section();
 

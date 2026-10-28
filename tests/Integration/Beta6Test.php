@@ -54,4 +54,34 @@ final class Beta6Test extends IntegrationTestCase {
 		$this->assertStringContainsString( 'Nueva solicitud de María José González', $byAudience['admin']['text'] ?? '', 'En tus avisos internos va el nombre completo.' );
 		$this->assertSame( 'María', \MOBookingStudio\Domain\Names::first( '  María   José ' ) );
 	}
+
+	public function test_courtesy_confirms_without_cost_or_messages_and_can_be_undone(): void {
+		$booking = $this->book( $this->christmasTableService(), self::NOV20 )['booking'];
+		$before  = count( \MOBookingStudio\Application\Notifications::forBooking( $booking['id'] ) );
+		$c       = \MOBookingStudio\Application\Bookings::markCourtesy( $booking['id'], 'Mi hermana', $booking['version'] );
+		$this->assertSame( 'confirmed', $c['status'] );
+		$this->assertSame( 0, $c['total_cents'] );
+		$this->assertSame( 0, $c['deposit_cents'] );
+		$this->assertTrue( \MOBookingStudio\Application\Bookings::isCourtesy( $c ) );
+		$this->assertCount( $before, \MOBookingStudio\Application\Notifications::forBooking( $booking['id'] ), 'Sin avisos a la clienta.' );
+		$this->assertFalse( \MOBookingStudio\Application\Bookings::inviteAllowed( $c ), 'Sin invitación de Google.' );
+		$this->assertNull( $c['expires'], 'Ya no vence.' );
+		$view = \MOBookingStudio\Application\Portal::view( $c );
+		$last = end( $view['price_rows'] );
+		$this->assertSame( 'Cortesía', $last['label'] );
+		$this->assertSame( '$0 MXN', $view['total_txt'] );
+		$this->assertSame( '$0 MXN', $view['balance_txt'] );
+
+		$u = \MOBookingStudio\Application\Bookings::removeCourtesy( $c['id'], $c['version'] );
+		$this->assertFalse( \MOBookingStudio\Application\Bookings::isCourtesy( $u ) );
+		$this->assertSame( $booking['total_cents'], $u['total_cents'] );
+		$this->assertSame( $booking['deposit_cents'], $u['deposit_cents'] );
+	}
+
+	public function test_courtesy_refused_when_payments_exist(): void {
+		$booking = $this->book( $this->christmasService(), self::NOV20 )['booking'];
+		$paid    = \MOBookingStudio\Application\Bookings::approvePayment( $booking['id'], array( 'amount_cents' => 50000, 'received_date' => '2026-10-20', 'method' => 'transfer', 'form_key' => wp_generate_uuid4() ) );
+		$this->expectException( \MOBookingStudio\Domain\DomainException::class );
+		\MOBookingStudio\Application\Bookings::markCourtesy( $paid['id'], '', $paid['version'] );
+	}
 }

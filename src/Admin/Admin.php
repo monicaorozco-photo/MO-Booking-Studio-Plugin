@@ -54,6 +54,8 @@ final class Admin {
 		'upload_proof'        => Cap::PAYMENTS,
 		'confirm'             => Cap::BOOKINGS,
 		'invite_without_deposit' => Cap::BOOKINGS,
+		'courtesy'            => Cap::BOOKINGS,
+		'remove_courtesy'     => Cap::BOOKINGS,
 		'duplicate_service'   => Cap::SETTINGS,
 		'service_status'      => Cap::SETTINGS,
 		'delete_service'      => Cap::SETTINGS,
@@ -503,6 +505,16 @@ final class Admin {
 				\MOBookingStudio\Application\Contracts::setArchived( (int) $p['contract_id'], 'archive_contract' === $do );
 				Ui::flash( 'success', 'archive_contract' === $do ? 'Plantilla archivada.' : 'Plantilla restaurada.' );
 				return Ui::url( 'mo-booking-contracts' );
+
+			case 'courtesy':
+				Bookings::markCourtesy( $bookingId, (string) ( $p['reason'] ?? '' ), (int) ( $p['version'] ?? 0 ) );
+				Ui::flash( 'success', 'Reserva marcada como cortesía: confirmada sin costo y sin avisos a la clienta.' );
+				return $bookingUrl;
+
+			case 'remove_courtesy':
+				Bookings::removeCourtesy( $bookingId, (int) ( $p['version'] ?? 0 ) );
+				Ui::flash( 'success', 'Se quitó la cortesía; volvió el precio original.' );
+				return $bookingUrl;
 
 			case 'invite_without_deposit':
 				Bookings::inviteWithoutDeposit( $bookingId, (string) ( $p['reason'] ?? '' ) );

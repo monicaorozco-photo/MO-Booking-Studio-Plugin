@@ -72,6 +72,7 @@
 }
 
 /* beta.3: listas estilo WordPress, papelera, fusión. */
+.mo-pill--courtesy { background: #f4ece3; border-color: #c5b6a5; color: #654528; }
 .mo-pill--auto { background: #e7f7f4; border-color: #46b4a3; color: #0b5348; white-space: normal; }
 .mo-card--danger { border-left: 4px solid #d63638; }
 .mo-admin .mo-list-form .tablenav .actions { padding-bottom: 6px; }

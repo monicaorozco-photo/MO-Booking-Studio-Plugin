@@ -239,7 +239,7 @@ final class BookingsTable extends BaseTable {
 			case 'start':
 				return esc_html( Ui::localDateTime( $b['start_utc'], 'D d/m/Y H:i' ) );
 			case 'status':
-				return Ui::statusPill( $b['status'] ) . ( 'open' === $b['conflict_state'] ? ' <span class="mo-pill mo-pill--review">Empalme</span>' : '' );
+				return Ui::statusPill( $b['status'] ) . ( Bookings::isCourtesy( $b ) ? ' <span class="mo-pill mo-pill--courtesy">Cortesía</span>' : '' ) . ( 'open' === $b['conflict_state'] ? ' <span class="mo-pill mo-pill--review">Empalme</span>' : '' );
 			case 'deposit':
 				return Ui::financialPill( $summary['status'] );
 			case 'total':

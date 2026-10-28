@@ -151,7 +151,7 @@ final class Portal {
 				},
 				(array) ( $booking['quote']['lines'] ?? array() )
 			),
-			'price_rows'      => Catalog::priceRows( array_merge( array( 'base_cents' => 0, 'discount_cents' => 0 ), (array) $booking['quote'] ) ),
+			'price_rows'      => self::priceRows( $booking ),
 			'total_txt'       => Money::format( $booking['total_cents'] ),
 			'deposit_txt'     => Money::format( $booking['deposit_cents'] ),
 			'paid_txt'        => Money::format( max( 0, $summary['applied_cents'] ) ),
@@ -185,6 +185,16 @@ final class Portal {
 			'children'        => $booking['children'],
 			'adults'          => $booking['adults'],
 		);
+	}
+
+	/** Renglones del precio; una cortesía muestra el precio original y "Cortesía" hasta $0. */
+	private static function priceRows( array $booking ): array {
+		$rows = Catalog::priceRows( array_merge( array( 'base_cents' => 0, 'discount_cents' => 0 ), (array) $booking['quote'] ) );
+		if ( Bookings::isCourtesy( $booking ) ) {
+			$before = (int) $booking['quote']['courtesy']['total_before'];
+			$rows[] = array( 'kind' => 'discount', 'label' => 'Cortesía', 'amount' => -$before, 'amount_txt' => '−' . Money::format( $before ) );
+		}
+		return $rows;
 	}
 
 	/** Dirección para que la persona vea su propio comprobante (requiere la sesión del enlace privado). */

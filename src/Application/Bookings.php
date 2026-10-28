@@ -182,6 +182,10 @@ final class Bookings {
 		if ( BookingStatus::CONFIRMED !== $booking['status'] ) {
 			return false;
 		}
+		// beta.6: una cortesía no avisa a nadie; la invitación solo con la acción explícita.
+		if ( self::isCourtesy( $booking ) ) {
+			return ! empty( $booking['invite_override'] );
+		}
 		if ( 0 === (int) $booking['deposit_cents'] || ! empty( $booking['invite_override'] ) ) {
 			return true;
 		}
@@ -205,6 +209,86 @@ final class Bookings {
 				}
 				self::update( $booking, array( 'invite_override' => 1 ) );
 				Audit::log( 'booking', $bookingId, 'invite_without_deposit', array( 'reason' => $reason ) );
+			}
+		);
+		return self::get( $bookingId );
+	}
+
+	// ----- Cortesía (beta.6) -----
+
+	public static function isCourtesy( array $booking ): bool {
+		return ! empty( $booking['quote']['courtesy'] );
+	}
+
+	/**
+	 * Cortesía (familiares, clientas que no pagarán): la cita queda confirmada con total y
+	 * anticipo en $0, sin avisos a la clienta ni invitación de Google. El precio original se
+	 * guarda para poder deshacerla. No se permite si ya hay pagos registrados.
+	 */
+	public static function markCourtesy( int $bookingId, string $reason, int $expectedVersion ): array {
+		$reason = trim( sanitize_textarea_field( $reason ) );
+		Db::transaction(
+			static function () use ( $bookingId, $reason, $expectedVersion ) {
+				$booking = self::get( $bookingId, true );
+				self::assertVersion( $booking, $expectedVersion );
+				if ( self::isCourtesy( $booking ) ) {
+					return;
+				}
+				if ( ! in_array( $booking['status'], array_merge( BookingStatus::awaitingPayment(), array( BookingStatus::CONFIRMED ) ), true ) ) {
+					throw new DomainException( 'invalid_transition', 'Solo se puede marcar como cortesía una reserva vigente.', 409 );
+				}
+				if ( self::summary( $booking )['applied_cents'] > 0 ) {
+					throw new DomainException( 'courtesy_has_payments', 'Esta reserva ya tiene pagos registrados. Elimina o devuelve esos pagos antes de marcarla como cortesía.', 409 );
+				}
+				$quote             = $booking['quote'];
+				$quote['courtesy'] = array(
+					'at'             => Db::toSql( Plugin::clock()->now() ),
+					'by'             => get_current_user_id(),
+					'reason'         => $reason,
+					'total_before'   => (int) $booking['total_cents'],
+					'deposit_before' => (int) $booking['deposit_cents'],
+				);
+				$fields = array(
+					'total_cents'      => 0,
+					'deposit_cents'    => 0,
+					'quote'            => Db::json( $quote ),
+					'expires_at'       => null,
+					'correction_until' => null,
+				);
+				if ( BookingStatus::CONFIRMED === $booking['status'] ) {
+					self::update( $booking, $fields );
+				} else {
+					self::transition( $booking, BookingStatus::CONFIRMED, 'Cortesía.', $fields );
+				}
+				self::holdIndefinitely( $bookingId );
+				Audit::log( 'booking', $bookingId, 'courtesy', array( 'reason' => $reason, 'total_before' => (int) $booking['total_cents'] ) );
+			}
+		);
+		return self::get( $bookingId );
+	}
+
+	/** Deshace la cortesía: regresa el precio y el anticipo originales (la cita sigue confirmada). */
+	public static function removeCourtesy( int $bookingId, int $expectedVersion ): array {
+		Db::transaction(
+			static function () use ( $bookingId, $expectedVersion ) {
+				$booking = self::get( $bookingId, true );
+				self::assertVersion( $booking, $expectedVersion );
+				if ( ! self::isCourtesy( $booking ) ) {
+					return;
+				}
+				$quote  = $booking['quote'];
+				$before = $quote['courtesy'];
+				unset( $quote['courtesy'] );
+				$quote['courtesy_removed'] = array( 'at' => Db::toSql( Plugin::clock()->now() ), 'by' => get_current_user_id() );
+				self::update(
+					$booking,
+					array(
+						'total_cents'   => (int) $before['total_before'],
+						'deposit_cents' => (int) $before['deposit_before'],
+						'quote'         => Db::json( $quote ),
+					)
+				);
+				Audit::log( 'booking', $bookingId, 'courtesy_removed', array( 'total' => (int) $before['total_before'] ) );
 			}
 		);
 		return self::get( $bookingId );

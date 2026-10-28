@@ -62,7 +62,7 @@ final class BookingsPage {
 			echo '<div class="notice notice-warning"><p>Esta reserva está en la <strong>papelera</strong>. ' . Ui::formOpen( 'restore_booking_trash', $hidden, 'mo-inline-form' ) . Ui::button( 'Restaurar', 'button-secondary' ) . '</form></p>' . // phpcs:ignore WordPress.Security.EscapeOutput
 				Ui::formOpen( 'purge_booking', $hidden ) . '<p>Eliminar definitivamente borra la reserva con sus pagos, comprobantes (archivos incluidos), copia del contrato, enlace privado, mensajes y eventos propios de Google. La bitácora conserva un registro sin datos personales.</p><p><label>Escribe <strong>ELIMINAR</strong> para confirmar ' . Ui::input( 'confirm_text', '', 'text', array( 'autocomplete' => 'off', 'required' => 'required', 'class' => 'small-text' ) ) . '</label> ' . Ui::button( 'Eliminar definitivamente', 'button-link-delete', '¿Eliminar la reserva y todo lo que depende de ella? No se puede deshacer.' ) . '</p></form></div>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		}
-		echo '<p class="mo-detail-status">' . Ui::statusPill( $b['status'] ) . ' ' . Ui::financialPill( $summary['status'] ) . ( $b['is_test'] ? ' <span class="mo-pill mo-pill--test">PRUEBA</span>' : '' ) . ' · versión ' . (int) $b['version'] . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<p class="mo-detail-status">' . Ui::statusPill( $b['status'] ) . ' ' . Ui::financialPill( $summary['status'] ) . ( Bookings::isCourtesy( $b ) ? ' <span class="mo-pill mo-pill--courtesy">Cortesía</span>' : '' ) . ( $b['is_test'] ? ' <span class="mo-pill mo-pill--test">PRUEBA</span>' : '' ) . ' · versión ' . (int) $b['version'] . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput
 
 		echo '<div class="mo-grid mo-grid--2">';
 
@@ -301,10 +301,20 @@ final class BookingsPage {
 			$reasons = array( '' => 'Elige el motivo que verá la persona' ) + Settings::reviewReasons();
 			$html   .= '<details class="mo-details"><summary>Rechazar solicitud</summary>' . Ui::formOpen( 'reject', $hidden ) . Ui::select( 'reason_key', $reasons, '', array( 'required' => 'required', 'aria-label' => 'Motivo' ) ) . ' ' . Ui::input( 'internal_note', '', 'text', array( 'placeholder' => 'Nota interna (opcional)', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Rechazar y liberar horario', 'button-link-delete', '¿Rechazar la solicitud?' ) . '</form></details>';
 		}
+		// beta.6: cortesía (familiares o clientas que no pagarán), solo desde el panel y sin avisos.
+		if ( Bookings::isCourtesy( $b ) ) {
+			$c     = $b['quote']['courtesy'];
+			$html .= '<div class="mo-preview"><p><span class="mo-pill mo-pill--courtesy">Cortesía</span> Sin costo para la clienta (precio original ' . Ui::money( (int) $c['total_before'] ) . ')' . ( '' !== (string) $c['reason'] ? ': ' . esc_html( $c['reason'] ) : '' ) . '. No cuenta como ingreso y no se le envió ningún aviso.</p>' .
+				Ui::formOpen( 'remove_courtesy', $hiddenV ) . Ui::button( 'Quitar cortesía', 'button-secondary', '¿Quitar la cortesía? Vuelve el precio original (' . Money::format( (int) $c['total_before'] ) . ') y el anticipo quedará pendiente.' ) . '</form></div>';
+		} elseif ( in_array( $s, array_merge( BookingStatus::awaitingPayment(), array( BookingStatus::CONFIRMED ) ), true ) && $summary['applied_cents'] <= 0 ) {
+			$html .= '<details class="mo-details"><summary>Marcar como cortesía</summary><p class="description">Para familiares o clientas que no pagarán: la cita queda confirmada con total de $0, no cuenta como ingreso y la clienta no recibe ningún aviso. Se puede deshacer.</p>' .
+				Ui::formOpen( 'courtesy', $hiddenV ) . Ui::input( 'reason', '', 'text', array( 'placeholder' => 'Nota (opcional), por ejemplo: mi hermana', 'class' => 'regular-text' ) ) . ' ' .
+				Ui::button( 'Marcar como cortesía', 'button-secondary', '¿Marcar esta reserva como cortesía? Quedará confirmada sin costo y sin avisar a la clienta.' ) . '</form></details>';
+		}
 		if ( BookingStatus::CONFIRMED === $s ) {
 			$html .= Ui::formOpen( 'complete', $hidden, 'mo-action mo-inline-form' ) . Ui::button( 'Marcar sesión completada' ) . '</form> ';
 			if ( ! Bookings::inviteAllowed( $b ) ) {
-				$html .= '<div class="mo-preview"><p><strong>Sin invitación de Google:</strong> la cita se confirmó sin anticipo cubierto.</p>' .
+				$html .= '<div class="mo-preview"><p><strong>Sin invitación de Google:</strong> ' . ( Bookings::isCourtesy( $b ) ? 'es una cortesía (no se avisa a la clienta).' : 'la cita se confirmó sin anticipo cubierto.' ) . '</p>' .
 					Ui::formOpen( 'invite_without_deposit', $hidden ) . Ui::input( 'reason', '', 'text', array( 'placeholder' => 'Motivo (obligatorio)', 'class' => 'regular-text', 'required' => 'required' ) ) . ' ' .
 					Ui::button( 'Invitar al cliente sin anticipo', 'button-secondary', '¿Enviar la invitación de Google aunque el anticipo no esté cubierto? Quedará registrado.' ) . '</form></div>';
 			}

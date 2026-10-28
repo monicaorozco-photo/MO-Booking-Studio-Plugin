@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
   await Promise.all([p.waitForNavigation({timeout:90000}), p.click('#wp-submit')]);
   await p.goto('http://localhost:8089/wp-admin/admin.php?page=mo-booking-bookings&booking=' + process.argv[2]);
   let wa = null;
-  ctx.on('response', r => { const loc = r.headers()['location']; if (loc && /wa\.me/.test(loc)) { wa = loc; } });
+  ctx.on('response', r => { const loc = r.headers()['location']; if (loc && /whatsapp\.com\/send/.test(loc)) { wa = loc; } });
   await p.selectOption('select[name=event]', 'booking_confirmed');
   const [popup] = await Promise.all([ctx.waitForEvent('page'), p.click('button:has-text("Abrir WhatsApp")')]);
   await popup.waitForTimeout(3000);

@@ -15,7 +15,7 @@ Plugin de WordPress para reservas y administración de un estudio fotográfico: 
 ## Instalación
 
 1. Haz un respaldo del sitio con UpdraftPlus. De preferencia, prueba primero en una copia (staging).
-2. En WordPress ve a *Plugins → Añadir nuevo → Subir plugin* y sube `mo-booking-studio-0.2.0-beta.5.zip`.
+2. En WordPress ve a *Plugins → Añadir nuevo → Subir plugin* y sube `mo-booking-studio-0.2.0-beta.5.1.zip`.
 3. Activa el plugin. Aparece el menú **Reservas**.
 
 El plugin se instala **vacío**. No crea servicios, horarios ni precios y no modifica la zona horaria general del sitio, otros plugins ni los formularios de Gravity Forms.

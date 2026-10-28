@@ -1,5 +1,10 @@
 # Cambios
 
+## 0.2.0-beta.5.1 — 28 de octubre de 2026
+
+- WhatsApp: los emojis ya no se pierden. Los enlaces usan api.whatsapp.com en lugar de wa.me (que en computadora los convertía en "�"), y si la base de datos del hosting no admite emojis se guardan de forma segura y se recuperan al enviar.
+- Ajustes → "Abrir mis mensajes en": la aplicación de WhatsApp o WhatsApp Web (para enviar desde tu cuenta de WhatsApp Business en la computadora).
+
 ## 0.2.0-beta.5 — 27 de octubre de 2026 (rediseño)
 
 Solo apariencia; sin cambios de base de datos (esquema 4). Guía: `docs/entrega-beta5.md`.

@@ -62,7 +62,31 @@ final class Contact {
 		return null;
 	}
 
-	/** Número para enlaces wa.me: solo dígitos. */
+	/**
+	 * Enlace de WhatsApp con mensaje listo. Se usa api.whatsapp.com/send y no wa.me: al
+	 * pasar por wa.me en computadora los emojis llegaban como "�". Con $web abre WhatsApp
+	 * Web, con la cuenta que esté abierta en el navegador (por ejemplo, WhatsApp Business).
+	 */
+	public static function whatsappLink( string $digits, string $text, bool $web = false ): string {
+		return ( $web ? 'https://web.whatsapp.com/send' : 'https://api.whatsapp.com/send' ) . '?phone=' . rawurlencode( ltrim( $digits, '+' ) ) . '&text=' . rawurlencode( self::decodeEmoji( $text ) );
+	}
+
+	/**
+	 * Emojis guardados como &#x1f384; (bases de datos sin utf8mb4) vuelven a ser emojis.
+	 * Solo toca entidades numéricas; el resto del texto queda igual.
+	 */
+	public static function decodeEmoji( string $text ): string {
+		return (string) preg_replace_callback(
+			'/&#(x[0-9a-f]+|[0-9]+);/i',
+			static function ( $m ) {
+				$code = 'x' === strtolower( $m[1][0] ) ? hexdec( substr( $m[1], 1 ) ) : (int) $m[1];
+				return $code > 0 && $code <= 0x10FFFF ? html_entity_decode( '&#' . $code . ';', ENT_QUOTES | ENT_HTML5, 'UTF-8' ) : $m[0];
+			},
+			$text
+		);
+	}
+
+	/** Número para enlaces de WhatsApp: solo dígitos. */
 	public static function whatsappDigits( ?string $e164 ): ?string {
 		if ( ! $e164 ) {
 			return null;

@@ -183,7 +183,7 @@ final class Notifications {
 		$subject = sanitize_text_field( (string) ( $data['subject'] ?? '' ) );
 		$raw     = (string) ( $data['body'] ?? '' );
 		// WhatsApp es texto: si se escribió en el editor con formato, se convierte (negritas → *texto*).
-		$body    = 'email' === $channel ? self::cleanBody( $raw ) : sanitize_textarea_field( self::isHtml( $raw ) ? self::htmlToText( self::cleanBody( $raw ), true ) : $raw );
+		$body    = 'email' === $channel ? self::cleanBody( $raw ) : self::emojiSafe( sanitize_textarea_field( self::isHtml( $raw ) ? self::htmlToText( self::cleanBody( $raw ), true ) : $raw ) );
 		if ( '' === $name ) {
 			throw new \MOBookingStudio\Domain\DomainException( 'invalid_template', 'Ponle un nombre a la plantilla.', 400, array( 'field' => 'name' ) );
 		}
@@ -343,7 +343,7 @@ final class Notifications {
 				'subject'  => sanitize_text_field( (string) ( $t['subject'] ?? $default['subject'] ) ),
 				'body'     => self::cleanBody( (string) ( $t['body'] ?? $default['body'] ) ),
 				'admin'    => sanitize_textarea_field( (string) ( $t['admin'] ?? $default['admin'] ) ),
-				'whatsapp' => sanitize_textarea_field( (string) ( $t['whatsapp'] ?? '' ) ),
+				'whatsapp' => self::emojiSafe( sanitize_textarea_field( (string) ( $t['whatsapp'] ?? '' ) ) ),
 			);
 			$unknown = array_merge( $unknown, self::unknownCodes( implode( "\n", array( $clean[ $event ]['subject'], $clean[ $event ]['body'], $clean[ $event ]['admin'], $clean[ $event ]['whatsapp'] ) ) ) );
 		}
@@ -707,11 +707,20 @@ final class Notifications {
 
 	// ----- WhatsApp manual -----
 
+	/**
+	 * Si la base de datos no admite emojis (utf8 sin "mb4", común en hostings antiguos),
+	 * se borrarían al guardar: se guardan como &#x1f384; y vuelven a ser emojis al enviar.
+	 */
+	public static function emojiSafe( string $text ): string {
+		global $wpdb;
+		return 'utf8mb4' === ( $wpdb->charset ?? '' ) ? $text : wp_encode_emoji( $text );
+	}
+
 	public static function whatsappText( array $booking, string $event ): string {
 		$tpl  = self::templates()[ $event ] ?? self::customFor( $event ) ?? self::templates()['booking_created'];
 		$vars = self::varsFor( $booking );
 		if ( '' !== trim( (string) ( $tpl['whatsapp'] ?? '' ) ) ) {
-			return self::render( (string) $tpl['whatsapp'], $vars );
+			return Contact::decodeEmoji( self::render( (string) $tpl['whatsapp'], $vars ) );
 		}
 		// Sin texto propio: el del correo, con negritas y cursivas al estilo de WhatsApp.
 		return self::isHtml( (string) $tpl['body'] ) ? self::htmlToText( self::renderHtml( (string) $tpl['body'], $vars ), true ) : self::render( (string) $tpl['body'], $vars );
@@ -740,7 +749,7 @@ final class Notifications {
 		if ( ! $digits ) {
 			return null;
 		}
-		return 'https://wa.me/' . $digits . '?text=' . rawurlencode( self::whatsappText( $booking, $event ) );
+		return Contact::whatsappLink( $digits, self::whatsappText( $booking, $event ), 'web' === Settings::get( 'whatsapp_open' ) );
 	}
 
 	public static function logManualWhatsapp( array $booking, string $event, string $status ): void {

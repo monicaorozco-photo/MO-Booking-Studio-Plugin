@@ -129,5 +129,12 @@ final class Beta4Test extends IntegrationTestCase {
 		$url = Notifications::whatsappUrl( $booking, 'booking_created' );
 		$this->assertStringContainsString( '%0A', $url, 'El salto de línea va codificado en el enlace.' );
 		$this->assertStringContainsString( rawurlencode( '👋' ), $url );
+		// beta.5: api.whatsapp.com conserva los emojis (wa.me los perdía en computadora).
+		$this->assertStringStartsWith( 'https://api.whatsapp.com/send?phone=', $url );
+		// Base de datos sin utf8mb4: el emoji se guarda como entidad y vuelve a ser emoji al enviar.
+		$this->assertSame( "Hola 🎄\nAdiós", \MOBookingStudio\Domain\Contact::decodeEmoji( "Hola &#x1f384;\nAdiós" ) );
+		$this->assertStringContainsString( rawurlencode( '🎄' ), \MOBookingStudio\Domain\Contact::whatsappLink( '526560000000', 'Hola &#x1f384;' ) );
+		Settings::update( array( 'whatsapp_open' => 'web' ) );
+		$this->assertStringStartsWith( 'https://web.whatsapp.com/send?phone=', Notifications::whatsappUrl( $booking, 'booking_created' ), 'Opción para abrir en WhatsApp Web (cuenta Business).' );
 	}
 }

@@ -175,11 +175,11 @@ final class Portal {
 			'proof_whatsapp_label' => (string) Settings::get( 'whatsapp_proof_button' ),
 			'max_mb'          => (float) Settings::get( 'proof_max_mb' ),
 			'policies'        => $policies,
-			'whatsapp_url'    => $waNumber ? 'https://wa.me/' . ltrim( $waNumber, '+' ) . '?text=' . rawurlencode( 'Hola, tengo una pregunta sobre mi reserva ' . $booking['public_ref'] ) : null,
+			'whatsapp_url'    => $waNumber ? Contact::whatsappLink( $waNumber, 'Hola, tengo una pregunta sobre mi reserva ' . $booking['public_ref'] ) : null,
 			// 8.1: texto editable junto a la carga del comprobante.
 			'proof_text'      => str_replace( '{whatsapp}', (string) Settings::get( 'whatsapp_number' ), (string) Settings::get( 'portal_proof_text' ) ),
 			// 16.1: durante la preventa, cambios y cancelaciones se piden por WhatsApp.
-			'change_url'      => $waNumber && BookingStatus::isOpen( $status ) ? 'https://wa.me/' . ltrim( $waNumber, '+' ) . '?text=' . rawurlencode( 'Hola, quiero hacer un cambio o cancelar mi reserva ' . $booking['public_ref'] ) : null,
+			'change_url'      => $waNumber && BookingStatus::isOpen( $status ) ? Contact::whatsappLink( $waNumber, 'Hola, quiero hacer un cambio o cancelar mi reserva ' . $booking['public_ref'] ) : null,
 			// beta.3: página para imprimir o guardar como PDF (contrato exacto y datos de la sesión).
 			'print_url'       => \MOBookingStudio\Frontend\PrintView::url(),
 			'children'        => $booking['children'],

@@ -40,6 +40,7 @@ final class SettingsPage {
 		$body .= Ui::row( 'Remitente (correo)', Ui::input( 'email_from', $s['email_from'], 'email', array( 'class' => 'regular-text' ) ), 'Debe estar autorizado en tu transporte de correo. Vacío = el del sitio.', 'email_from' );
 		$body .= Ui::row( 'Recordatorio (horas antes)', Ui::input( 'reminder_hours', $s['reminder_hours'], 'number', array( 'min' => 0 ) ), '0 = sin recordatorio. Propuesta: 48.', 'reminder_hours' );
 		$body .= Ui::row( 'WhatsApp', Ui::select( 'whatsapp_mode', array( 'off' => 'Desactivado', 'manual' => 'Manual (abrir chat con el texto listo)', 'automatic' => 'Automático (pendiente de conectar proveedor oficial)' ), $s['whatsapp_mode'] ), 'El modo automático aún no envía: requiere un proveedor oficial de WhatsApp Business, plantillas aprobadas y credenciales.', 'whatsapp_mode' );
+		$body .= Ui::row( 'Abrir mis mensajes en', Ui::select( 'whatsapp_open', array( 'app' => 'La aplicación de WhatsApp de este dispositivo', 'web' => 'WhatsApp Web (la cuenta abierta en el navegador)' ), $s['whatsapp_open'] ), 'Para enviar desde WhatsApp Business en la computadora: elige WhatsApp Web y entra a web.whatsapp.com con tu cuenta Business en el mismo navegador.', 'whatsapp_open' );
 		$body .= Ui::row( 'Número de WhatsApp del negocio', Ui::input( 'whatsapp_number', $s['whatsapp_number'], 'tel' ), 'Tu número (no el de la clienta). Lo usan los botones de WhatsApp del enlace privado: enviar comprobante, preguntas y cambios.', 'whatsapp_number' );
 		$body .= Ui::row( 'Texto de horario ocupado', Ui::input( 'slot_taken_label', $s['slot_taken_label'], 'text', array( 'class' => 'regular-text' ) ), 'Aparece en los horarios ya apartados del calendario. Ejemplo: No disponible, Ocupado.', 'slot_taken_label' );
 		$body .= Ui::row( 'Desglose: Precio de referencia', Ui::input( 'label_price_reference', $s['label_price_reference'], 'text', array( 'class' => 'regular-text' ) ), 'En el resumen de precio (con tabla por temporada): el precio más alto de la tabla aparece tachado y luego cada descuento.', 'label_price_reference' );
@@ -159,6 +160,7 @@ final class SettingsPage {
 				'email_from'          => $from,
 				'reminder_hours'      => $num( 'reminder_hours', 0, 720 ),
 				'whatsapp_mode'       => in_array( $p['whatsapp_mode'] ?? '', array( 'off', 'manual', 'automatic' ), true ) ? $p['whatsapp_mode'] : 'manual',
+				'whatsapp_open'       => 'web' === ( $p['whatsapp_open'] ?? '' ) ? 'web' : 'app',
 				'whatsapp_number'     => sanitize_text_field( (string) ( $p['whatsapp_number'] ?? '' ) ),
 				'portal_proof_text'   => sanitize_textarea_field( (string) ( $p['portal_proof_text'] ?? '' ) ),
 				'whatsapp_proof_button'  => sanitize_text_field( (string) ( $p['whatsapp_proof_button'] ?? '' ) ),

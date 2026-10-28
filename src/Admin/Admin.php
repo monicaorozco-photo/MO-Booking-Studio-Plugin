@@ -765,10 +765,10 @@ final class Admin {
 	/**
 	 * beta.4: wp_redirect() quita los saltos de línea codificados (%0A) de la dirección por
 	 * seguridad, y el mensaje llegaba amontonado. La dirección ya viene codificada (sin
-	 * saltos reales) y solo puede ser de wa.me, así que se envía tal cual.
+	 * saltos reales) y solo puede ser de WhatsApp, así que se envía tal cual.
 	 */
 	private static function redirectToWhatsapp( string $url ): void {
-		if ( 0 !== strpos( $url, 'https://wa.me/' ) || preg_match( '/[\r\n]/', $url ) ) {
+		if ( ! preg_match( '#^https://(api|web)\.whatsapp\.com/send\?#', $url ) || preg_match( '/[\r\n]/', $url ) ) {
 			wp_die( 'Dirección de WhatsApp no válida.', '', array( 'response' => 400 ) );
 		}
 		nocache_headers();

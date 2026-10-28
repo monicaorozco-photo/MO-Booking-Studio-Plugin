@@ -51,6 +51,8 @@ final class Settings {
 			'label_price_discounted'   => 'Precio con descuento',
 			// beta.4: textos del formulario público.
 			'slot_taken_label'          => 'No disponible',
+			// Mensajes que tú envías desde el panel: app de WhatsApp o WhatsApp Web.
+			'whatsapp_open'             => 'app',
 			'contract_notice'           => 'Antes de continuar, lee con calma el contrato completo. Ahí explicamos qué incluye tu sesión y cómo funcionan el anticipo, los cambios de fecha y las cancelaciones. Al aceptarlo confirmas que estás de acuerdo con todo lo que dice.',
 			'whatsapp_consent_text'     => 'Acepto recibir por WhatsApp y por correo los avisos de mi reserva',
 			'whatsapp_consent_required' => true,
@@ -61,7 +63,7 @@ final class Settings {
 	}
 
 	/**
-	 * Enlace wa.me al WhatsApp del negocio con el mensaje del comprobante ({nombre} y
+	 * Enlace al WhatsApp del negocio con el mensaje del comprobante ({nombre} y
 	 * {referencia} se reemplazan). Null si no hay número válido.
 	 */
 	public static function proofWhatsappUrl( string $name, string $reference ): ?string {
@@ -70,7 +72,7 @@ final class Settings {
 			return null;
 		}
 		$text = strtr( (string) self::get( 'whatsapp_proof_message' ), array( '{nombre}' => $name, '{referencia}' => $reference ) );
-		return 'https://wa.me/' . ltrim( $number, '+' ) . '?text=' . rawurlencode( $text );
+		return \MOBookingStudio\Domain\Contact::whatsappLink( $number, $text );
 	}
 
 	public static function all(): array {

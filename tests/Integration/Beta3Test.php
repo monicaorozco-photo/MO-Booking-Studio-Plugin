@@ -283,8 +283,8 @@ final class Beta3Test extends IntegrationTestCase {
 		$booking = $this->book( $service, self::NOV20 )['booking'];
 		$view    = Portal::view( Bookings::get( $booking['id'] ) );
 		$this->assertFalse( $view['can_upload'] );
-		$this->assertStringStartsWith( 'https://wa.me/526561230000?text=', $view['proof_whatsapp_url'], 'Al número del negocio, no al de la clienta.' );
-		$text = rawurldecode( substr( $view['proof_whatsapp_url'], strpos( $view['proof_whatsapp_url'], '=' ) + 1 ) );
+		$this->assertStringStartsWith( 'https://api.whatsapp.com/send?phone=526561230000&text=', $view['proof_whatsapp_url'], 'Al número del negocio, no al de la clienta.' );
+		$text = rawurldecode( substr( $view['proof_whatsapp_url'], strpos( $view['proof_whatsapp_url'], '&text=' ) + 6 ) );
 		$this->assertSame( 'Hola! Hago el envío de mi comprobante de anticipo a nombre de Ana Prueba con número de reserva ' . $booking['public_ref'], $text );
 		$this->assertSame( 'Da clic en este botón para enviar tu comprobante por WhatsApp', $view['proof_whatsapp_label'] );
 		Settings::update( array( 'whatsapp_proof_message' => 'Comprobante de {nombre} ({referencia})' ) );

@@ -80,7 +80,7 @@ const noPhp = async (page, l) => ok(!/(Fatal error|Warning:|Notice:|Deprecated:|
     await c2.goto(portal2);
     await c2.waitForSelector('.mo-booking__whatsapp');
     const href = await c2.getAttribute('.mo-booking__whatsapp', 'href');
-    ok(href.indexOf('https://wa.me/526561002000?text=') === 0 && /Hola%21%20Hago%20el%20env/.test(href) && /Sof%C3%ADa%20Portal/.test(href), 'Botón al WhatsApp del negocio con mensaje', decodeURIComponent(href));
+    ok(href.indexOf('https://api.whatsapp.com/send?phone=526561002000&text=') === 0 && /Hola%21%20Hago%20el%20env/.test(href) && /Sof%C3%ADa%20Portal/.test(href), 'Botón al WhatsApp del negocio con mensaje', decodeURIComponent(href));
     ok(/Da clic en este botón/.test(await c2.locator('.mo-booking__whatsapp').innerText()), 'Texto del botón');
     await c2.screenshot({ path: SHOTS + '/b5-whatsapp.png', fullPage: true });
   } finally {

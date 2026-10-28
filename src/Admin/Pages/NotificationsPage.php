@@ -61,7 +61,12 @@ final class NotificationsPage {
 
 		// Registro.
 		$status = isset( $g['status'] ) ? sanitize_key( $g['status'] ) : null;
-		$list   = Notifications::recent( 100, $status ?: null );
+		// beta.6: registro paginado (25 por página).
+		$perPage = 25;
+		$total   = Notifications::countRecent( $status ?: null );
+		$pages   = max( 1, (int) ceil( $total / $perPage ) );
+		$paged   = min( $pages, max( 1, (int) ( $g['pagina'] ?? 1 ) ) );
+		$list    = Notifications::recent( $perPage, $status ?: null, ( $paged - 1 ) * $perPage );
 		$body   = '<p><a href="' . esc_url( Ui::url( 'mo-booking-notifications' ) ) . '">Todos</a> · <a href="' . esc_url( Ui::url( 'mo-booking-notifications', array( 'status' => 'failed' ) ) ) . '">Fallidos</a> · <a href="' . esc_url( Ui::url( 'mo-booking-notifications', array( 'status' => 'pending' ) ) ) . '">Pendientes</a></p>';
 		if ( $list ) {
 			$body .= '<table class="widefat striped mo-table"><thead><tr><th>Fecha</th><th>Mensaje</th><th>Destinatario</th><th>Canal</th><th>Estado</th><th></th></tr></thead><tbody>';
@@ -70,6 +75,19 @@ final class NotificationsPage {
 					( 'failed' === $n['status'] ? Ui::formOpen( 'retry_notification', array( 'notification_id' => $n['id'] ), 'mo-inline-form' ) . Ui::button( 'Reintentar', 'button-link' ) . '</form>' : '' ) . '</td></tr>';
 			}
 			$body .= '</tbody></table>';
+			if ( $pages > 1 ) {
+				$links = paginate_links(
+					array(
+						'base'      => add_query_arg( 'pagina', '%#%', Ui::url( 'mo-booking-notifications', $status ? array( 'status' => $status ) : array() ) ),
+						'format'    => '',
+						'current'   => $paged,
+						'total'     => $pages,
+						'prev_text' => '‹ Anteriores',
+						'next_text' => 'Siguientes ›',
+					)
+				);
+				$body .= '<div class="tablenav"><div class="tablenav-pages mo-pagination"><span class="displaying-num">' . esc_html( sprintf( '%d mensajes · página %d de %d', $total, $paged, $pages ) ) . '</span> ' . $links . '</div></div>';
+			}
 		} else {
 			$body .= '<p>Sin mensajes.</p>';
 		}

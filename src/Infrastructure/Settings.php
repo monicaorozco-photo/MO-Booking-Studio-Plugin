@@ -53,6 +53,11 @@ final class Settings {
 			'slot_taken_label'          => 'No disponible',
 			// Mensajes que tú envías desde el panel: app de WhatsApp o WhatsApp Web.
 			'whatsapp_open'             => 'app',
+			// beta.6: cambio de fecha por la clienta (apagado hasta que lo actives).
+			'self_reschedule_enabled'   => false,
+			'self_reschedule_min_hours' => 36,
+			'self_reschedule_text'      => "Solo puedes cambiar la fecha de tu sesión UNA VEZ con mínimo 36 horas de anticipación, eligiendo cualquier horario disponible.\n\n- Tu precio se respeta: si reservaste en preventa, conservas tu precio de preventa.\n- Si la nueva fecha tiene otra tarifa, se ajusta la diferencia.\n- Tu anticipo pasa a la nueva fecha.\n- Después de usar tu cambio, para otra fecha es necesario cancelar esta reserva y reservar de nuevo con el precio vigente. El anticipo no es reembolsable.",
+			'self_reschedule_used_text' => 'Ya usaste tu cambio de fecha. Para otra fecha es necesario cancelar esta reserva y reservar de nuevo con el precio vigente.',
 			'contract_notice'           => 'Antes de continuar, lee con calma el contrato completo. Ahí explicamos qué incluye tu sesión y cómo funcionan el anticipo, los cambios de fecha y las cancelaciones. Al aceptarlo confirmas que estás de acuerdo con todo lo que dice.',
 			'whatsapp_consent_text'     => 'Acepto recibir por WhatsApp y por correo los avisos de mi reserva',
 			'whatsapp_consent_required' => true,

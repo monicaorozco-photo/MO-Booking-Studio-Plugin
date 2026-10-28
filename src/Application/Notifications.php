@@ -74,6 +74,7 @@ final class Notifications {
 			'booking_expired'       => array( 'label' => 'Retención vencida', 'to' => array( 'client' ) ),
 			'booking_cancelled'     => array( 'label' => 'Cancelación', 'to' => array( 'client' ) ),
 			'booking_rescheduled'   => array( 'label' => 'Cambio confirmado', 'to' => array( 'client' ) ),
+			'client_rescheduled'    => array( 'label' => 'La clienta cambió su fecha (aviso para ti)', 'to' => array( 'admin' ) ),
 			'reminder'              => array( 'label' => 'Recordatorio de la cita', 'to' => array( 'client' ) ),
 		);
 	}
@@ -140,6 +141,12 @@ final class Notifications {
 				'subject' => 'Tu cita cambió de fecha ({{referencia}})',
 				'body'    => "Hola {{nombre}}:\n\nTu cita para {{servicio}} ahora es el {{fecha}} a las {{hora}} ({{zona}}).\n\nSaldo pendiente: {{saldo}}\n\nConsulta el detalle:\n{{enlace}}" . $sign,
 				'admin'   => '',
+			),
+			'client_rescheduled'   => array(
+				'enabled' => true,
+				'subject' => 'Cambio de fecha {{referencia}}',
+				'body'    => '',
+				'admin'   => "{{nombre}} cambió su fecha desde su página de reserva ({{referencia}}).\nAntes: {{motivo}}\nAhora: {{fecha}} a las {{hora}}.\nTotal: {{total}} · Saldo: {{saldo}}",
 			),
 			'reminder'             => array(
 				'enabled' => true,

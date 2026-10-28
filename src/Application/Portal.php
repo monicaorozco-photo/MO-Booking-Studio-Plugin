@@ -182,6 +182,8 @@ final class Portal {
 			'change_url'      => $waNumber && BookingStatus::isOpen( $status ) ? Contact::whatsappLink( $waNumber, 'Hola, quiero hacer un cambio o cancelar mi reserva ' . $booking['public_ref'] ) : null,
 			// beta.3: página para imprimir o guardar como PDF (contrato exacto y datos de la sesión).
 			'print_url'       => \MOBookingStudio\Frontend\PrintView::url(),
+			// beta.6: cambio de fecha por la clienta (null = no se muestra).
+			'reschedule'      => SelfReschedule::status( $booking ),
 			'children'        => $booking['children'],
 			'adults'          => $booking['adults'],
 		);

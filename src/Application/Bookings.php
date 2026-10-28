@@ -1406,7 +1406,11 @@ final class Bookings {
 		return $outcome;
 	}
 
-	public static function reschedule( int $bookingId, \DateTimeImmutable $newStart, string $reason, int $expectedVersion ): array {
+	/**
+	 * @param bool $bySelf beta.6: cambio hecho por la clienta (solo uno por reserva; se cuenta
+	 *                     dentro de la misma transacción para que dos pestañas no lo usen dos veces).
+	 */
+	public static function reschedule( int $bookingId, \DateTimeImmutable $newStart, string $reason, int $expectedVersion, bool $bySelf = false ): array {
 		$reason = trim( sanitize_textarea_field( $reason ) );
 		if ( '' === $reason ) {
 			throw new DomainException( 'reason_required', 'Indica el motivo del cambio.' );
@@ -1414,11 +1418,14 @@ final class Bookings {
 		$now          = Plugin::clock()->now();
 		$externalBusy = Catalog::freshGoogleBusy( Services::get( self::get( $bookingId )['service_id'] ), $newStart );
 		Db::transaction(
-			static function () use ( $bookingId, $newStart, $reason, $expectedVersion, $now, $externalBusy ) {
+			static function () use ( $bookingId, $newStart, $reason, $expectedVersion, $now, $externalBusy, $bySelf ) {
 				$booking = self::get( $bookingId, true );
 				self::assertVersion( $booking, $expectedVersion );
 				if ( ! BookingStatus::isOpen( $booking['status'] ) ) {
 					throw new DomainException( 'invalid_transition', 'Solo se pueden reprogramar reservas activas.', 409 );
+				}
+				if ( $bySelf && (int) ( $booking['quote']['self_reschedules'] ?? 0 ) > 0 ) {
+					throw new DomainException( 'reschedule_unavailable', (string) Settings::get( 'self_reschedule_used_text' ), 409 );
 				}
 				$service  = Services::get( $booking['service_id'] );
 				$params   = Services::availabilityParams( $service );
@@ -1441,7 +1448,7 @@ final class Bookings {
 					'end_utc'       => Db::toSql( $outcome['slot']['end'] ),
 					'total_cents'   => $quote['total_cents'],
 					'deposit_cents' => (int) $outcome['new_deposit'],
-					'quote'         => Db::json( array_merge( $booking['quote'], $quote, array( 'previous' => $old ) ) ),
+					'quote'         => Db::json( array_merge( $booking['quote'], $quote, array( 'previous' => $old ), $bySelf ? array( 'self_reschedules' => (int) ( $booking['quote']['self_reschedules'] ?? 0 ) + 1 ) : array() ) ),
 				);
 				if ( $needsPayment ) {
 					$fields['expires_at']       = Db::toSql( $holdUntil );

@@ -308,6 +308,21 @@
 .mo-booking-portal > .mo-booking__contract { margin-bottom: 16px; }
 .mo-booking .mo-booking__copy, .mo-booking .mo-booking__copy:hover, .mo-booking .mo-booking__copy:focus { background: var(--mo-bg) !important; color: var(--mo-primary) !important; border-color: var(--mo-taupe) !important; }
 
+/* beta.6: cambio de fecha */
+.mo-booking.mo-booking__modal-wrap { position: fixed; inset: 0; z-index: 100000; display: flex; align-items: center; justify-content: center; max-width: none; margin: 0; padding: 16px; background: rgba(46, 32, 24, 0.45); container-type: normal; }
+.mo-booking__modal { width: 100%; max-width: 560px; max-height: calc(100vh - 32px); overflow: auto; padding: 26px; border-radius: var(--mo-radius); background: var(--mo-bg); box-shadow: 0 20px 60px rgba(46, 32, 24, 0.25); }
+.mo-booking__modal .mo-booking__actions { margin-bottom: 0; }
+.mo-booking__policy { font-size: 14.5px; }
+.mo-booking__policy ul { margin: 0 0 12px; padding-left: 1.2em; }
+.mo-booking__policy li { margin: 0 0 8px; }
+.mo-booking__reschedule .mo-booking__button { width: 100%; }
+.mo-booking__rs-preview .mo-booking__summary { margin-bottom: 10px; }
+@media (max-width: 560px) {
+	.mo-booking__modal { padding: 20px 16px; }
+	.mo-booking__modal .mo-booking__actions { flex-direction: column-reverse; }
+	.mo-booking__modal .mo-booking__actions .mo-booking__button { width: 100%; }
+}
+
 @container mo (min-width: 760px) {
 	.mo-booking:not(.mo-booking--stacked) .mo-booking__grid { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); }
 	.mo-booking__choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -57,6 +57,13 @@ final class SettingsPage {
 		$body .= Ui::row( 'Enlace privado vence (días después de la cita)', Ui::input( 'token_days_after', $s['token_days_after'], 'number', array( 'min' => 1 ) ), 'Propuesta: 90 días.', 'token_days_after' );
 		echo Ui::card( 'Comunicaciones', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
 
+		// beta.6: cambio de fecha por la clienta.
+		$body  = Ui::row( 'Activar', Ui::checkbox( 'self_reschedule_enabled', (bool) $s['self_reschedule_enabled'], 'Mostrar el botón "Cambiar fecha" en la página de reserva' ), 'Una sola vez por reserva. Recalcula el precio para la nueva fecha (conserva su tipo de cliente y su preventa), aplica la regla de cambio que aceptó al reservar, actualiza Google Calendar y te avisa. Si la nueva fecha cuesta más, la clienta acepta la diferencia antes de confirmar.' );
+		$body .= Ui::row( 'Anticipación mínima (horas)', Ui::input( 'self_reschedule_min_hours', $s['self_reschedule_min_hours'], 'number', array( 'min' => 0, 'step' => '0.5' ) ), 'Horas antes de la cita actual. Después de ese momento el botón ya no aparece.', 'self_reschedule_min_hours' );
+		$body .= Ui::row( 'Texto de la ventana (política)', Ui::textarea( 'self_reschedule_text', $s['self_reschedule_text'], 9 ), 'Aparece al dar clic en "Cambiar fecha", con los botones "Entendido, elegir nueva fecha" y "Cancelar". Los renglones que empiezan con "- " se muestran como lista.', 'self_reschedule_text' );
+		$body .= Ui::row( 'Aviso cuando ya usó su cambio', Ui::textarea( 'self_reschedule_used_text', $s['self_reschedule_used_text'], 3 ), '', 'self_reschedule_used_text' );
+		echo Ui::card( 'Cambio de fecha por la clienta', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
+
 		// 6.5: las condiciones viven ahora en Contratos; el texto anterior se conserva sin mostrarse.
 		$body  = Ui::row( 'Condiciones y contrato', '<a href="' . esc_url( Ui::url( 'mo-booking-contracts' ) ) . '">Editar en Contratos</a>' . Ui::input( 'terms_text', (string) $s['terms_text'], 'hidden' ), 'Las condiciones generales anteriores se copiaron a la versión 1 del contrato de cada servicio al actualizar.' );
 		$body .= Ui::row( 'URL del aviso de privacidad', Ui::input( 'privacy_url', $s['privacy_url'], 'url', array( 'class' => 'regular-text' ) ), '', 'privacy_url' );
@@ -173,6 +180,10 @@ final class SettingsPage {
 				'contract_notice'           => sanitize_textarea_field( (string) ( $p['contract_notice'] ?? '' ) ),
 				'whatsapp_consent_text'     => sanitize_text_field( (string) ( $p['whatsapp_consent_text'] ?? '' ) ),
 				'whatsapp_consent_required' => ! empty( $p['whatsapp_consent_required'] ),
+				'self_reschedule_enabled'   => ! empty( $p['self_reschedule_enabled'] ),
+				'self_reschedule_min_hours' => $num( 'self_reschedule_min_hours', 0, 720 ),
+				'self_reschedule_text'      => sanitize_textarea_field( (string) ( $p['self_reschedule_text'] ?? '' ) ) ?: Settings::defaults()['self_reschedule_text'],
+				'self_reschedule_used_text' => sanitize_textarea_field( (string) ( $p['self_reschedule_used_text'] ?? '' ) ) ?: Settings::defaults()['self_reschedule_used_text'],
 				'whatsapp_proof_message' => sanitize_textarea_field( (string) ( $p['whatsapp_proof_message'] ?? '' ) ),
 				'public_contact'      => sanitize_text_field( (string) ( $p['public_contact'] ?? '' ) ),
 				'token_days_after'    => (int) $num( 'token_days_after', 1, 3650 ),

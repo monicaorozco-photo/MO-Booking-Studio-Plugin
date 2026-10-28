@@ -55,6 +55,10 @@ final class Routes {
 		register_rest_route( self::NS, '/portal/booking', array( 'methods' => 'GET', 'callback' => $this->wrap( array( $this, 'portalBooking' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/portal/proofs', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalProof' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/portal/proofs/(?P<id>\d+)', array( 'methods' => 'GET', 'callback' => $this->wrap( array( $this, 'portalProofFile' ) ), 'permission_callback' => $public ) );
+		// beta.6: cambio de fecha por la clienta.
+		register_rest_route( self::NS, '/portal/reschedule/availability', array( 'methods' => 'GET', 'callback' => $this->wrap( array( $this, 'portalRescheduleAvailability' ) ), 'permission_callback' => $public ) );
+		register_rest_route( self::NS, '/portal/reschedule/preview', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalReschedulePreview' ) ), 'permission_callback' => $public ) );
+		register_rest_route( self::NS, '/portal/reschedule', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalReschedule' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/portal/logout', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalLogout' ) ), 'permission_callback' => $public ) );
 	}
 
@@ -197,6 +201,38 @@ final class Routes {
 			'message' => 'Recibimos tu comprobante. Tu horario sigue apartado mientras verificamos tu depósito.',
 			'booking' => Portal::view( Bookings::get( $id ) ),
 		);
+	}
+
+	public function portalRescheduleAvailability( \WP_REST_Request $r ): array {
+		RateLimit::hit( 'availability', 120, 600 );
+		$id = Tokens::sessionBooking( Portal::cookie(), null, false );
+		return \MOBookingStudio\Application\SelfReschedule::availability( Bookings::get( $id ), (string) $r['from'], (string) $r['to'] );
+	}
+
+	public function portalReschedulePreview( \WP_REST_Request $r ): array {
+		RateLimit::hit( 'reschedule_preview', 60, 600 );
+		$id = Tokens::sessionBooking( Portal::cookie(), (string) $r->get_header( 'x_mo_csrf' ), true );
+		return \MOBookingStudio\Application\SelfReschedule::preview( Bookings::get( $id ), self::startParam( $r ) );
+	}
+
+	public function portalReschedule( \WP_REST_Request $r ): array {
+		RateLimit::hit( 'reschedule', 10, 3600 );
+		$id      = Tokens::sessionBooking( Portal::cookie(), (string) $r->get_header( 'x_mo_csrf' ), true );
+		$params  = (array) $r->get_json_params();
+		$booking = \MOBookingStudio\Application\SelfReschedule::apply( $id, self::startParam( $r ), ! empty( $params['accept_difference'] ) );
+		return array(
+			'message' => 'Listo, tu sesión cambió de fecha. Te enviamos la confirmación por correo.',
+			'booking' => Portal::view( $booking ),
+		);
+	}
+
+	private static function startParam( \WP_REST_Request $r ): \DateTimeImmutable {
+		$start = (string) ( ( (array) $r->get_json_params() )['start'] ?? '' );
+		try {
+			return ( new \DateTimeImmutable( $start ) )->setTimezone( new \DateTimeZone( 'UTC' ) );
+		} catch ( \Exception $e ) {
+			throw new DomainException( 'invalid_date', 'Elige un horario válido.', 400 );
+		}
 	}
 
 	public function portalLogout( \WP_REST_Request $r ): array {

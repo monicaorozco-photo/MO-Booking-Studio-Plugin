@@ -22,7 +22,8 @@
 			lines: [{ label: 'Preventa · público general', amount_txt: '$1,400 MXN' }], price_rows: [{ kind: 'reference', label: 'Precio', amount_txt: '$1,800 MXN' }, { kind: 'discount', label: 'Descuento por fecha anticipada', amount_txt: '−$200 MXN' }, { kind: 'discount', label: 'Descuento por preventa', amount_txt: '−$200 MXN' }, { kind: 'discounted', label: 'Precio con descuento', amount_txt: '$1,400 MXN' }], total_txt: '$1,400 MXN', deposit_txt: '$500 MXN', paid_txt: '$0 MXN', balance_txt: '$1,400 MXN',
 			deposit_missing_txt: '$500 MXN', expires_txt: 'viernes 20 de noviembre, 22:30 h', bank: 'Banco de ejemplo\nCLABE 000000000000000000', payment_ref: 'Usa tu número de reserva como referencia.',
 			proofs: [], payments: [], can_upload: true, max_mb: 10, proof_text: 'Sube aquí tu comprobante de anticipo.', contract: { title: 'Contrato de servicio (ejemplo)', body: '<p>Texto del contrato.</p>', accepted_txt: 'viernes 20 de noviembre de 2026, 10:00 h' },
-			print_url: '#', whatsapp_url: '#', change_url: '#'
+			print_url: '#', whatsapp_url: '#', change_url: '#',
+			reschedule: { can: true, message: '', policy: 'Solo puedes cambiar la fecha de tu sesión UNA VEZ con mínimo 36 horas de anticipación.\n- Tu precio se respeta.\n- Tu anticipo pasa a la nueva fecha.' }
 		};
 	}
 
@@ -160,6 +161,16 @@
 		if (uploadBox) {
 			html += '<section class="mo-booking__panel mo-booking__upload-wrap">' + ((b.can_upload || b.proof_whatsapp_url || b.proofs.length) ? title('upload', 'Enviar comprobante') : '') + uploadBox + '</section>';
 		}
+		// beta.6: cambio de fecha por la clienta (una vez).
+		if (b.reschedule) {
+			html += '<section class="mo-booking__panel mo-booking__reschedule">' + title('calendar', 'Cambiar fecha');
+			if (b.reschedule.can) {
+				html += '<p class="mo-booking__note">Puedes cambiar la fecha de tu sesión una vez desde aquí.</p><button type="button" class="mo-booking__button mo-booking__button--primary" data-action="reschedule-open">' + I('calendar') + 'Cambiar fecha</button>';
+			} else {
+				html += '<p class="mo-booking__hint">' + I('info') + '<span>' + esc(b.reschedule.message) + '</span></p>';
+			}
+			html += '</section>';
+		}
 		if (b.whatsapp_url || b.change_url) {
 			html += '<section class="mo-booking__panel mo-booking__help-card">' + title('phone', '¿Necesitas ayuda?') + '<div class="mo-booking__stack">';
 			if (b.whatsapp_url) { html += '<a class="mo-booking__button" href="' + esc(b.whatsapp_url) + '" target="_blank" rel="noopener noreferrer">' + I('phone') + 'Escribir por WhatsApp</a>'; }
@@ -182,8 +193,219 @@
 		this.bind();
 	};
 
+	// ----- beta.6: cambio de fecha -----
+
+	var MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+	var WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+	function pad(n) { return (n < 10 ? '0' : '') + n; }
+	function ymd(y, m, d) { return y + '-' + pad(m) + '-' + pad(d); }
+	function daysIn(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
+
+	/** Texto de la política: renglones con "- " se vuelven lista. */
+	function policyHtml(text) {
+		var out = '';
+		var list = false;
+		String(text || '').split(/\n/).forEach(function (line) {
+			var t = line.trim();
+			if (/^[-•*]\s+/.test(t)) {
+				if (!list) { out += '<ul>'; list = true; }
+				out += '<li>' + esc(t.replace(/^[-•*]\s+/, '')) + '</li>';
+				return;
+			}
+			if (list) { out += '</ul>'; list = false; }
+			if (t) { out += '<p>' + esc(t) + '</p>'; }
+		});
+		return out + (list ? '</ul>' : '');
+	}
+
+	/** Ventana con la política; solo "Entendido" abre el calendario. */
+	Portal.prototype.openPolicy = function () {
+		var self = this;
+		var opener = document.activeElement;
+		var wrap = document.createElement('div');
+		wrap.className = 'mo-booking mo-booking__modal-wrap';
+		wrap.innerHTML = '<div class="mo-booking__modal" role="dialog" aria-modal="true" aria-labelledby="mo-rs-title"><h2 class="mo-booking__card-title" id="mo-rs-title">' + M.icon('calendar', 'mo-booking__card-icon') + '<span>Cambio de fecha</span></h2>' +
+			'<div class="mo-booking__policy">' + policyHtml(this.view.reschedule.policy) + '</div>' +
+			'<div class="mo-booking__actions"><button type="button" class="mo-booking__button" data-rs="cancel">Cancelar</button><button type="button" class="mo-booking__button mo-booking__button--primary" data-rs="ok">Entendido, elegir nueva fecha</button></div></div>';
+		document.body.appendChild(wrap);
+		var close = function () {
+			document.removeEventListener('keydown', onKey);
+			wrap.parentNode.removeChild(wrap);
+			if (opener && opener.focus) { opener.focus(); }
+		};
+		var onKey = function (ev) { if (ev.key === 'Escape') { close(); } };
+		document.addEventListener('keydown', onKey);
+		wrap.addEventListener('click', function (ev) { if (ev.target === wrap) { close(); } });
+		wrap.querySelector('[data-rs=cancel]').addEventListener('click', close);
+		wrap.querySelector('[data-rs=ok]').addEventListener('click', function () { close(); self.startReschedule(); });
+		wrap.querySelector('[data-rs=ok]').focus();
+	};
+
+	Portal.prototype.startReschedule = function () {
+		var now = new Date();
+		this.rs = { year: now.getFullYear(), month: now.getMonth() + 1, days: {}, date: null, slot: null, preview: null, busy: false, error: '' };
+		this.findRsMonth(this.rs.year, this.rs.month, 0);
+	};
+
+	Portal.prototype.findRsMonth = function (y, m, tries) {
+		var self = this;
+		this.loadRsMonth(y, m).then(function (hasOpen) {
+			if (!hasOpen && tries < 11 && self.rs) {
+				self.findRsMonth(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1, tries + 1);
+			} else if (!hasOpen && self.rs) {
+				var now = new Date();
+				self.loadRsMonth(now.getFullYear(), now.getMonth() + 1);
+			}
+		});
+	};
+
+	Portal.prototype.loadRsMonth = function (y, m) {
+		var self = this;
+		var rs = this.rs;
+		rs.year = y; rs.month = m; rs.busy = true;
+		this.renderReschedule();
+		if (this.config && this.config.preview) {
+			rs.busy = false;
+			for (var d = 1; d <= daysIn(y, m); d++) {
+				var open = d % 3 !== 0;
+				rs.days[ymd(y, m, d)] = { date: ymd(y, m, d), status: open ? 'available' : 'closed', slots: open ? [{ start: ymd(y, m, d) + 'T17:00:00Z', time: '10:00', available: true, label: 'Disponible' }, { start: ymd(y, m, d) + 'T18:00:00Z', time: '11:00', available: true, label: 'Disponible' }] : [] };
+			}
+			this.renderReschedule();
+			return Promise.resolve(true);
+		}
+		return this.api('portal/reschedule/availability?from=' + ymd(y, m, 1) + '&to=' + ymd(y, m, daysIn(y, m))).then(function (res) {
+			if (!self.rs) { return false; }
+			rs.busy = false;
+			if (!res.ok) { rs.error = M.errorMessage(res); self.renderReschedule(); return false; }
+			var hasOpen = false;
+			res.data.days.forEach(function (d) { rs.days[d.date] = d; if (d.status === 'available') { hasOpen = true; } });
+			self.renderReschedule();
+			return hasOpen;
+		});
+	};
+
+	Portal.prototype.renderReschedule = function () {
+		var rs = this.rs;
+		var b = this.view;
+		var y = rs.year;
+		var m = rs.month;
+		var now = new Date();
+		var canPrev = (y > now.getFullYear()) || (y === now.getFullYear() && m > now.getMonth() + 1);
+		var html = '<p class="mo-booking__brand">' + esc(b.brand) + ' · Cambio de fecha</p>';
+		html += '<h2 class="mo-booking__title" tabindex="-1" data-rs-heading>Elige tu nueva fecha</h2>';
+		html += '<p class="mo-booking__lead">Tu cita actual: ' + esc(b.date_txt) + ', ' + esc(b.time_txt) + ' h. Puedes cambiarla una sola vez.</p>';
+		if (rs.error) { html += '<p class="mo-booking__alert" role="alert">' + esc(rs.error) + '</p>'; }
+		html += '<div class="mo-booking__grid"><section class="mo-booking__panel mo-booking__cal-card"><div class="mo-booking__month">' +
+			'<button type="button" class="mo-booking__nav" data-rs="prev"' + (canPrev ? '' : ' disabled') + ' aria-label="Mes anterior">‹</button>' +
+			'<p class="mo-booking__month-name" aria-live="polite">' + esc(MONTHS[m - 1]) + ' ' + y + '</p>' +
+			'<button type="button" class="mo-booking__nav" data-rs="next" aria-label="Mes siguiente">›</button></div>';
+		if (rs.busy) { html += '<p class="mo-booking__loading" role="status">Cargando disponibilidad…</p>'; }
+		html += '<div class="mo-booking__calendar" role="grid"><div class="mo-booking__weekdays" role="row">' + WEEKDAYS.map(function (d) { return '<span role="columnheader">' + d + '</span>'; }).join('') + '</div><div class="mo-booking__days" role="row">';
+		var offset = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
+		for (var i = 0; i < offset; i++) { html += '<span class="mo-booking__day mo-booking__day--blank" aria-hidden="true"></span>'; }
+		for (var d = 1; d <= daysIn(y, m); d++) {
+			var date = ymd(y, m, d);
+			var info = rs.days[date];
+			var ok = info && info.status === 'available';
+			var cls = 'mo-booking__day ' + (ok ? 'mo-booking__day--available mo-booking__day--regular' : (info && info.status === 'sold_out' ? 'mo-booking__day--soldout' : 'mo-booking__day--closed')) + (rs.date === date ? ' mo-booking__day--selected' : '');
+			html += '<button type="button" role="gridcell" class="' + cls + '" data-rs-date="' + date + '"' + (ok ? '' : ' disabled') + ' aria-pressed="' + (rs.date === date ? 'true' : 'false') + '" aria-label="' + d + ' de ' + MONTHS[m - 1] + (ok ? ', disponible' : ', sin horarios') + '"><span class="mo-booking__day-num">' + d + '</span>' + (ok ? '<span class="mo-booking__day-dot" aria-hidden="true"></span>' : '') + '</button>';
+		}
+		html += '</div></div></section><div class="mo-booking__side"><section class="mo-booking__panel mo-booking__slots-wrap"><h3 class="mo-booking__card-title">Elige un horario</h3>';
+		var day = rs.date ? rs.days[rs.date] : null;
+		if (day) {
+			html += '<div class="mo-booking__slots">';
+			day.slots.forEach(function (slot) {
+				var sel = rs.slot === slot.start;
+				html += '<button type="button" class="mo-booking__slot' + (slot.available ? '' : ' mo-booking__slot--off') + (sel ? ' mo-booking__slot--selected' : '') + '" data-rs-slot="' + esc(slot.start) + '"' + (slot.available ? '' : ' disabled') + ' aria-pressed="' + (sel ? 'true' : 'false') + '">' + esc(slot.time) + (slot.available ? '' : ' <span class="mo-booking__slot-state">' + esc(slot.label) + '</span>') + '</button>';
+			});
+			html += '</div><p class="mo-booking__note">Horario de ' + esc(b.timezone) + '.</p>';
+		} else {
+			html += '<p class="mo-booking__empty">' + M.icon('calendar') + '<span>Elige una fecha en el calendario para ver sus horarios.</span></p>';
+		}
+		html += '</section>';
+		var p = rs.preview;
+		if (p) {
+			html += '<section class="mo-booking__panel mo-booking__rs-preview">' + '<h3 class="mo-booking__card-title">' + M.icon('receipt', 'mo-booking__card-icon') + '<span>Tu nueva fecha</span></h3>' +
+				'<dl class="mo-booking__summary"><dt>Fecha</dt><dd>' + esc(p.date_txt) + '</dd><dt>Hora</dt><dd>' + esc(p.time_txt) + ' h</dd><dt>Total actual</dt><dd>' + esc(p.old_total_txt) + '</dd><dt>Nuevo total</dt><dd>' + esc(p.new_total_txt) + '</dd>' +
+				(p.difference !== 0 ? '<dt>Diferencia</dt><dd>' + esc(p.difference_txt) + '</dd>' : '') + (p.due_now_txt ? '<dt>Por pagar para apartar</dt><dd>' + esc(p.due_now_txt) + '</dd>' : '') + '</dl>';
+			if (p.difference === 0) { html += '<p class="mo-booking__note">El precio no cambia.</p>'; }
+			if (p.difference < 0) { html += '<p class="mo-booking__note">La nueva fecha cuesta menos: la diferencia se descuenta de tu saldo.</p>'; }
+			if (p.needs_accept) {
+				html += '<label class="mo-booking__check"><input type="checkbox" data-rs="accept"> <span>Acepto la diferencia de ' + esc(p.difference_txt.replace('+', '')) + ' por la nueva fecha.</span></label><p class="mo-booking__field-error" data-rs-error role="alert"></p>';
+			}
+			html += '</section>';
+		}
+		html += '</div></div>';
+		html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--back" data-rs="close">Cancelar</button><button type="button" class="mo-booking__button mo-booking__button--primary mo-booking__button--next" data-rs="confirm"' + (p ? '' : ' disabled') + '>Confirmar cambio</button></div>';
+		this.root.innerHTML = html;
+		this.bindReschedule();
+	};
+
+	Portal.prototype.bindReschedule = function () {
+		var self = this;
+		var rs = this.rs;
+		var root = this.root;
+		var on = function (sel, fn) { root.querySelectorAll(sel).forEach(function (el) { el.addEventListener('click', function () { fn(el); }); }); };
+		on('[data-rs=prev], [data-rs=next]', function (el) {
+			var m = rs.month + (el.getAttribute('data-rs') === 'next' ? 1 : -1);
+			var y = rs.year;
+			if (m < 1) { m = 12; y--; }
+			if (m > 12) { m = 1; y++; }
+			self.loadRsMonth(y, m);
+		});
+		on('[data-rs-date]', function (el) { rs.date = el.getAttribute('data-rs-date'); rs.slot = null; rs.preview = null; rs.error = ''; self.renderReschedule(); });
+		on('[data-rs-slot]', function (el) {
+			rs.slot = el.getAttribute('data-rs-slot');
+			rs.preview = null; rs.error = '';
+			self.renderReschedule();
+			if (self.config && self.config.preview) {
+				rs.preview = { date_txt: self.dateFromIso(rs.slot), time_txt: '', old_total_txt: '$1,400 MXN', new_total_txt: '$1,600 MXN', difference: 20000, difference_txt: '+$200 MXN', due_now_txt: '', needs_accept: true };
+				self.renderReschedule();
+				return;
+			}
+			self.api('portal/reschedule/preview', { body: { start: rs.slot }, csrf: self.csrf }).then(function (res) {
+				if (!self.rs || rs.slot === null) { return; }
+				if (!res.ok) { rs.error = M.errorMessage(res); rs.slot = null; } else { rs.preview = res.data; }
+				self.renderReschedule();
+				var target = root.querySelector('.mo-booking__rs-preview') || root.querySelector('.mo-booking__alert');
+				if (target && target.scrollIntoView) { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+			});
+		});
+		on('[data-rs=close]', function () { self.rs = null; self.render(); });
+		on('[data-rs=confirm]', function (btn) {
+			var accept = root.querySelector('[data-rs=accept]');
+			if (rs.preview && rs.preview.needs_accept && !(accept && accept.checked)) {
+				root.querySelector('[data-rs-error]').textContent = 'Para continuar, acepta la diferencia de precio.';
+				accept.focus();
+				return;
+			}
+			if (self.config && self.config.preview) { return; }
+			btn.disabled = true; btn.textContent = 'Cambiando…';
+			self.api('portal/reschedule', { body: { start: rs.slot, accept_difference: !!(accept && accept.checked) }, csrf: self.csrf }).then(function (res) {
+				if (!res.ok) {
+					rs.error = M.errorMessage(res); rs.preview = null; rs.slot = null;
+					self.renderReschedule();
+					return;
+				}
+				self.rs = null;
+				self.view = res.data.booking;
+				self.render(res.data.message);
+				if (self.root.scrollIntoView) { self.root.scrollIntoView({ block: 'start' }); }
+			});
+		});
+		var heading = root.querySelector('[data-rs-heading]');
+		if (heading && !rs.focused) { rs.focused = true; heading.focus(); if (heading.scrollIntoView) { heading.scrollIntoView({ block: 'start' }); } }
+	};
+
+	Portal.prototype.dateFromIso = function (iso) {
+		var p = String(iso).slice(0, 10).split('-');
+		return (+p[2]) + ' de ' + MONTHS[+p[1] - 1] + ' de ' + p[0];
+	};
+
 	Portal.prototype.bind = function () {
 		var self = this;
+		var rsOpen = this.root.querySelector('[data-action=reschedule-open]');
+		if (rsOpen) { rsOpen.addEventListener('click', function () { self.openPolicy(); }); }
 		M.bindUpload(this.root, this.api, function () { return self.csrf; }, this.view.max_mb, function (data) {
 			self.view = data.booking;
 			// beta.4: el aviso de comprobante recibido va dentro del mismo recuadro.

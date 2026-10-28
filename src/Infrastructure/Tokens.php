@@ -64,6 +64,13 @@ final class Tokens {
 		);
 	}
 
+	/** beta.6.4: ¿la reserva tiene un enlace privado vigente? (para el botón de los correos). */
+	public static function linkActive( int $bookingId ): bool {
+		$wpdb = Db::wpdb();
+		$now  = Db::toSql( \MOBookingStudio\Plugin::clock()->now() );
+		return (bool) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . Schema::table( 'access_tokens' ) . ' WHERE booking_id = %d AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > %s)', $bookingId, $now ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
 	/** Revoca todos los enlaces de la reserva. */
 	public static function revokeAll( int $bookingId ): void {
 		$wpdb = Db::wpdb();

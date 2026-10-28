@@ -59,6 +59,7 @@ final class Notifications {
 			'enlace'             => 'Enlace privado de la reserva',
 			'motivo'             => 'Motivo (corrección, cancelación)',
 			'importe'            => 'Importe del pago aprobado',
+			'detalles'           => 'Tarjeta con servicio, fecha, hora, ubicación y número de reserva',
 		);
 	}
 
@@ -80,97 +81,157 @@ final class Notifications {
 	}
 
 	public static function defaultTemplates(): array {
-		$sign = "\n\n{{negocio}}";
-		return array(
-			'booking_created'      => array(
+		$out = array();
+		foreach ( self::emailTexts() as $event => $t ) {
+			$out[ $event ] = array(
 				'enabled' => true,
-				'subject' => 'Recibimos tu solicitud {{referencia}}',
-				'body'    => "Hola {{nombre}}:\n\nRecibimos tu solicitud para {{servicio}} el {{fecha}} a las {{hora}}.\n\nTotal: {{total}}\nAnticipo para apartar: {{anticipo}}\nSaldo: {{saldo}}\n\nTu horario queda apartado hasta {{vencimiento}}. Para confirmarlo, transfiere el anticipo y sube tu comprobante desde tu enlace privado:\n{{enlace}}\n\n{{instrucciones_pago}}" . $sign,
-				'admin'   => "Nueva solicitud {{referencia}}: {{servicio}}, {{fecha}} {{hora}}. {{nombre}}. Total {{total}}, anticipo {{anticipo}}. Vence: {{vencimiento}}.",
+				'subject' => $t['subject'],
+				'body'    => $t['body'],
+				'admin'   => '',
+			);
+		}
+		$out['booking_created']['admin'] = "Nueva solicitud {{referencia}}: {{servicio}}, {{fecha}} {{hora}}. {{nombre}}. Total {{total}}, anticipo {{anticipo}}. Vence: {{vencimiento}}.";
+		$out['proof_received']['admin']  = 'Nuevo comprobante en {{referencia}} ({{nombre}}, {{servicio}} {{fecha}} {{hora}}). Revísalo en el panel.';
+		// Avisos solo para ti (sin correo a la clienta).
+		$out = array_merge(
+			array_slice( $out, 0, 2, true ),
+			array(
+				'proof_received_late' => array(
+					'enabled' => true,
+					'subject' => 'Comprobante tardío en {{referencia}}',
+					'body'    => '',
+					'admin'   => 'Llegó un comprobante después del vencimiento en {{referencia}} ({{nombre}}). El horario no se recuperó automáticamente; revisa la conciliación en el panel.',
+				),
+			),
+			array_slice( $out, 2, null, true )
+		);
+		$out['client_rescheduled'] = array(
+			'enabled' => true,
+			'subject' => 'Cambio de fecha {{referencia}}',
+			'body'    => '',
+			'admin'   => "{{nombre}} cambió su fecha desde su página de reserva ({{referencia}}).\nAntes: {{motivo}}\nAhora: {{fecha}} a las {{hora}}.\nTotal: {{total}} · Saldo: {{saldo}}",
+		);
+		return $out;
+	}
+
+	/**
+	 * beta.6.4: los 10 correos de la clienta (documento "Plantillas de correo electrónico").
+	 * Servicio, fecha, hora, ubicación y número de reserva van en la tarjeta ({{detalles}});
+	 * el enlace, en el botón; la firma, en el pie del correo.
+	 *
+	 * @return array<string,array{subject:string,title:string,card_title:string,body:string}>
+	 */
+	public static function emailTexts(): array {
+		$p = static function ( string ...$paragraphs ): string {
+			return '<p>' . implode( "</p>\n<p>", $paragraphs ) . '</p>';
+		};
+		$list = static function ( array $items ): string {
+			$out = '';
+			foreach ( $items as $label => $code ) {
+				$out .= '<li><strong>' . $label . ':</strong> ' . $code . '</li>';
+			}
+			return "\n<ul>" . $out . "</ul>\n";
+		};
+		$hello = 'Hola, {{nombre}}:';
+		$card  = "\n<p>{{detalles}}</p>\n";
+		$texts = array(
+			'booking_created'      => array(
+				'subject'    => 'Recibimos tu solicitud de reserva 📋',
+				'card_title' => '📅 Detalles de la solicitud',
+				'body'       => $p( $hello, '¡Gracias por elegirnos! Hemos recibido tu solicitud de reserva para <strong>{{servicio}}</strong>.' ) . $card .
+					'<p><strong>💳 Información de pago</strong></p>' . $list( array( 'Total del servicio' => '{{total}}', 'Anticipo requerido' => '{{anticipo}}', 'Saldo pendiente' => '{{saldo}}', 'Fecha límite de pago' => '{{vencimiento}}' ) ) .
+					$p( '<strong>Datos para realizar tu pago:</strong><br>{{instrucciones_pago}}', 'Una vez realizado el pago, adjunta tu comprobante desde tu enlace privado, con el botón de abajo.', '<strong>📎 ¿Ya adjuntaste tu comprobante?</strong><br>¡Perfecto! No es necesario enviarlo nuevamente. Solo espera nuestra respuesta después de revisar y validar el pago.', '<strong>Importante:</strong> tu fecha y horario se mantienen reservados temporalmente hasta {{vencimiento}}. La cita quedará confirmada después de validar el anticipo.', 'Si tienes dudas, puedes escribirnos y con gusto te ayudaremos.' ),
 			),
 			'proof_received'       => array(
-				'enabled' => true,
-				'subject' => 'Recibimos tu comprobante ({{referencia}})',
-				'body'    => "Hola {{nombre}}:\n\nRecibimos tu comprobante. Tu horario sigue apartado mientras verificamos tu depósito. Te avisaremos en cuanto lo confirmemos.\n\nConsulta tu reserva aquí:\n{{enlace}}" . $sign,
-				'admin'   => 'Nuevo comprobante en {{referencia}} ({{nombre}}, {{servicio}} {{fecha}} {{hora}}). Revísalo en el panel.',
-			),
-			'proof_received_late'  => array(
-				'enabled' => true,
-				'subject' => 'Comprobante tardío en {{referencia}}',
-				'body'    => '',
-				'admin'   => 'Llegó un comprobante después del vencimiento en {{referencia}} ({{nombre}}). El horario no se recuperó automáticamente; revisa la conciliación en el panel.',
+				'subject'    => 'Recibimos tu comprobante de pago 📎',
+				'card_title' => '📋 Datos de referencia',
+				'body'       => $p( $hello, '¡Gracias! Te confirmamos que recibimos correctamente tu comprobante de pago o abono relacionado con la siguiente reserva:' ) . $card .
+					$p( '<strong>¿Qué sigue?</strong><br>Revisaremos la información del comprobante y, una vez validado, te enviaremos una respuesta con el resultado de la revisión.', 'Por el momento no necesitas realizar ninguna acción adicional. Este aviso solo confirma la recepción del comprobante y no implica que el pago ya haya sido aprobado.', 'Puedes consultar la información de tu reserva con el botón de abajo.', '¡Gracias por tu paciencia!' ),
 			),
 			'correction_requested' => array(
-				'enabled' => true,
-				'subject' => 'Necesitamos revisar tu pago ({{referencia}})',
-				'body'    => "Hola {{nombre}}:\n\nRevisamos tu pago y necesitamos lo siguiente:\n{{motivo}}\n\nPuedes enviar otro comprobante desde tu enlace privado:\n{{enlace}}" . $sign,
-				'admin'   => '',
+				'subject'    => 'Necesitamos revisar un detalle de tu pago 📋',
+				'card_title' => '📋 Información de la reserva',
+				'body'       => $p( $hello, 'Hemos revisado la información de tu reserva y necesitamos tu ayuda para corregir un detalle relacionado con tu comprobante o pago.' ) . $card .
+					$p( '<strong>⚠️ Detalle por corregir:</strong><br>{{motivo}}', 'Por favor, revisa la observación y realiza la corrección correspondiente desde tu enlace privado, con el botón de abajo.', 'Cuando recibamos la información actualizada, continuaremos con la revisión. Si el pago corresponde a una solicitud todavía pendiente, la confirmación de la cita dependerá de la validación del anticipo.', '¡Muchas gracias por tu apoyo!' ),
 			),
 			'payment_approved'     => array(
-				'enabled' => true,
-				'subject' => 'Pago verificado ({{referencia}})',
-				'body'    => "Hola {{nombre}}:\n\nVerificamos tu pago de {{importe}}. Saldo pendiente: {{saldo}}.\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
-				'admin'   => '',
+				'subject'    => '¡Recibimos y aprobamos tu pago! ✅',
+				'card_title' => '📅 Datos de tu reserva',
+				'body'       => $p( $hello, '¡Buenas noticias! Hemos revisado tu comprobante y te confirmamos que el pago o abono realizado fue recibido y aprobado correctamente.' ) .
+					"\n<p><strong>💳 Detalles del pago</strong></p>" . $list( array( 'Importe aprobado' => '{{importe}}', 'Saldo pendiente' => '{{saldo}}' ) ) . $card .
+					$p( 'Este mensaje confirma exclusivamente la recepción y aprobación de tu pago. Si tu cita ya se encuentra confirmada, se mantiene en el calendario en las mismas condiciones, sin que necesites realizar ningún trámite adicional.', 'Puedes consultar el estado de tus pagos y la información de tu reserva con el botón de abajo.', '¡Muchas gracias por tu confianza!' ),
 			),
 			'booking_confirmed'    => array(
-				'enabled' => true,
-				'subject' => '¡Tu cita está confirmada! ({{referencia}})',
-				// beta.6.3: la fecha, la hora y la ubicación van en la tarjeta de detalles del correo.
-				'body'    => "Hola {{nombre}}:\n\n¡Todo listo! Tu reservación para {{servicio}} ha quedado confirmada correctamente.\n\nSaldo pendiente: {{saldo}}\n\n{{instrucciones}}\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
-				'admin'   => '',
+				'subject'    => '¡Tu cita está confirmada! 📅',
+				'card_title' => '📅 Detalles de tu cita',
+				'body'       => $p( $hello, '¡Todo listo! Nos alegra confirmarte que tu reservación ha quedado registrada exitosamente.', '¡Estamos muy emocionados de acompañarte en esta ocasión!' ) . $card .
+					'<p><strong>💳 Resumen de pago</strong></p>' . $list( array( 'Total' => '{{total}}', 'Anticipo' => '{{anticipo}}', 'Saldo pendiente' => '{{saldo}}' ) ) .
+					$p( '<strong>📋 Información importante para tu cita</strong><br>{{instrucciones}}', 'Te recomendamos revisar las indicaciones con anticipación para que puedas disfrutar de tu sesión o evento sin contratiempos.', '<strong>¿Necesitas consultar tu reserva?</strong><br>Puedes revisar todos los detalles desde tu enlace privado, con el botón de abajo.', 'Si tienes alguna pregunta antes de tu cita, no dudes en contactarnos. Con gusto te ayudaremos.', '¡Nos vemos pronto!' ),
 			),
 			'booking_rejected'     => array(
-				'enabled' => true,
-				'subject' => 'Sobre tu solicitud {{referencia}}',
-				'body'    => "Hola {{nombre}}:\n\nNo pudimos aprobar tu solicitud para {{servicio}} el {{fecha}} a las {{hora}}.\n{{motivo}}\n\nSi tienes dudas, responde a este mensaje." . $sign,
-				'admin'   => '',
+				'subject'    => 'Información sobre tu solicitud de reserva 📋',
+				'card_title' => '📋 Datos de la solicitud',
+				'body'       => $p( $hello, 'Gracias por tu interés en reservar con nosotros.', 'Te informamos que, después de revisar tu solicitud, no fue posible aprobar la reservación en esta ocasión.' ) . $card .
+					$p( '<strong>Motivo:</strong><br>{{motivo}}', 'Lamentamos cualquier inconveniente que esto pueda ocasionar. Si deseas consultar otras opciones o necesitas aclarar algún detalle, puedes contactarnos directamente. Con gusto revisaremos cómo ayudarte.', 'Consulta la información de tu solicitud con el botón de abajo.', 'Gracias por considerarnos para esta ocasión.' ),
 			),
 			'booking_expired'      => array(
-				'enabled' => true,
-				'subject' => 'Tu horario apartado venció ({{referencia}})',
-				'body'    => "Hola {{nombre}}:\n\nEl plazo para pagar el anticipo de tu solicitud {{referencia}} terminó y el horario se liberó. Si ya transferiste, escríbenos con tu comprobante para revisarlo." . $sign,
-				'admin'   => '',
+				'subject'    => 'Finalizó el plazo de tu solicitud de reserva ⏳',
+				'card_title' => '📋 Información de la solicitud',
+				'body'       => $p( $hello, 'Te informamos que el periodo para completar tu solicitud de reserva ha finalizado, ya que no se registró un pago aprobado dentro del plazo establecido.' ) . $card .
+					$p( '<strong>¿Qué significa esto?</strong><br>El horario que habías seleccionado ha sido liberado y se encuentra nuevamente sujeto a disponibilidad.', 'Si todavía deseas reservar, puedes contactarnos para revisar las fechas y horarios disponibles.', 'Si realizaste tu pago antes del vencimiento, pero aún no se ha validado, comunícate con nosotros para revisar tu caso.', 'Gracias por tu interés. ¡Esperamos atenderte pronto!' ),
 			),
 			'booking_cancelled'    => array(
-				'enabled' => true,
-				'subject' => 'Cancelación de tu cita {{referencia}}',
-				'body'    => "Hola {{nombre}}:\n\nTu cita para {{servicio}} del {{fecha}} a las {{hora}} quedó cancelada.\n{{motivo}}\n\nConsulta el detalle:\n{{enlace}}" . $sign,
-				'admin'   => '',
+				'subject'    => 'Confirmación de cancelación de reserva 📋',
+				'card_title' => '📋 Detalles de la reserva',
+				'body'       => $p( $hello, 'Te confirmamos que tu reservación ha sido cancelada y ya no se encuentra activa en nuestro calendario.' ) . $card .
+					$p( '<strong>Motivo de cancelación:</strong><br>{{motivo}}', 'Si tu reservación tenía algún pago registrado, cualquier ajuste o devolución que corresponda se revisará de acuerdo con las condiciones de contratación del servicio.', 'Si consideras que esta cancelación se realizó por error o tienes alguna pregunta, puedes contactarnos directamente para revisar tu caso.', 'Gracias por habernos considerado. Esperamos atenderte en otra ocasión.' ),
 			),
 			'booking_rescheduled'  => array(
-				'enabled' => true,
-				'subject' => 'Tu cita cambió de fecha ({{referencia}})',
-				'body'    => "Hola {{nombre}}:\n\nTu cita para {{servicio}} ahora es el {{fecha}} a las {{hora}}.\n\nSaldo pendiente: {{saldo}}\n\nConsulta el detalle:\n{{enlace}}" . $sign,
-				'admin'   => '',
-			),
-			'client_rescheduled'   => array(
-				'enabled' => true,
-				'subject' => 'Cambio de fecha {{referencia}}',
-				'body'    => '',
-				'admin'   => "{{nombre}} cambió su fecha desde su página de reserva ({{referencia}}).\nAntes: {{motivo}}\nAhora: {{fecha}} a las {{hora}}.\nTotal: {{total}} · Saldo: {{saldo}}",
+				'subject'    => '¡El cambio de tu reserva está confirmado! 🔄',
+				'card_title' => '📅 Nuevos detalles de tu cita',
+				'body'       => $p( $hello, '¡Listo! Te confirmamos que el cambio solicitado para tu reservación se realizó correctamente.' ) . $card .
+					'<p><strong>💳 Información de pago actualizada</strong></p>' . $list( array( 'Total' => '{{total}}', 'Saldo pendiente' => '{{saldo}}' ) ) .
+					$p( '<strong>📋 Indicaciones del servicio</strong><br>{{instrucciones}}', 'Por favor, toma en cuenta estos nuevos datos y descarta los horarios anteriores.', 'Puedes consultar tu reservación actualizada con el botón de abajo.', 'Si tienes alguna duda sobre el cambio, con gusto podemos ayudarte.', '¡Nos vemos pronto!' ),
 			),
 			'reminder'             => array(
-				'enabled' => true,
-				'subject' => 'Recordatorio: tu cita del {{fecha}}',
-				'body'    => "Hola {{nombre}}:\n\nTe recordamos tu cita para {{servicio}} el {{fecha}} a las {{hora}}.\n{{ubicacion}}\n\n{{instrucciones}}\n\nSaldo pendiente: {{saldo}}\n{{enlace}}" . $sign,
-				'admin'   => '',
+				'subject'    => '¡Tu cita se acerca! 📅',
+				'card_title' => '📅 Detalles de tu reservación',
+				'body'       => $p( $hello, '¡Ya casi nos vemos! Te enviamos un pequeño recordatorio de tu próxima cita para que tengas toda la información a la mano.' ) . $card .
+					$p( '<strong>📋 Recomendaciones e indicaciones</strong><br>{{instrucciones}}', 'Te sugerimos revisar la ubicación con anticipación y considerar el tiempo necesario para llegar puntualmente.', '<strong>💳 Saldo pendiente:</strong> {{saldo}}', 'Puedes consultar toda la información de tu cita con el botón de abajo.', 'Si tienes alguna pregunta, estamos disponibles para ayudarte.', '¡Esperamos que disfrutes mucho esta experiencia!' ),
 			),
+		);
+		foreach ( $texts as $event => $t ) {
+			// El título grande del correo es el mismo asunto.
+			$texts[ $event ]['title'] = $t['subject'];
+		}
+		return $texts;
+	}
+
+	/**
+	 * beta.6.4: texto predeterminado de WhatsApp. Es el que tenían los avisos antes de las
+	 * plantillas nuevas de correo, para que WhatsApp no cambie (lleva el enlace y la firma).
+	 */
+	public static function defaultWhatsapp(): array {
+		$sign = "\n\n{{negocio}}";
+		return array(
+			'booking_created' => "Hola {{nombre}}:\n\nRecibimos tu solicitud para {{servicio}} el {{fecha}} a las {{hora}}.\n\nTotal: {{total}}\nAnticipo para apartar: {{anticipo}}\nSaldo: {{saldo}}\n\nTu horario queda apartado hasta {{vencimiento}}. Para confirmarlo, transfiere el anticipo y sube tu comprobante desde tu enlace privado:\n{{enlace}}\n\n{{instrucciones_pago}}" . $sign,
+			'proof_received' => "Hola {{nombre}}:\n\nRecibimos tu comprobante. Tu horario sigue apartado mientras verificamos tu depósito. Te avisaremos en cuanto lo confirmemos.\n\nConsulta tu reserva aquí:\n{{enlace}}" . $sign,
+			'correction_requested' => "Hola {{nombre}}:\n\nRevisamos tu pago y necesitamos lo siguiente:\n{{motivo}}\n\nPuedes enviar otro comprobante desde tu enlace privado:\n{{enlace}}" . $sign,
+			'payment_approved' => "Hola {{nombre}}:\n\nVerificamos tu pago de {{importe}}. Saldo pendiente: {{saldo}}.\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
+			'booking_confirmed' => "Hola {{nombre}}:\n\n¡Todo listo! Tu reservación para {{servicio}} ha quedado confirmada correctamente.\n\nSaldo pendiente: {{saldo}}\n\n{{instrucciones}}\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
+			'booking_rejected' => "Hola {{nombre}}:\n\nNo pudimos aprobar tu solicitud para {{servicio}} el {{fecha}} a las {{hora}}.\n{{motivo}}\n\nSi tienes dudas, responde a este mensaje." . $sign,
+			'booking_expired' => "Hola {{nombre}}:\n\nEl plazo para pagar el anticipo de tu solicitud {{referencia}} terminó y el horario se liberó. Si ya transferiste, escríbenos con tu comprobante para revisarlo." . $sign,
+			'booking_cancelled' => "Hola {{nombre}}:\n\nTu cita para {{servicio}} del {{fecha}} a las {{hora}} quedó cancelada.\n{{motivo}}\n\nConsulta el detalle:\n{{enlace}}" . $sign,
+			'booking_rescheduled' => "Hola {{nombre}}:\n\nTu cita para {{servicio}} ahora es el {{fecha}} a las {{hora}}.\n\nSaldo pendiente: {{saldo}}\n\nConsulta el detalle:\n{{enlace}}" . $sign,
+			'reminder' => "Hola {{nombre}}:\n\nTe recordamos tu cita para {{servicio}} el {{fecha}} a las {{hora}}.\n{{ubicacion}}\n\n{{instrucciones}}\n\nSaldo pendiente: {{saldo}}\n{{enlace}}" . $sign,
 		);
 	}
 
-	/** beta.6.3: título grande de cada correo (editable en cada aviso). */
-	public const DEFAULT_TITLES = array(
-		'booking_created'      => 'Recibimos tu solicitud 📝',
-		'proof_received'       => 'Recibimos tu comprobante 🧾',
-		'correction_requested' => 'Necesitamos revisar tu pago',
-		'payment_approved'     => '¡Pago verificado! ✅',
-		'booking_confirmed'    => '¡Tu cita está confirmada! 📅',
-		'booking_rejected'     => 'Sobre tu solicitud',
-		'booking_expired'      => 'Tu horario apartado venció ⏳',
-		'booking_cancelled'    => 'Tu cita fue cancelada',
-		'booking_rescheduled'  => 'Tu cita cambió de fecha 📅',
-		'reminder'             => '¡Ya casi es tu sesión! 📸',
-	);
+	/** Encabezado de la tarjeta de detalles cuando el aviso no tiene uno propio. */
+	public const CARD_TITLE = 'Detalles de tu reservación';
+
+	/** Marca interna donde va la tarjeta dentro del correo ({{detalles}}). */
+	private const CARD_MARK = '%%MO_DETALLES%%';
 
 	// ----- Plantillas propias (beta.3) -----
 
@@ -288,6 +349,7 @@ final class Notifications {
 			'enlace'             => home_url( '/mi-reserva/#acceso=…' ),
 			'motivo'             => 'El comprobante no se lee completo.',
 			'importe'            => '$500.00 MXN',
+			'detalles'           => "📸 Servicio: Minis navideñas\n📅 Fecha: sábado 21 de noviembre de 2026\n🕒 Hora: 10:30 hrs\n🔖 Número de reserva: MO-AB12CD",
 		);
 	}
 
@@ -336,7 +398,9 @@ final class Notifications {
 		foreach ( $out as $event => $tpl ) {
 			// beta.4: texto propio para WhatsApp (vacío = se usa el del correo, convertido).
 			// beta.6.3: título grande del correo y tarjeta con los detalles de la cita.
-			$out[ $event ] += array( 'whatsapp' => '', 'title' => self::DEFAULT_TITLES[ $event ] ?? '', 'card' => true );
+			// beta.6.4: encabezado de la tarjeta.
+			$texts          = self::emailTexts()[ $event ] ?? array();
+			$out[ $event ] += array( 'whatsapp' => self::defaultWhatsapp()[ $event ] ?? '', 'title' => $texts['title'] ?? '', 'card' => true, 'card_title' => $texts['card_title'] ?? self::CARD_TITLE );
 		}
 		foreach ( (array) $stored as $event => $tpl ) {
 			if ( isset( $out[ $event ] ) && is_array( $tpl ) ) {
@@ -361,7 +425,8 @@ final class Notifications {
 			}
 			$t = $templates[ $event ];
 			if ( ! empty( $t['reset'] ) ) {
-				$clean[ $event ] = array_merge( $default, array( 'enabled' => ! empty( $t['enabled'] ), 'whatsapp' => '', 'title' => self::DEFAULT_TITLES[ $event ] ?? '', 'card' => true ) );
+				$texts           = self::emailTexts()[ $event ] ?? array();
+				$clean[ $event ] = array_merge( $default, array( 'enabled' => ! empty( $t['enabled'] ), 'whatsapp' => self::defaultWhatsapp()[ $event ] ?? '', 'title' => $texts['title'] ?? '', 'card' => true, 'card_title' => $texts['card_title'] ?? self::CARD_TITLE ) );
 				continue;
 			}
 			$clean[ $event ] = array(
@@ -370,8 +435,9 @@ final class Notifications {
 				'body'     => self::cleanBody( (string) ( $t['body'] ?? $default['body'] ) ),
 				'admin'    => sanitize_textarea_field( (string) ( $t['admin'] ?? $default['admin'] ) ),
 				'whatsapp' => sanitize_textarea_field( (string) ( $t['whatsapp'] ?? '' ) ),
-				'title'    => sanitize_text_field( (string) ( $t['title'] ?? ( self::DEFAULT_TITLES[ $event ] ?? '' ) ) ),
+				'title'    => sanitize_text_field( (string) ( $t['title'] ?? ( self::emailTexts()[ $event ]['title'] ?? '' ) ) ),
 				'card'     => ! empty( $t['card'] ),
+				'card_title' => sanitize_text_field( (string) ( $t['card_title'] ?? self::CARD_TITLE ) ),
 			);
 			$unknown = array_merge( $unknown, self::unknownCodes( implode( "\n", array( $clean[ $event ]['subject'], $clean[ $event ]['title'], $clean[ $event ]['body'], $clean[ $event ]['admin'], $clean[ $event ]['whatsapp'] ) ) ) );
 		}
@@ -417,10 +483,13 @@ final class Notifications {
 	 * Texto del correo con formato. Los datos de la reserva se escapan; las plantillas sin
 	 * etiquetas (texto simple) conservan sus saltos de línea.
 	 */
-	public static function renderHtml( string $template, array $vars ): string {
+	public static function renderHtml( string $template, array $vars, bool $paragraphs = true ): string {
 		if ( ! self::isHtml( $template ) ) {
 			return make_clickable( nl2br( esc_html( self::render( $template, $vars ) ) ) );
 		}
+		// beta.6.4: el editor de WordPress guarda los párrafos como saltos de línea (sin <p>);
+		// se convierten aquí para que el correo no salga amontonado.
+		$template = $paragraphs ? wpautop( self::cleanBody( $template ) ) : $template;
 		$html = (string) preg_replace_callback(
 			'/\{\{\s*([a-z_]+)\s*\}\}/',
 			static function ( $m ) use ( $vars ) {
@@ -469,7 +538,7 @@ final class Notifications {
 	 * @param array $tpl  Aviso (title, card) o plantilla propia.
 	 * @param array $vars Datos ya calculados de la reserva.
 	 */
-	public static function designedEmail( string $inner, array $tpl, array $vars, ?array $booking = null ): string {
+	public static function designedEmail( string $inner, array $tpl, array $vars, ?array $booking = null, bool $showButton = true ): string {
 		$serif = "'Cormorant Garamond', Georgia, 'Times New Roman', serif";
 		$sans  = "Montserrat, Arial, Helvetica, sans-serif";
 		$e     = static function ( string $text ): string {
@@ -480,7 +549,7 @@ final class Notifications {
 		$logo    = (string) Settings::get( 'email_logo_url' );
 		$tagline = trim( (string) Settings::get( 'email_tagline' ) );
 		$brand   = '' !== $logo
-			? '<img src="' . esc_url( $logo ) . '" alt="' . esc_attr( $vars['negocio'] ?? '' ) . '" width="180" style="display:block;margin:0 auto;max-width:180px;height:auto;border:0;">'
+			? '<img src="' . esc_url( $logo ) . '" alt="' . esc_attr( $vars['negocio'] ?? '' ) . '" width="150" style="display:block;margin:0 auto;width:auto;height:auto;max-width:150px;max-height:150px;border:0;">'
 			: '<div style="font-family:' . $serif . ';font-size:30px;line-height:1.15;font-weight:600;color:' . self::BRAND_BROWN . ';">' . $e( (string) ( $vars['negocio'] ?? '' ) ) . '</div>';
 		$header  = '<tr><td align="center" style="background:' . self::BRAND_CREAM . ';padding:28px 24px 22px;border-bottom:1px solid #ECE4D8;">' . $brand .
 			( '' !== $tagline ? '<div style="font-family:' . $sans . ';font-size:11px;letter-spacing:4px;text-transform:uppercase;color:' . self::BRAND_MUTED . ';margin-top:8px;">' . $e( $tagline ) . '</div>' : '' ) . '</td></tr>';
@@ -491,30 +560,28 @@ final class Notifications {
 		$inner = (string) preg_replace( '/<a (?![^>]*style=)/i', '<a style="color:' . self::BRAND_BROWN . ';" ', $inner );
 		$html .= '<div style="font-family:' . $sans . ';font-size:15px;line-height:1.6;color:' . self::BRAND_TEXT . ';">' . $inner . '</div>';
 
-		// Tarjeta con fecha, hora, servicio y ubicación, en líneas separadas.
+		// Tarjeta con servicio, fecha, hora, ubicación y número de reserva: donde va {{detalles}}
+		// o, si el texto no lo tiene, después del mensaje.
+		$card = '';
 		if ( ! empty( $tpl['card'] ) && $booking ) {
-			$rows = array(
-				'📅 Fecha'     => (string) ( $vars['fecha'] ?? '' ),
-				'🕒 Hora'      => (string) ( $vars['hora'] ?? '' ),
-				'📸 Servicio'  => (string) ( $vars['servicio'] ?? '' ),
-			);
-			// La ubicación se comparte cuando la cita ya está confirmada.
-			if ( in_array( $booking['status'], array( BookingStatus::CONFIRMED, BookingStatus::COMPLETED ), true ) ) {
-				$rows['📍 Ubicación'] = (string) ( $vars['ubicacion'] ?? '' );
-			}
-			$rows['🔖 Número de reserva'] = (string) ( $vars['referencia'] ?? '' );
 			$lines = '';
-			foreach ( array_filter( $rows, 'strlen' ) as $label => $value ) {
+			foreach ( self::detailRows( $vars, (string) $booking['status'] ) as $label => $value ) {
 				$lines .= '<p style="margin:0 0 8px;font-family:' . $sans . ';font-size:15px;line-height:1.5;color:' . self::BRAND_TEXT . ';"><strong>' . $e( $label ) . ':</strong> ' . nl2br( $e( $value ) ) . '</p>';
 			}
-			$html .= '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 4px;"><tr><td style="background:' . self::BRAND_CREAM . ';border-radius:10px;padding:18px 20px 10px;">' .
-				'<p style="margin:0 0 12px;font-family:' . $sans . ';font-size:12px;letter-spacing:2px;text-transform:uppercase;font-weight:600;color:' . self::BRAND_BROWN . ';">Detalles de tu reservación</p>' . $lines . '</td></tr></table>';
+			$heading = trim( self::render( (string) ( $tpl['card_title'] ?? self::CARD_TITLE ), $vars ) );
+			$card    = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;"><tr><td style="background:' . self::BRAND_CREAM . ';border-radius:10px;padding:18px 20px 10px;">' .
+				( '' !== $heading ? '<p style="margin:0 0 12px;font-family:' . $sans . ';font-size:12px;letter-spacing:2px;text-transform:uppercase;font-weight:600;color:' . self::BRAND_BROWN . ';">' . $e( $heading ) . '</p>' : '' ) . $lines . '</td></tr></table>';
+		}
+		$marked = false !== strpos( $html, self::CARD_MARK );
+		$html   = (string) preg_replace( '#<p>\s*' . preg_quote( self::CARD_MARK, '#' ) . '\s*</p>|' . preg_quote( self::CARD_MARK, '#' ) . '#', str_replace( array( '\\', '$' ), array( '\\\\', '\\$' ), $card ), $html );
+		if ( ! $marked ) {
+			$html .= $card;
 		}
 
 		// Botón principal a la página privada de la reserva.
 		$link  = (string) ( $vars['enlace'] ?? '' );
 		$label = trim( (string) Settings::get( 'email_button_text' ) );
-		if ( '' !== $link && '' !== $label ) {
+		if ( $showButton && '' !== $link && '' !== $label ) {
 			$html .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:28px auto 4px;"><tr><td align="center" bgcolor="' . self::BRAND_BROWN . '" style="background:' . self::BRAND_BROWN . ';border-radius:6px;">' .
 				'<a href="' . esc_url( $link ) . '" target="_blank" style="display:inline-block;padding:14px 30px;font-family:' . $sans . ';font-size:14px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#FFFFFF;text-decoration:none;border-radius:6px;">' . $e( $label ) . '</a></td></tr></table>';
 		}
@@ -537,6 +604,52 @@ final class Notifications {
 			'<tr><td style="padding:32px 28px 28px;">' . $html . '</td></tr>' .
 			( '' !== $footer ? '<tr><td align="center" style="padding:20px 28px 26px;border-top:1px solid #ECE4D8;text-align:center;">' . $footer . '</td></tr>' : '' ) .
 			'</table></td></tr></table></body></html>';
+	}
+
+	/**
+	 * Renglones de la tarjeta de detalles. La ubicación solo con la cita confirmada.
+	 *
+	 * @return array<string,string>
+	 */
+	private static function detailRows( array $vars, string $status ): array {
+		$rows = array(
+			'📸 Servicio' => (string) ( $vars['servicio'] ?? '' ),
+			'📅 Fecha'    => (string) ( $vars['fecha'] ?? '' ),
+			'🕒 Hora'     => (string) ( $vars['hora'] ?? '' ),
+		);
+		if ( in_array( $status, array( BookingStatus::CONFIRMED, BookingStatus::COMPLETED ), true ) ) {
+			$rows['📍 Ubicación'] = (string) ( $vars['ubicacion'] ?? '' );
+		}
+		$rows['🔖 Número de reserva'] = (string) ( $vars['referencia'] ?? '' );
+		return array_filter( $rows, 'strlen' );
+	}
+
+	/** {{detalles}} como texto: un renglón por dato. */
+	private static function detailsText( array $vars, string $status ): string {
+		$out = array();
+		foreach ( self::detailRows( $vars, $status ) as $label => $value ) {
+			$out[] = $label . ': ' . $value;
+		}
+		return implode( "\n", $out );
+	}
+
+	/**
+	 * Correo de la clienta: diseño completo y su versión de texto simple.
+	 *
+	 * @return array{html:string,text:string,inner:string}
+	 */
+	public static function composeClientEmail( array $tpl, array $vars, string $status, bool $showButton = true ): array {
+		$textVars             = $vars;
+		$textVars['detalles'] = self::detailsText( $vars, $status );
+		$cardOn               = ! empty( $tpl['card'] );
+		// Con tarjeta, {{detalles}} marca su lugar; sin tarjeta, queda como texto.
+		$inner = self::renderHtml( (string) $tpl['body'], $cardOn ? array_merge( $vars, array( 'detalles' => self::CARD_MARK ) ) : $textVars );
+		$text  = self::htmlToText( str_replace( self::CARD_MARK, nl2br( esc_html( $textVars['detalles'] ) ), $inner ) );
+		return array(
+			'html'  => self::designedEmail( $inner, $tpl, $vars, array( 'status' => $status ), $showButton ),
+			'text'  => $text,
+			'inner' => str_replace( self::CARD_MARK, nl2br( esc_html( $textVars['detalles'] ) ), $inner ),
+		);
 	}
 
 	/**
@@ -579,7 +692,7 @@ final class Notifications {
 			'enlace'             => Bookings::portalUrl( $booking ),
 			'motivo'             => (string) ( $extra['reason'] ?? '' ),
 			'importe'            => isset( $extra['amount_cents'] ) ? Money::format( (int) $extra['amount_cents'] ) : '',
-		);
+		) + array( 'detalles' => '' );
 	}
 
 	/**
@@ -756,10 +869,11 @@ final class Notifications {
 			$body    = self::render( $tpl['admin'], $vars ) . "\n\n" . admin_url( 'admin.php?page=mo-booking-bookings&booking=' . (int) $booking['id'] );
 			$subject = '[Reservas] ' . $subject;
 		} else {
-			$html = self::renderHtml( $tpl['body'], $vars );
-			$body = self::htmlToText( $html );
 			// Plantillas propias: el asunto hace de título.
-			$design = self::designedEmail( $html, isset( $tpl['name'] ) ? array( 'title' => $tpl['subject'], 'card' => true ) : $tpl, $vars, $booking );
+			$mail   = self::composeClientEmail( isset( $tpl['name'] ) ? array( 'title' => $tpl['subject'], 'card' => true, 'body' => $tpl['body'] ) : $tpl, $vars, (string) $booking['status'], \MOBookingStudio\Infrastructure\Tokens::linkActive( (int) $booking['id'] ) );
+			$html   = $mail['inner'];
+			$body   = $mail['text'];
+			$design = $mail['html'];
 		}
 
 		return self::deliver( $row, $subject, $body, (bool) $booking['is_test'], $audience, $set, $payload, $html, $design );
@@ -822,16 +936,140 @@ final class Notifications {
 		self::processOne( $id );
 	}
 
+	// ----- Envío de prueba (beta.6.4) -----
+
+	/** Avisos y plantillas propias de correo que se pueden enviar de prueba. */
+	public static function testableEmails(): array {
+		$out       = array();
+		$templates = self::templates();
+		foreach ( self::events() as $event => $info ) {
+			if ( in_array( 'client', $info['to'], true ) && '' !== trim( wp_strip_all_tags( (string) $templates[ $event ]['body'] ) ) ) {
+				$out[ $event ] = $info['label'];
+			}
+		}
+		foreach ( self::customTemplates() as $cid => $t ) {
+			if ( 'email' === $t['channel'] ) {
+				$out[ 'custom_' . $cid ] = 'Plantilla propia: ' . $t['name'];
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Envía un correo de prueba con datos de ejemplo y el diseño completo. Se envía de
+	 * verdad aunque los correos estén en simulación, con "[PRUEBA]" en el asunto, y queda
+	 * en el registro.
+	 */
+	public static function sendTest( string $event, string $to ): void {
+		if ( ! is_email( $to ) ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'invalid_email', 'Escribe un correo válido para la prueba.', 400, array( 'field' => 'test_email' ) );
+		}
+		if ( ! isset( self::testableEmails()[ $event ] ) ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'not_found', 'Elige un aviso de correo.', 404 );
+		}
+		$tpl = self::templates()[ $event ] ?? self::customFor( $event );
+		if ( isset( $tpl['name'] ) ) {
+			$tpl = array( 'title' => $tpl['subject'], 'card' => true, 'body' => $tpl['body'], 'subject' => $tpl['subject'] );
+		}
+		$vars    = self::sampleVars();
+		$status  = in_array( $event, array( 'booking_confirmed', 'booking_rescheduled', 'reminder' ), true ) ? BookingStatus::CONFIRMED : BookingStatus::PENDING_PAYMENT;
+		$mail    = self::composeClientEmail( $tpl, $vars, $status );
+		$subject = '[PRUEBA] ' . self::render( (string) $tpl['subject'], $vars );
+
+		$error   = '';
+		$capture = static function ( $wpError ) use ( &$error ) {
+			$error = is_wp_error( $wpError ) ? $wpError->get_error_message() : 'Error de correo.';
+		};
+		$alt = static function ( $mailer ) use ( $mail ) {
+			$mailer->AltBody = $mail['text'];
+		};
+		add_action( 'wp_mail_failed', $capture );
+		add_action( 'phpmailer_init', $alt );
+		$headers = array( 'Content-Type: text/html; charset=UTF-8' );
+		$from    = (string) Settings::get( 'email_from' );
+		if ( is_email( $from ) ) {
+			$fromName  = (string) Settings::get( 'email_from_name' ) ?: (string) Settings::get( 'business_name' );
+			$headers[] = 'From: ' . str_replace( array( "\r", "\n", '<', '>' ), '', $fromName ) . ' <' . $from . '>';
+		}
+		$ok = wp_mail( $to, $subject, $mail['html'], $headers );
+		remove_action( 'wp_mail_failed', $capture );
+		remove_action( 'phpmailer_init', $alt );
+
+		$now = Db::toSql( Plugin::clock()->now() );
+		Db::wpdb()->insert(
+			Schema::table( 'notifications' ),
+			array(
+				'event'      => $event,
+				'channel'    => 'email',
+				'booking_id' => 0,
+				'recipient'  => $to,
+				'status'     => $ok ? 'accepted' : 'failed',
+				'attempts'   => 1,
+				'send_after' => $now,
+				'dedupe_key' => 'test:' . $event . ':' . bin2hex( random_bytes( 6 ) ),
+				'payload'    => Db::json( array( 'audience' => 'client', 'test' => true, 'subject' => $subject, 'text' => $mail['text'], 'preview' => mb_substr( $mail['text'], 0, 400 ) ) ),
+				'last_error' => $ok ? '' : mb_substr( $error ?: 'El transporte de correo rechazó el mensaje.', 0, 250 ),
+				'created_at' => $now,
+				'updated_at' => $now,
+			)
+		);
+		if ( ! $ok ) {
+			throw new \MOBookingStudio\Domain\DomainException( 'mail_failed', 'El correo de prueba no se pudo enviar: ' . ( $error ?: 'revisa la configuración de correo (SMTP) del sitio.' ) );
+		}
+	}
+
+	// ----- Plantillas de correo de beta.6.4 -----
+
+	/** Pie anterior (beta.6.3); si no se cambió, pasa al texto de la marca. */
+	private const OLD_FOOTER = "{{negocio}} | Fotógrafa 📸\nEste es un mensaje automático del sistema de reservas de {{negocio}}.";
+
+	/**
+	 * Migración: los 10 correos de la clienta pasan a las plantillas nuevas (asunto, título,
+	 * encabezado de la tarjeta y texto). Los WhatsApp no cambian: en los avisos que usaban el
+	 * texto del correo, primero se copia ese texto (tal como hoy) al campo de WhatsApp.
+	 * Se conservan "Enviar este aviso" y los avisos para ti.
+	 */
+	public static function migrateEmailTemplates(): int {
+		$current = self::templates();
+		$stored  = (array) OptionStore::load( self::TEMPLATES_OPTION, array() );
+		$count   = 0;
+		foreach ( self::emailTexts() as $event => $new ) {
+			$tpl = $current[ $event ];
+			if ( '' === trim( (string) $tpl['whatsapp'] ) && '' !== trim( wp_strip_all_tags( (string) $tpl['body'] ) ) ) {
+				$body            = (string) $tpl['body'];
+				$tpl['whatsapp'] = self::isHtml( $body ) ? self::htmlToText( self::cleanBody( $body ), true ) : $body;
+			}
+			$stored[ $event ] = array_merge(
+				$tpl,
+				array(
+					'subject'    => $new['subject'],
+					'title'      => $new['title'],
+					'card_title' => $new['card_title'],
+					'body'       => $new['body'],
+					'card'       => true,
+				)
+			);
+			++$count;
+		}
+		OptionStore::save( self::TEMPLATES_OPTION, $stored );
+		$settings = (array) OptionStore::load( Settings::OPTION, array() );
+		if ( self::OLD_FOOTER === (string) ( $settings['email_footer'] ?? '' ) ) {
+			Settings::update( array( 'email_footer' => "Mónica Orozco | Fotógrafa 📸\nEste es un mensaje automático del sistema de reservas de MO Fotógrafa." ) );
+		}
+		return $count;
+	}
+
 	// ----- WhatsApp manual -----
 
 	public static function whatsappText( array $booking, string $event ): string {
 		$tpl  = self::templates()[ $event ] ?? self::customFor( $event ) ?? self::templates()['booking_created'];
 		$vars = self::varsFor( $booking, self::lastExtra( (int) $booking['id'], $event ) );
+		$vars['detalles'] = self::detailsText( $vars, (string) $booking['status'] );
 		if ( '' !== trim( (string) ( $tpl['whatsapp'] ?? '' ) ) ) {
 			return self::render( (string) $tpl['whatsapp'], $vars );
 		}
 		// Sin texto propio: el del correo, con negritas y cursivas al estilo de WhatsApp.
-		return self::isHtml( (string) $tpl['body'] ) ? self::htmlToText( self::renderHtml( (string) $tpl['body'], $vars ), true ) : self::render( (string) $tpl['body'], $vars );
+		return self::isHtml( (string) $tpl['body'] ) ? self::htmlToText( self::renderHtml( (string) $tpl['body'], $vars, false ), true ) : self::render( (string) $tpl['body'], $vars );
 	}
 
 	/**

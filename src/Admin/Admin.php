@@ -29,6 +29,7 @@ final class Admin {
 		'load_test_data'      => Cap::SETTINGS,
 		'clear_test_data'     => Cap::SETTINGS,
 		'save_templates'      => Cap::SETTINGS,
+		'send_test_email'     => Cap::SETTINGS,
 		'save_template'       => Cap::SETTINGS,
 		'delete_template'     => Cap::SETTINGS,
 		'send_template'       => Cap::BOOKINGS,
@@ -339,6 +340,12 @@ final class Admin {
 				if ( $unknown ) {
 					Ui::flash( 'warning', 'Revisa estos códigos, no los reconocemos y saldrían vacíos: ' . implode( ' ', $unknown ) . '. Usa la guía de códigos (doble llave, por ejemplo {{nombre}}).' );
 				}
+				return $redirect;
+
+			case 'send_test_email':
+				$to = sanitize_email( (string) ( $p['test_email'] ?? '' ) );
+				Notifications::sendTest( sanitize_key( (string) ( $p['event'] ?? '' ) ), $to );
+				Ui::flash( 'success', 'Correo de prueba enviado a ' . $to . '. Revisa también la carpeta de spam o promociones.' );
 				return $redirect;
 
 			case 'save_template':

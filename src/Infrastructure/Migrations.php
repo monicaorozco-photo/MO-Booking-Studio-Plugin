@@ -28,6 +28,8 @@ final class Migrations {
 			'2_token_key_source'              => array( self::class, 'pinTokenKey' ),
 			// Esquema 3 (0.2.0-beta.2): las condiciones existentes pasan a ser la versión 1 de un contrato por servicio.
 			'3_contracts_from_terms'          => array( \MOBookingStudio\Application\Contracts::class, 'migrateTerms' ),
+			// 0.2.0-beta.6.4: los 10 correos de la clienta con las plantillas nuevas (WhatsApp sin cambios).
+			'4_email_templates_beta64'        => array( \MOBookingStudio\Application\Notifications::class, 'migrateEmailTemplates' ),
 		);
 	}
 

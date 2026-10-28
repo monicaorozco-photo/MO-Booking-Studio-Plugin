@@ -39,6 +39,12 @@ final class NotificationsPage {
 			echo '<div id="plantilla">' . self::customForm( 'new' === $id ? null : $id ) . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 
+		// beta.6.4: envío de prueba con datos de ejemplo.
+		$body = '<p class="description">Te llega el correo con el diseño completo y datos de ejemplo, con "[PRUEBA]" en el asunto. Se envía de verdad aunque los correos estén en simulación (usa el correo autenticado del sitio). Usa el texto guardado: guarda primero tus cambios.</p>' .
+			Ui::formOpen( 'send_test_email', array(), 'mo-inline-form' ) . Ui::select( 'event', Notifications::testableEmails(), 'booking_created', array( 'aria-label' => 'Aviso de correo' ) ) . ' ' .
+			Ui::input( 'test_email', (string) Settings::get( 'admin_email' ), 'email', array( 'class' => 'regular-text', 'aria-label' => 'Enviar la prueba a', 'required' => 'required' ) ) . ' ' . Ui::button( 'Enviarme una prueba', 'button-secondary' ) . '</form>';
+		echo Ui::card( 'Envío de prueba', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
+
 		// Avisos del sistema.
 		$body = Ui::formOpen( 'save_templates' ) . '<p class="description">Se envían solos con cada evento. Puedes cambiar el texto o desactivarlos; no se pueden borrar porque el sistema los necesita.</p>';
 		foreach ( $events as $event => $info ) {
@@ -49,7 +55,8 @@ final class NotificationsPage {
 			if ( in_array( 'client', $info['to'], true ) ) {
 				$body .= Ui::row( 'Título del correo', Ui::input( "tpl[$event][title]", (string) $t['title'], 'text', array( 'class' => 'large-text', 'data-mo-codes' => '1' ) ) . self::warning( "tpl[$event][title]" ), 'El texto grande al inicio del correo. Admite emojis. Vacío = sin título.' );
 				$body .= self::editorRow( 'Mensaje al cliente (correo)', "tpl[$event][body]", $t['body'], 8, 'Puedes usar negritas, cursivas, encabezados, listas y enlaces.', true );
-				$body .= Ui::checkbox( "tpl[$event][card]", ! empty( $t['card'] ), 'Agregar la tarjeta con fecha, hora, servicio y ubicación' );
+				$body .= Ui::checkbox( "tpl[$event][card]", ! empty( $t['card'] ), 'Agregar la tarjeta con servicio, fecha, hora, ubicación y número de reserva' );
+				$body .= Ui::row( 'Encabezado de la tarjeta', Ui::input( "tpl[$event][card_title]", (string) ( $t['card_title'] ?? '' ), 'text', array( 'class' => 'regular-text' ) ), 'La tarjeta aparece donde escribas {{detalles}} en el mensaje; si no lo escribes, va al final. La ubicación solo se muestra con la cita confirmada.' );
 				$body .= self::designPreview( $event, $t );
 				$body .= self::editorRow( 'Texto para WhatsApp (opcional)', "tpl[$event][whatsapp]", (string) ( $t['whatsapp'] ?? '' ), 5, 'Vacío = se usa el texto del correo. En WhatsApp: *negrita*, _cursiva_, ~tachado~. Los saltos de línea y emojis se respetan.' );
 			}
@@ -74,7 +81,7 @@ final class NotificationsPage {
 		if ( $list ) {
 			$body .= '<table class="widefat striped mo-table"><thead><tr><th>Fecha</th><th>Mensaje</th><th>Destinatario</th><th>Canal</th><th>Estado</th><th></th></tr></thead><tbody>';
 			foreach ( $list as $n ) {
-				$body .= '<tr><td data-label="Fecha">' . esc_html( Ui::localDateTime( 'pending' === $n['status'] ? $n['send_after'] : $n['updated_at'], 'd/m H:i' ) ) . '</td><td data-label="Mensaje">' . ( $n['booking_id'] ? '<a href="' . esc_url( Ui::url( 'mo-booking-bookings', array( 'booking' => (int) $n['booking_id'] ) ) ) . '">' : '' ) . esc_html( Notifications::eventLabel( $n['event'] ) ) . ( $n['booking_id'] ? '</a>' : '' ) . self::storedText( $n ) . '</td><td data-label="Destinatario">' . esc_html( $n['recipient'] ) . '</td><td data-label="Canal">' . esc_html( $n['channel'] ) . '</td><td data-label="Estado">' . esc_html( Notifications::STATUS_LABELS[ $n['status'] ] ?? $n['status'] ) . ( $n['last_error'] ? '<br><span class="description">' . esc_html( $n['last_error'] ) . '</span>' : '' ) . '</td><td>' .
+				$body .= '<tr><td data-label="Fecha">' . esc_html( Ui::localDateTime( 'pending' === $n['status'] ? $n['send_after'] : $n['updated_at'], 'd/m H:i' ) ) . '</td><td data-label="Mensaje">' . ( $n['booking_id'] ? '<a href="' . esc_url( Ui::url( 'mo-booking-bookings', array( 'booking' => (int) $n['booking_id'] ) ) ) . '">' : '' ) . esc_html( Notifications::eventLabel( $n['event'] ) ) . ( $n['booking_id'] ? '</a>' : '' ) . ( ! empty( ( (array) json_decode( (string) $n['payload'], true ) )['test'] ) ? ' <span class="mo-pill">Prueba</span>' : '' ) . self::storedText( $n ) . '</td><td data-label="Destinatario">' . esc_html( $n['recipient'] ) . '</td><td data-label="Canal">' . esc_html( $n['channel'] ) . '</td><td data-label="Estado">' . esc_html( Notifications::STATUS_LABELS[ $n['status'] ] ?? $n['status'] ) . ( $n['last_error'] ? '<br><span class="description">' . esc_html( $n['last_error'] ) . '</span>' : '' ) . '</td><td>' .
 					( 'failed' === $n['status'] ? Ui::formOpen( 'retry_notification', array( 'notification_id' => $n['id'] ), 'mo-inline-form' ) . Ui::button( 'Reintentar', 'button-link' ) . '</form>' : '' ) . '</td></tr>';
 			}
 			$body .= '</tbody></table>';
@@ -105,7 +112,7 @@ final class NotificationsPage {
 	private static function designPreview( string $event, array $t ): string {
 		$vars    = Notifications::sampleVars();
 		$status  = in_array( $event, array( 'booking_confirmed', 'booking_rescheduled', 'reminder' ), true ) ? \MOBookingStudio\Domain\BookingStatus::CONFIRMED : \MOBookingStudio\Domain\BookingStatus::PENDING_PAYMENT;
-		$email   = Notifications::designedEmail( Notifications::renderHtml( (string) $t['body'], $vars ), $t, $vars, array( 'status' => $status ) );
+		$email   = Notifications::composeClientEmail( $t, $vars, $status )['html'];
 		return '<details class="mo-details"><summary>Ver el diseño del correo (con datos de ejemplo)</summary><p class="description">Muestra el texto guardado: guarda primero para ver tus cambios.</p>' .
 			'<iframe title="Vista previa del correo" loading="lazy" sandbox="" style="width:100%;max-width:680px;height:760px;border:1px solid #dcdcde;border-radius:6px;background:#fff;" srcdoc="' . esc_attr( $email ) . '"></iframe></details>';
 	}

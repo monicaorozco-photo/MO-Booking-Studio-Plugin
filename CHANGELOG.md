@@ -1,5 +1,19 @@
 # Cambios
 
+## 0.2.0-beta.6.4 — 29 de octubre de 2026
+
+Sin cambios de base de datos. Al actualizar se aplican las plantillas nuevas de correo (una sola vez).
+
+- Correos ordenados: el texto del editor de WordPress se envía con sus párrafos (antes salía todo amontonado). Aplica también a las plantillas ya guardadas.
+- Plantillas nuevas de los 10 correos para la clienta (documento "Plantillas de correo electrónico"): servicio, fecha, hora, ubicación y número de reserva van solo en la tarjeta; el enlace, en el botón; la firma, en el pie. El título grande es el asunto y cada tarjeta lleva su encabezado ("📅 Detalles de la solicitud", "📋 Datos de referencia"…).
+  - WhatsApp no cambia: en los avisos que usaban el texto del correo, ese texto se copió tal cual al campo "Texto para WhatsApp".
+  - Nuevo código `{{detalles}}`: la tarjeta aparece donde lo escribas (sin él, al final del mensaje). En WhatsApp son renglones de texto.
+  - Nuevo campo por aviso: "Encabezado de la tarjeta".
+- Envío de prueba: en *Notificaciones → Envío de prueba* eliges un aviso (o plantilla propia de correo) y te llega con el diseño completo, datos de ejemplo y "[PRUEBA]" en el asunto, aunque los correos estén en simulación. Queda en el registro con la etiqueta "Prueba".
+- Botón "Consultar mi reserva": se quita solo cuando el enlace privado de esa reserva ya venció o se anuló.
+- Logo de los correos: máximo 150 × 150 px (conserva su proporción).
+- Pie de los correos: "Mónica Orozco | Fotógrafa 📸" y "Este es un mensaje automático del sistema de reservas de MO Fotógrafa." (si ya lo habías cambiado, se respeta el tuyo).
+
 ## 0.2.0-beta.6.3 — 28 de octubre de 2026
 
 Sin cambios de base de datos. Las reservas ya hechas conservan su precio.

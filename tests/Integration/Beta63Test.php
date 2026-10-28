@@ -77,7 +77,7 @@ final class Beta63Test extends IntegrationTestCase {
 		$this->assertStringContainsString( '#FAF7F2', $html, 'Franja y tarjeta crema.' );
 		// WordPress cambia los emojis por imágenes en los correos (con el emoji como texto alternativo).
 		$this->assertMatchesRegularExpression( '/¡Tu cita está confirmada! (📅|<img[^>]+alt="📅")/u', $html );
-		$this->assertStringContainsString( 'Detalles de tu reservación', $html );
+		$this->assertStringContainsString( 'Detalles de tu cita', $html );
 		$this->assertStringContainsString( 'Consultar mi reserva', $html );
 		$this->assertStringContainsString( 'Este es un mensaje automático del sistema de reservas de', $html );
 		$this->assertStringContainsString( 'max-width:600px', $html );
@@ -93,6 +93,6 @@ final class Beta63Test extends IntegrationTestCase {
 		$this->assertFalse( $saved['card'] );
 		$html = Notifications::designedEmail( '<p>Hola</p>', $saved, Notifications::sampleVars(), array( 'status' => 'confirmed' ) );
 		$this->assertStringContainsString( 'Nos vemos pronto ✨', $html );
-		$this->assertStringNotContainsString( 'Detalles de tu reservación', $html );
+		$this->assertStringNotContainsString( 'Detalles de tu cita', $html );
 	}
 }

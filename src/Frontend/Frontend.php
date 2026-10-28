@@ -53,8 +53,10 @@ final class Frontend {
 		$atts = shortcode_atts(
 			array_merge(
 				array(
-					'service' => '',
-					'intro'   => '',
+					'service'    => '',
+					'intro'      => '',
+					'show_brand' => 'yes',
+					'show_title' => 'yes',
 				),
 				self::WELCOME_TEXTS
 			),
@@ -65,7 +67,7 @@ final class Frontend {
 		foreach ( self::WELCOME_TEXTS as $key => $default ) {
 			$texts[ $key ] = (string) $atts[ $key ];
 		}
-		return self::renderBooking( (string) $atts['service'], array( 'intro' => (string) $atts['intro'], 'texts' => $texts ) );
+		return self::renderBooking( (string) $atts['service'], array( 'intro' => (string) $atts['intro'], 'texts' => $texts, 'show_brand' => 'no' !== $atts['show_brand'], 'show_title' => 'no' !== $atts['show_title'] ) );
 	}
 
 	/** Solo texto plano; lo que no venga usa el texto por omisión. */
@@ -77,8 +79,9 @@ final class Frontend {
 		return $out;
 	}
 
-	public function portalShortcode(): string {
-		return self::renderPortal();
+	public function portalShortcode( $atts = array() ): string {
+		$atts = shortcode_atts( array( 'show_brand' => 'yes', 'show_title' => 'yes' ), (array) $atts, 'mo_booking_portal' );
+		return self::renderPortal( false, array( 'show_brand' => 'no' !== $atts['show_brand'], 'show_title' => 'no' !== $atts['show_title'] ) );
 	}
 
 	/**
@@ -107,6 +110,9 @@ final class Frontend {
 			'intro'           => (string) ( $options['intro'] ?? '' ),
 			'welcome'         => self::welcomeTexts( (array) ( $options['texts'] ?? array() ) ),
 			'showDescription' => ! isset( $options['show_description'] ) || $options['show_description'],
+			// beta.6: mostrar u ocultar la marca y el nombre del servicio arriba del formulario.
+			'showBrand'       => ! isset( $options['show_brand'] ) || $options['show_brand'],
+			'showTitle'       => ! isset( $options['show_title'] ) || $options['show_title'],
 			// beta.4: las reglas de cancelación son de control interno; solo se muestran si se pide.
 			'showPolicies'    => ! empty( $options['show_policies'] ) && 'no' !== $options['show_policies'],
 			'portalUrl'       => esc_url_raw( \MOBookingStudio\Application\Bookings::portalBase() ),
@@ -122,13 +128,15 @@ final class Frontend {
 		);
 	}
 
-	public static function renderPortal( bool $preview = false ): string {
+	public static function renderPortal( bool $preview = false, array $options = array() ): string {
 		self::registerAssetHandles();
 		wp_enqueue_style( 'mo-booking' );
 		wp_enqueue_script( 'mo-booking-portal' );
 		$config = array(
 			'api'     => esc_url_raw( rest_url( Routes::NS . '/' ) ),
-			'preview' => $preview,
+			'preview'   => $preview,
+			'showBrand' => ! isset( $options['show_brand'] ) || $options['show_brand'],
+			'showTitle' => ! isset( $options['show_title'] ) || $options['show_title'],
 		);
 		return sprintf(
 			'<div class="mo-booking mo-booking-portal" data-mo-portal="%1$s"><noscript>%2$s</noscript><p class="mo-booking__loading" role="status">%3$s</p></div>',

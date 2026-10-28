@@ -44,12 +44,21 @@ class PortalWidget extends \Elementor\Widget_Base {
 	protected function register_controls() {
 		$this->start_controls_section( 'content', array( 'label' => 'Vista de reserva' ) );
 		$this->add_control( 'help', array( 'type' => \Elementor\Controls_Manager::RAW_HTML, 'raw' => 'Aquí se ve la reserva de la persona que abre su enlace privado. En el editor se muestra una reserva de ejemplo para que ajustes los estilos.' ) );
+		$this->add_control( 'show_brand', array( 'label' => 'Mostrar nombre de la marca', 'type' => \Elementor\Controls_Manager::SWITCHER, 'default' => 'yes' ) );
+		$this->add_control( 'show_title', array( 'label' => 'Mostrar nombre del servicio', 'type' => \Elementor\Controls_Manager::SWITCHER, 'default' => 'yes' ) );
 		$this->end_controls_section();
 		$this->registerStyleControls( false );
 	}
 
 	protected function render() {
+		$s       = $this->get_settings_for_display();
 		$preview = class_exists( '\Elementor\Plugin' ) && \Elementor\Plugin::$instance->editor->is_edit_mode();
-		echo Frontend::renderPortal( $preview || isset( $_GET['elementor-preview'] ) ); // phpcs:ignore WordPress.Security.EscapeOutput,WordPress.Security.NonceVerification
+		echo Frontend::renderPortal( // phpcs:ignore WordPress.Security.EscapeOutput
+			$preview || isset( $_GET['elementor-preview'] ), // phpcs:ignore WordPress.Security.NonceVerification
+			array(
+				'show_brand' => 'yes' === ( $s['show_brand'] ?? 'yes' ),
+				'show_title' => 'yes' === ( $s['show_title'] ?? 'yes' ),
+			)
+		);
 	}
 }

@@ -53,6 +53,8 @@ class BookingWidget extends \Elementor\Widget_Base {
 		$this->start_controls_section( 'content', array( 'label' => 'Contenido' ) );
 		$this->add_control( 'service', array( 'label' => 'Servicio', 'type' => \Elementor\Controls_Manager::SELECT, 'options' => $services, 'default' => '' ) );
 		$this->add_control( 'intro', array( 'label' => 'Texto de introducción', 'type' => \Elementor\Controls_Manager::TEXTAREA, 'default' => '' ) );
+		$this->add_control( 'show_brand', array( 'label' => 'Mostrar nombre de la marca', 'type' => \Elementor\Controls_Manager::SWITCHER, 'default' => 'yes' ) );
+		$this->add_control( 'show_title', array( 'label' => 'Mostrar nombre del servicio', 'type' => \Elementor\Controls_Manager::SWITCHER, 'default' => 'yes', 'description' => 'Apágalos si pones tu propio título arriba del formulario.' ) );
 		$this->add_control( 'show_description', array( 'label' => 'Mostrar descripción del servicio', 'type' => \Elementor\Controls_Manager::SWITCHER, 'default' => 'yes' ) );
 		$this->add_control( 'show_policies', array( 'label' => 'Mostrar reglas de cancelación en el resumen', 'type' => \Elementor\Controls_Manager::SWITCHER, 'default' => '', 'description' => 'Normalmente apagado: la clienta ve y acepta tu contrato.' ) );
 		$this->add_control( 'layout', array( 'label' => 'Disposición', 'type' => \Elementor\Controls_Manager::SELECT, 'options' => array( 'columns' => 'Dos columnas en computadora', 'stacked' => 'Una columna' ), 'default' => 'columns' ) );
@@ -87,6 +89,8 @@ class BookingWidget extends \Elementor\Widget_Base {
 				'intro'            => (string) ( $s['intro'] ?? '' ),
 				'preview'          => $preview || ( isset( $_GET['elementor-preview'] ) ), // phpcs:ignore WordPress.Security.NonceVerification
 				'show_description' => 'yes' === ( $s['show_description'] ?? 'yes' ),
+				'show_brand'       => 'yes' === ( $s['show_brand'] ?? 'yes' ),
+				'show_title'       => 'yes' === ( $s['show_title'] ?? 'yes' ),
 				'show_policies'    => 'yes' === ( $s['show_policies'] ?? '' ),
 				'layout'           => (string) ( $s['layout'] ?? 'columns' ),
 				'texts'            => array_intersect_key( $s, Frontend::WELCOME_TEXTS ),

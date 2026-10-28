@@ -73,12 +73,14 @@
 		if (this.isNew) {
 			html += '<div class="mo-booking__welcome-new" role="status"><span class="mo-booking__welcome-icon">' + I('check') + '</span><div><p class="mo-booking__eyebrow">Solicitud recibida</p><h2 class="mo-booking__panel-title">¡Tu horario está apartado!</h2><p>Esta es tu página de reserva. Te enviamos el enlace por correo y te escribiremos por WhatsApp con cada novedad. Guárdalo para volver cuando quieras.</p></div></div>';
 		}
-		html += '<p class="mo-booking__brand">' + esc(b.brand) + ' · Consulta de reserva</p>';
+		var showBrand = !this.config || this.config.showBrand !== false;
+		var showTitle = !this.config || this.config.showTitle !== false;
+		if (showBrand) { html += '<p class="mo-booking__brand">' + esc(b.brand) + ' · Consulta de reserva</p>'; }
 		html += '<div aria-live="polite" role="status" class="mo-booking__live">' + (message ? '<p class="mo-booking__success">' + esc(message) + '</p>' : '') + '</div>';
 
 		// Tarjeta principal: servicio, estado y lo que falta por pagar.
 		html += '<section class="mo-booking__panel mo-booking__hero"><div class="mo-booking__hero-main">';
-		html += '<h2 class="mo-booking__title" tabindex="-1">' + esc(b.service) + '</h2>';
+		if (showTitle) { html += '<h2 class="mo-booking__title" tabindex="-1">' + esc(b.service) + '</h2>'; }
 		html += '<p class="mo-booking__ref">Reserva <strong>' + esc(b.reference) + '</strong> · ' + esc(b.name) + '</p>';
 		html += '<span class="mo-booking__pill mo-booking__pill--' + esc(b.status) + '">' + I(b.status === 'confirmed' || b.status === 'completed' ? 'check' : 'clock') + esc(b.status_label) + '</span>';
 		html += '<p class="mo-booking__status">' + esc(b.status_help) + '</p></div>';
@@ -291,7 +293,7 @@
 		var m = rs.month;
 		var now = new Date();
 		var canPrev = (y > now.getFullYear()) || (y === now.getFullYear() && m > now.getMonth() + 1);
-		var html = '<p class="mo-booking__brand">' + esc(b.brand) + ' · Cambio de fecha</p>';
+		var html = (!this.config || this.config.showBrand !== false) ? '<p class="mo-booking__brand">' + esc(b.brand) + ' · Cambio de fecha</p>' : '';
 		html += '<h2 class="mo-booking__title" tabindex="-1" data-rs-heading>Elige tu nueva fecha</h2>';
 		html += '<p class="mo-booking__lead">Tu cita actual: ' + esc(b.date_txt) + ', ' + esc(b.time_txt) + ' h. Puedes cambiarla una sola vez.</p>';
 		if (rs.error) { html += '<p class="mo-booking__alert" role="alert">' + esc(rs.error) + '</p>'; }

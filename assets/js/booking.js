@@ -174,8 +174,8 @@
 		var step = this.state.step;
 		var leads = ['', 'Selecciona una fecha disponible y después el horario que prefieras.', 'Cuéntanos cómo contactarte y quiénes participarán en la sesión.', 'Revisa que los detalles sean correctos antes de enviar tu solicitud.', ''];
 		var html = '<header class="mo-booking__header">';
-		if (svc.brand) { html += '<p class="mo-booking__brand">' + esc(svc.brand) + '</p>'; }
-		html += '<h2 class="mo-booking__title">' + esc(svc.title) + '</h2>';
+		if (svc.brand && this.config.showBrand !== false) { html += '<p class="mo-booking__brand">' + esc(svc.brand) + '</p>'; }
+		if (this.config.showTitle !== false) { html += '<h2 class="mo-booking__title">' + esc(svc.title) + '</h2>'; }
 		if (step === 0 && this.config.intro) { html += '<p class="mo-booking__intro">' + M.lines(this.config.intro) + '</p>'; }
 		if (leads[step]) { html += '<p class="mo-booking__lead">' + esc(leads[step]) + '</p>'; }
 		html += '</header>';

@@ -34,7 +34,7 @@
 		return {
 			service: {
 				title: 'Vista previa del servicio', brand: 'Tu marca', description: 'Esta es una vista de demostración: no crea reservas ni envía mensajes.',
-				duration: 20, participants_included: 6, participants_max: 10, extra_participant_txt: '$100 MXN', pets_allowed: true, pet_friendly: true, fast_delivery: { label: 'Entrega rápida', price_txt: '$300 MXN', question: '¿Deseas agregar entrega rápida de 2 días hábiles a tu sesión?', regular_text: 'Entrega regular de 5 a 7 días hábiles.' },
+				duration: 20, participants_included: 6, participants_max: 10, extra_participant: 10000, extra_participant_txt: '$100 MXN', pets_allowed: true, pets_count: true, pet_friendly: true, group_note: 'Si son más asistentes entre niños y mascotas, consulta tu caso antes de reservar: algunos grupos requieren un espacio doble de sesión.', fast_delivery: { label: 'Entrega rápida', price_txt: '$300 MXN', question: '¿Deseas agregar entrega rápida de 2 días hábiles a tu sesión?', regular_text: 'Entrega regular de 5 a 7 días hábiles.' },
 				contract: { title: 'Contrato de servicio (demostración)', version: 1, body: '<p>Texto del contrato.</p>' },
 				extras: [], questions: [], deposit_txt: 'Anticipo de $500 MXN para apartar tu horario.', hold_hours: 12, timezone: 'America/Ciudad_Juarez', policies: [], terms_text: ''
 			},
@@ -195,8 +195,7 @@
 		var fact = function (name, text) { return '<li>' + M.icon(name) + '<span>' + text + '</span></li>'; };
 		var html = '<ul class="mo-booking__facts">';
 		html += fact('clock', 'Duración: ' + esc(svc.duration) + ' minutos');
-		html += fact('users', 'Incluye hasta ' + esc(svc.participants_included) + ' ' + (svc.participants_included === 1 ? 'persona' : 'personas') +
-			(svc.participants_max > svc.participants_included ? '; ' + esc(svc.extra_participant_txt) + ' por persona adicional, máximo ' + esc(svc.participants_max) : ''));
+		html += fact('users', this.peopleText());
 		if (svc.pet_friendly) { html += fact('paw', 'Pet friendly'); }
 		if (svc.location) { html += fact('pin', 'Lugar: ' + esc(svc.location)); }
 		if (svc.delivery_text) { html += fact('gift', esc(svc.delivery_text)); }
@@ -474,8 +473,8 @@
 			html += counter('pets', 'Mascotas', 'paw', f.pets, svc.pets_max || 0);
 		}
 		html += '<p class="mo-booking__total-people" aria-live="polite">Número de asistentes: <output name="attendees" data-attendees>' + esc(this.attendees()) + '</output></p>';
-		html += '<p class="mo-booking__help">La sesión incluye hasta ' + esc(svc.participants_included) + ' ' + (svc.participants_included === 1 ? 'persona' : 'personas') +
-			(svc.participants_max > svc.participants_included ? '; ' + esc(svc.extra_participant_txt) + ' por persona adicional, máximo ' + esc(svc.participants_max) + '.' : '.') + '</p>';
+		html += '<p class="mo-booking__help">La sesión ' + this.peopleText().replace(/^I/, 'i') + '.</p>';
+		if (svc.group_note) { html += '<p class="mo-booking__help mo-booking__group-note">' + M.icon('info') + '<span>' + esc(svc.group_note) + '</span></p>'; }
 		html += '</section>';
 		html += '</div><div class="mo-booking__col">';
 
@@ -540,12 +539,21 @@
 		return html;
 	};
 
-	/** Asistentes visibles = niños + adultos (personas; las mascotas van aparte). */
+	/** Asistentes = niños + adultos (+ mascotas si el servicio las cuenta como asistentes). */
 	App.prototype.attendees = function () {
 		var f = this.state.form;
-		var c = /^\d+$/.test(String(f.children)) ? parseInt(f.children, 10) : 0;
-		var a = /^\d+$/.test(String(f.adults)) ? parseInt(f.adults, 10) : 0;
-		return c + a;
+		var svc = this.state.service || {};
+		var num = function (v) { return /^\d+$/.test(String(v)) ? parseInt(v, 10) : 0; };
+		return num(f.children) + num(f.adults) + (svc.pets_allowed && svc.pets_count ? num(f.pets) : 0);
+	};
+
+	/** "Incluye hasta 6 asistentes; $100 MXN por asistente adicional; máximo 10 adultos". */
+	App.prototype.peopleText = function () {
+		var svc = this.state.service;
+		var n = svc.participants_included;
+		return 'Incluye hasta ' + esc(n) + ' ' + (n === 1 ? 'asistente' : 'asistentes') +
+			(svc.extra_participant > 0 ? '; ' + esc(svc.extra_participant_txt) + ' por asistente adicional' : '') +
+			'; máximo ' + esc(svc.participants_max) + ' ' + (svc.participants_max === 1 ? 'adulto' : 'adultos');
 	};
 
 	App.prototype.renderSummary = function () {
@@ -562,8 +570,10 @@
 		html += '<h3 class="mo-booking__sr" id="mo-step-3" tabindex="-1" data-step-heading>Revisa tu reserva</h3>';
 		html += '<div class="mo-booking__grid"><section class="mo-booking__panel">' + this.cardTitle('camera', 'Detalles de la sesión');
 		html += group('calendar', 'Fecha y horario', 'to-calendar', row('Servicio', esc(q.service)) + row('Fecha', esc(q.date_txt)) + row('Hora', esc(q.time_txt) + ' h (' + esc(q.timezone) + ')'));
-		var people = row('Niños', esc(f.children === '' ? 0 : f.children)) + row('Adultos', esc(f.adults === '' ? 0 : f.adults)) + row('Total de asistentes', esc(this.attendees()));
+		var people = row('Niños', esc(f.children === '' ? 0 : f.children)) + row('Adultos', esc(f.adults === '' ? 0 : f.adults));
+		// beta.6.3: si las mascotas cuentan como asistentes, van antes del total y se suman.
 		if (svc.pets_allowed) { people += row('Mascotas', esc(f.pets === '' ? 0 : f.pets)); }
+		people += row('Total de asistentes', esc(this.attendees()));
 		if (f.important_info) { people += row('Información importante', M.lines(f.important_info)); }
 		html += group('users', 'Asistentes', 'to-details', people);
 		html += group('user', 'Tus datos', 'to-details', row('Nombre y apellido', esc(f.name)) + row('Correo', esc(f.email)) + row('WhatsApp', esc(f.phone)));
@@ -730,9 +740,9 @@
 		if (f.children !== '' && !whole.test(f.children)) { return ['children', 'Niños: escribe un número entero, 0 o mayor.']; }
 		if (f.adults !== '' && !whole.test(f.adults)) { return ['adults', 'Adultos: escribe un número entero, 0 o mayor.']; }
 		if (svc.pets_allowed && f.pets !== '' && !whole.test(f.pets)) { return ['pets', 'Mascotas: escribe un número entero, 0 o mayor.']; }
-		var n = this.attendees();
-		if (n < 1) { return ['adults', 'Indica al menos un asistente entre niños y adultos.']; }
-		if (n > svc.participants_max) { return ['adults', 'El máximo es de ' + svc.participants_max + ' personas.']; }
+		var people = (whole.test(f.children) ? parseInt(f.children, 10) : 0) + (whole.test(f.adults) ? parseInt(f.adults, 10) : 0);
+		if (people < 1) { return ['adults', 'Indica al menos un asistente entre niños y adultos.']; }
+		if ((whole.test(f.adults) ? parseInt(f.adults, 10) : 0) > svc.participants_max) { return ['adults', 'El máximo es de ' + svc.participants_max + ' adultos. ' + (svc.group_note || '')]; }
 		if (f.important_info.length > 2000) { return ['important_info', 'Máximo 2,000 caracteres.']; }
 		if (f.name.replace(/\s+/g, ' ').trim().length < 2) { return ['name', 'Escribe tu nombre y apellido.']; }
 		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) { return ['email', 'Escribe un correo válido.']; }

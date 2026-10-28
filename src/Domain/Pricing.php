@@ -61,8 +61,11 @@ final class Pricing {
 			throw new DomainException( 'invalid_pets', sprintf( 'El máximo de mascotas es %d.', $petsMax ), 400, array( 'field' => 'pets' ) );
 		}
 		$counted = $participants + ( ! empty( $service['pets_count_as_participants'] ) ? $pets : 0 );
-		if ( $counted > $max ) {
-			throw new DomainException( 'too_many_participants', sprintf( 'El máximo para este servicio es de %d personas.', $max ), 400, array( 'field' => 'participants' ) );
+		// beta.6.3: el máximo es de adultos (es por el espacio); niños y mascotas no lo llenan.
+		// Las reservas anteriores sin desglose de niños y adultos siguen contando a todos.
+		$adults = isset( $context['adults'] ) ? (int) $context['adults'] : null;
+		if ( null !== $adults ? $adults > $max : $counted > $max ) {
+			throw new DomainException( 'too_many_participants', sprintf( 'El máximo para este servicio es de %d %s.', $max, null !== $adults ? 'adultos' : 'personas' ), 400, array( 'field' => null !== $adults ? 'adults' : 'participants' ) );
 		}
 
 		$lines = array();
@@ -114,13 +117,13 @@ final class Pricing {
 			}
 		}
 
-		// 3. Personas adicionales, mascotas y extras.
+		// 3. Asistentes adicionales (personas y, si así se configuró, mascotas), mascotas y extras.
 		$extraPeople      = max( 0, $counted - $included );
 		$participantsCost = $extraPeople * max( 0, (int) ( $service['extra_participant_cents'] ?? 0 ) );
 		if ( $extraPeople > 0 ) {
 			$lines[] = array(
 				'kind'     => 'participants',
-				'label'    => sprintf( '%d %s adicional%s', $extraPeople, 1 === $extraPeople ? 'persona' : 'personas', 1 === $extraPeople ? '' : 'es' ),
+				'label'    => sprintf( '%d %s adicional%s', $extraPeople, 1 === $extraPeople ? 'asistente' : 'asistentes', 1 === $extraPeople ? '' : 'es' ),
 				'quantity' => $extraPeople,
 				'unit'     => (int) ( $service['extra_participant_cents'] ?? 0 ),
 				'amount'   => $participantsCost,

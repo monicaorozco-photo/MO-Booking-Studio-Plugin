@@ -47,7 +47,10 @@ final class NotificationsPage {
 			$body .= Ui::checkbox( "tpl[$event][enabled]", (bool) $t['enabled'], 'Enviar este aviso' );
 			$body .= Ui::row( 'Asunto', Ui::input( "tpl[$event][subject]", $t['subject'], 'text', array( 'class' => 'large-text', 'data-mo-codes' => '1' ) ) . self::warning( "tpl[$event][subject]" ) );
 			if ( in_array( 'client', $info['to'], true ) ) {
+				$body .= Ui::row( 'Título del correo', Ui::input( "tpl[$event][title]", (string) $t['title'], 'text', array( 'class' => 'large-text', 'data-mo-codes' => '1' ) ) . self::warning( "tpl[$event][title]" ), 'El texto grande al inicio del correo. Admite emojis. Vacío = sin título.' );
 				$body .= self::editorRow( 'Mensaje al cliente (correo)', "tpl[$event][body]", $t['body'], 8, 'Puedes usar negritas, cursivas, encabezados, listas y enlaces.', true );
+				$body .= Ui::checkbox( "tpl[$event][card]", ! empty( $t['card'] ), 'Agregar la tarjeta con fecha, hora, servicio y ubicación' );
+				$body .= self::designPreview( $event, $t );
 				$body .= self::editorRow( 'Texto para WhatsApp (opcional)', "tpl[$event][whatsapp]", (string) ( $t['whatsapp'] ?? '' ), 5, 'Vacío = se usa el texto del correo. En WhatsApp: *negrita*, _cursiva_, ~tachado~. Los saltos de línea y emojis se respetan.' );
 			}
 			if ( in_array( 'admin', $info['to'], true ) ) {
@@ -93,6 +96,18 @@ final class NotificationsPage {
 		}
 		echo Ui::card( 'Registro de mensajes', $body ); // phpcs:ignore WordPress.Security.EscapeOutput
 		Ui::footer();
+	}
+
+	/**
+	 * beta.6.3: el correo completo con el diseño de la marca y datos de ejemplo (texto
+	 * guardado; guarda primero para ver tus cambios).
+	 */
+	private static function designPreview( string $event, array $t ): string {
+		$vars    = Notifications::sampleVars();
+		$status  = in_array( $event, array( 'booking_confirmed', 'booking_rescheduled', 'reminder' ), true ) ? \MOBookingStudio\Domain\BookingStatus::CONFIRMED : \MOBookingStudio\Domain\BookingStatus::PENDING_PAYMENT;
+		$email   = Notifications::designedEmail( Notifications::renderHtml( (string) $t['body'], $vars ), $t, $vars, array( 'status' => $status ) );
+		return '<details class="mo-details"><summary>Ver el diseño del correo (con datos de ejemplo)</summary><p class="description">Muestra el texto guardado: guarda primero para ver tus cambios.</p>' .
+			'<iframe title="Vista previa del correo" loading="lazy" sandbox="" style="width:100%;max-width:680px;height:760px;border:1px solid #dcdcde;border-radius:6px;background:#fff;" srcdoc="' . esc_attr( $email ) . '"></iframe></details>';
 	}
 
 	/** "Ver texto" del mensaje tal como se usó. */

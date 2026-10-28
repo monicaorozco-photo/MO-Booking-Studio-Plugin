@@ -38,6 +38,10 @@ final class SettingsPage {
 		$body  = Ui::row( 'Correos', Ui::select( 'email_mode', array( 'simulate' => 'Simulación (no se envía nada)', 'live' => 'Envío real' ), $s['email_mode'] ), 'Activa el envío real solo cuando el correo autenticado (SMTP o Gmail) esté configurado y probado. Las reservas de prueba nunca envían.', 'email_mode' );
 		$body .= Ui::row( 'Remitente (nombre)', Ui::input( 'email_from_name', $s['email_from_name'], 'text', array( 'class' => 'regular-text' ) ), '', 'email_from_name' );
 		$body .= Ui::row( 'Remitente (correo)', Ui::input( 'email_from', $s['email_from'], 'email', array( 'class' => 'regular-text' ) ), 'Debe estar autorizado en tu transporte de correo. Vacío = el del sitio.', 'email_from' );
+		$body .= Ui::row( 'Logo de los correos', Ui::input( 'email_logo_url', $s['email_logo_url'], 'url', array( 'class' => 'large-text', 'placeholder' => 'https://…/logo.png' ) ), 'Opcional. Copia la URL del archivo desde Medios (PNG o JPG, de unos 360 px de ancho). Vacío = se escribe el nombre del negocio.', 'email_logo_url' );
+		$body .= Ui::row( 'Texto bajo el logo', Ui::input( 'email_tagline', $s['email_tagline'], 'text', array( 'class' => 'regular-text' ) ), 'Aparece en mayúsculas en la franja crema. Ejemplo: Fotógrafa.', 'email_tagline' );
+		$body .= Ui::row( 'Botón de los correos', Ui::input( 'email_button_text', $s['email_button_text'], 'text', array( 'class' => 'regular-text' ) ), 'Lleva al enlace privado de la reserva. Vacío = sin botón.', 'email_button_text' );
+		$body .= Ui::row( 'Pie de los correos', Ui::textarea( 'email_footer', $s['email_footer'], 3 ), 'La primera línea es la firma; las demás van en letra pequeña. Puedes usar {{negocio}}.', 'email_footer' );
 		$body .= Ui::row( 'Recordatorio (horas antes)', Ui::input( 'reminder_hours', $s['reminder_hours'], 'number', array( 'min' => 0 ) ), '0 = sin recordatorio. Propuesta: 48.', 'reminder_hours' );
 		$body .= Ui::row( 'WhatsApp', Ui::select( 'whatsapp_mode', array( 'off' => 'Desactivado', 'manual' => 'Manual (abrir chat con el texto listo)', 'automatic' => 'Automático (pendiente de conectar proveedor oficial)' ), $s['whatsapp_mode'] ), 'El modo automático aún no envía: requiere un proveedor oficial de WhatsApp Business, plantillas aprobadas y credenciales.', 'whatsapp_mode' );
 		$body .= Ui::row( 'Abrir mis mensajes en', Ui::select( 'whatsapp_open', array( 'app' => 'La aplicación de WhatsApp de este dispositivo', 'web' => 'WhatsApp Web (la cuenta abierta en el navegador)' ), $s['whatsapp_open'] ), 'Para enviar desde WhatsApp Business en la computadora: elige WhatsApp Web y entra a web.whatsapp.com con tu cuenta Business en el mismo navegador.', 'whatsapp_open' );
@@ -165,6 +169,10 @@ final class SettingsPage {
 				'email_mode'          => 'live' === ( $p['email_mode'] ?? '' ) ? 'live' : 'simulate',
 				'email_from_name'     => sanitize_text_field( (string) ( $p['email_from_name'] ?? '' ) ),
 				'email_from'          => $from,
+				'email_logo_url'      => esc_url_raw( (string) ( $p['email_logo_url'] ?? '' ) ),
+				'email_tagline'       => sanitize_text_field( (string) ( $p['email_tagline'] ?? '' ) ),
+				'email_button_text'   => sanitize_text_field( (string) ( $p['email_button_text'] ?? '' ) ),
+				'email_footer'        => sanitize_textarea_field( (string) ( $p['email_footer'] ?? '' ) ),
 				'reminder_hours'      => $num( 'reminder_hours', 0, 720 ),
 				'whatsapp_mode'       => in_array( $p['whatsapp_mode'] ?? '', array( 'off', 'manual', 'automatic' ), true ) ? $p['whatsapp_mode'] : 'manual',
 				'whatsapp_open'       => 'web' === ( $p['whatsapp_open'] ?? '' ) ? 'web' : 'app',

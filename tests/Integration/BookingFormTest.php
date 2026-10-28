@@ -50,14 +50,12 @@ final class BookingFormTest extends IntegrationTestCase {
 		$this->assertSame( 140000 + 20000, $booking['total_cents'] ); // Tarifa del 20/11 + 2 adicionales.
 	}
 
-	public function test_pets_count_toward_limit_only_when_configured(): void {
+	public function test_pets_count_toward_price_only_when_configured(): void {
+		// beta.6.3: el máximo es de adultos; con la opción, las mascotas se cobran como asistentes.
 		$service = $this->fastService( array( 'pets_count_as_participants' => true ) );
-		try {
-			Catalog::quote( $service, array( 'start' => self::START, 'children' => 4, 'adults' => 5, 'pets' => 2 ) );
-			$this->fail( '9 personas + 2 mascotas supera el máximo de 10.' );
-		} catch ( DomainException $e ) {
-			$this->assertSame( 'too_many_participants', $e->errorCode() );
-		}
+		$counted = Catalog::quote( $service, array( 'start' => self::START, 'children' => 4, 'adults' => 5, 'pets' => 2 ) );
+		$noPets  = Catalog::quote( $service, array( 'start' => self::START, 'children' => 4, 'adults' => 5, 'pets' => 0 ) );
+		$this->assertSame( 20000, $counted['total'] - $noPets['total'], 'Las 2 mascotas se cobran como asistentes adicionales.' );
 	}
 
 	public function test_invalid_counts_are_rejected(): void {

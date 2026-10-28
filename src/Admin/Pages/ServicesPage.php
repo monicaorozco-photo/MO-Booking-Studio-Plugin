@@ -89,13 +89,14 @@ final class ServicesPage {
 		$time .= Ui::row( 'Venta hasta', Ui::input( 'sale_until', Ui::sqlToLocalInput( (string) $v( 'sale_until' ) ), 'datetime-local' ), 'Opcional.', 'sale_until' );
 		echo Ui::card( 'Tiempo y agenda', $time ); // phpcs:ignore WordPress.Security.EscapeOutput
 
-		$people  = Ui::row( 'Personas incluidas', Ui::input( 'participants_included', $v( 'participants_included' ), 'number', array( 'min' => 1 ) ), '', 'participants_included' );
-		$people .= Ui::row( 'Máximo de personas', Ui::input( 'participants_max', $v( 'participants_max' ), 'number', array( 'min' => 1 ) ), '', 'participants_max' );
-		$people .= Ui::row( 'Costo por persona adicional ($)', Ui::input( 'extra_participant', $amount( 'extra_participant', 'extra_participant_cents' ), 'text', array( 'inputmode' => 'decimal' ) ), '', 'extra_participant' );
-		$people .= Ui::row( 'Mascotas', Ui::checkbox( 'pets_allowed', (bool) $v( 'pets_allowed' ), 'Pet friendly (se admiten mascotas)' ) . '<br>' . Ui::checkbox( 'pets_count_as_participants', (bool) $v( 'pets_count_as_participants' ), 'Las mascotas cuentan como asistentes (para el límite y el precio)' ), 'En el formulario la clienta ve "Pet friendly" y un campo de mascotas aparte; el renglón "Número de asistentes" solo suma personas.' );
+		$people  = Ui::row( 'Asistentes incluidos', Ui::input( 'participants_included', $v( 'participants_included' ), 'number', array( 'min' => 1 ) ), 'Niños y adultos (y mascotas, si cuentan como asistentes).', 'participants_included' );
+		$people .= Ui::row( 'Máximo de adultos', Ui::input( 'participants_max', $v( 'participants_max' ), 'number', array( 'min' => 1 ) ), 'El límite es por el espacio: solo cuenta adultos. Niños y mascotas no lo llenan.', 'participants_max' );
+		$people .= Ui::row( 'Costo por asistente adicional ($)', Ui::input( 'extra_participant', $amount( 'extra_participant', 'extra_participant_cents' ), 'text', array( 'inputmode' => 'decimal' ) ), 'Las reservas ya hechas conservan su precio.', 'extra_participant' );
+		$people .= Ui::row( 'Aviso para grupos grandes', Ui::input( 'group_note', $v( 'group_note' ), 'text', array( 'class' => 'large-text' ) ), 'Se muestra en el formulario debajo del número de asistentes. Déjalo vacío para no mostrarlo.', 'group_note' );
+		$people .= Ui::row( 'Mascotas', Ui::checkbox( 'pets_allowed', (bool) $v( 'pets_allowed' ), 'Pet friendly (se admiten mascotas)' ) . '<br>' . Ui::checkbox( 'pets_count_as_participants', (bool) $v( 'pets_count_as_participants' ), 'Las mascotas cuentan como asistentes (para el precio)' ), 'Si cuentan, el formulario y el resumen las suman al "Número de asistentes".' );
 		$people .= Ui::row( 'Máximo de mascotas', Ui::input( 'pets_max', $v( 'pets_max' ), 'number', array( 'min' => 0 ) ), '0 = sin límite.', 'pets_max' );
 		$people .= Ui::row( 'Costo por mascota ($)', Ui::input( 'pet_fee', $amount( 'pet_fee', 'pet_fee_cents' ), 'text', array( 'inputmode' => 'decimal' ) ), '', 'pet_fee' );
-		echo Ui::card( 'Personas y mascotas', $people ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo Ui::card( 'Asistentes y mascotas', $people ); // phpcs:ignore WordPress.Security.EscapeOutput
 
 		$depositValue = 'percent' === $v( 'deposit_type' ) || array_key_exists( 'deposit_value', $old ) ? (string) $v( 'deposit_value' ) : Money::toInput( (int) $v( 'deposit_value', 0 ) );
 		$pay          = Ui::row( 'Precio base ($ MXN)', Ui::input( 'price', $amount( 'price', 'price_cents' ), 'text', array( 'inputmode' => 'decimal', 'required' => 'required' ) ), 'Se usa cuando ninguna tarifa especial aplica. Las tarifas por fecha, preventa o cliente frecuente se configuran en "Tarifas y descuentos".', 'price' );
@@ -284,7 +285,8 @@ final class ServicesPage {
 				'sale_until'                 => Ui::localInputToSql( (string) ( $p['sale_until'] ?? '' ) ),
 				'participants_included'      => (int) ( $p['participants_included'] ?? 1 ),
 				'participants_max'           => (int) ( $p['participants_max'] ?? 1 ),
-				'extra_participant_cents'    => $money( $p['extra_participant'] ?? '', 'Persona adicional' ),
+				'extra_participant_cents'    => $money( $p['extra_participant'] ?? '', 'Asistente adicional' ),
+				'group_note'                 => sanitize_text_field( (string) ( $p['group_note'] ?? '' ) ),
 				'pets_allowed'               => ! empty( $p['pets_allowed'] ),
 				'pets_count_as_participants' => ! empty( $p['pets_count_as_participants'] ),
 				'pets_max'                   => (int) ( $p['pets_max'] ?? 0 ),

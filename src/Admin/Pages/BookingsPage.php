@@ -508,14 +508,28 @@ final class BookingsPage {
 	private static function messagesBlock( array $b, array $hidden ): string {
 		$html  = '<p>Enlace privado del cliente (no lo publiques):</p><p><input type="text" readonly class="large-text mo-copy" value="' . esc_attr( Bookings::portalUrl( $b ) ) . '" onclick="this.select()"></p>';
 		$html .= Ui::formOpen( 'rotate_link', $hidden, 'mo-inline-form' ) . Ui::button( 'Generar enlace nuevo (anula el anterior)', 'button-link', '¿Anular el enlace actual y crear uno nuevo?' ) . '</form>';
-		$events = array(
-			'booking_created'      => 'Instrucciones de pago',
-			'correction_requested' => 'Corrección solicitada',
-			'booking_confirmed'    => 'Cita confirmada',
-			'reminder'             => 'Recordatorio',
-			'booking_rescheduled'  => 'Cambio de fecha',
-			'booking_cancelled'    => 'Cancelación',
+		// beta.6.3: todos los avisos para la clienta (también vencimiento, pago aprobado,
+		// comprobante recibido y solicitud no aprobada), con su nombre de la pestaña Avisos.
+		$events    = array();
+		$templates = Notifications::templates();
+		foreach ( Notifications::events() as $event => $def ) {
+			$tpl = $templates[ $event ] ?? array();
+			if ( in_array( 'client', $def['to'], true ) && '' !== trim( wp_strip_all_tags( (string) ( $tpl['body'] ?? '' ) . (string) ( $tpl['whatsapp'] ?? '' ) ) ) ) {
+				$events[ $event ] = $def['label'];
+			}
+		}
+		// Se preselecciona el aviso que corresponde al estado actual de la reserva.
+		$suggested = array(
+			BookingStatus::EXPIRED              => 'booking_expired',
+			BookingStatus::CONFIRMED            => 'booking_confirmed',
+			BookingStatus::CANCELLED            => 'booking_cancelled',
+			BookingStatus::REJECTED             => 'booking_rejected',
+			BookingStatus::CORRECTION_REQUESTED => 'correction_requested',
+			BookingStatus::PAYMENT_REVIEW       => 'proof_received',
+			BookingStatus::UNDER_REVIEW         => 'proof_received',
 		);
+		$selectedEvent = $suggested[ $b['status'] ] ?? 'booking_created';
+		$selectedEvent = isset( $events[ $selectedEvent ] ) ? $selectedEvent : (string) array_key_first( $events );
 		$emailTemplates = array();
 		foreach ( Notifications::customTemplates() as $cid => $t ) {
 			if ( ! $t['enabled'] ) {
@@ -531,7 +545,7 @@ final class BookingsPage {
 			$html .= '<h3>Enviar un correo con una plantilla</h3>' . Ui::formOpen( 'send_template', $hidden, 'mo-inline-form' ) . Ui::select( 'template_id', $emailTemplates, '', array( 'aria-label' => 'Plantilla de correo' ) ) . ' ' . Ui::button( 'Enviar correo', 'button-secondary', '¿Enviar este correo a ' . (string) $b['contact']['email'] . '?' ) . '</form>';
 		}
 		if ( 'off' !== Settings::get( 'whatsapp_mode' ) && ! empty( $b['contact']['phone_e164'] ) ) {
-			$html .= '<h3>WhatsApp manual</h3><p class="description">Abre el chat con el texto listo. Abrir el chat no significa que se envió: márcalo después de enviarlo.</p>' . str_replace( '<form ', '<form target="_blank" rel="noopener noreferrer" ', Ui::formOpen( 'whatsapp_open', $hidden, 'mo-inline-form' ) ) . Ui::select( 'event', $events, 'booking_created' ) . ' ' . Ui::button( 'Abrir WhatsApp', 'button-secondary' ) . '</form>';
+			$html .= '<h3>WhatsApp manual</h3><p class="description">Abre el chat con el texto listo. Abrir el chat no significa que se envió: márcalo después de enviarlo.</p>' . str_replace( '<form ', '<form target="_blank" rel="noopener noreferrer" ', Ui::formOpen( 'whatsapp_open', $hidden, 'mo-inline-form' ) ) . Ui::select( 'event', $events, $selectedEvent, array( 'aria-label' => 'Mensaje de WhatsApp' ) ) . ' ' . Ui::button( 'Abrir WhatsApp', 'button-secondary' ) . '</form>';
 		}
 		$notes = Notifications::forBooking( $b['id'] );
 		if ( $notes ) {

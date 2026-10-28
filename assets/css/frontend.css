@@ -158,6 +158,8 @@
 .mo-booking textarea.mo-booking__input { min-height: 104px; resize: vertical; }
 .mo-booking__phone { display: grid; grid-template-columns: minmax(0, 10em) minmax(0, 1fr); gap: 10px; }
 .mo-booking__help { margin: 6px 0 0 !important; font-size: 12.5px; color: var(--mo-muted); }
+.mo-booking__group-note { display: flex; align-items: flex-start; gap: 6px; }
+.mo-booking__group-note .mo-booking__icon { flex: none; width: 15px; height: 15px; margin-top: 1px; color: var(--mo-primary); }
 .mo-booking__field-error { margin: 6px 0 0 !important; color: var(--mo-error); font-size: 13px; }
 .mo-booking__field-error:empty { display: none; }
 .mo-booking__check { display: flex; align-items: flex-start; gap: 12px; margin: 12px 0 4px; min-height: 44px; font-size: 14px; cursor: pointer; }

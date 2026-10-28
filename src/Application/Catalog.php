@@ -35,6 +35,9 @@ final class Catalog {
 			'extra_participant_txt' => Money::format( (int) $s['extra_participant_cents'] ),
 			'pets_allowed'          => (bool) $s['pets_allowed'],
 			'pets_max'              => (int) $s['pets_max'],
+			// beta.6.3: si las mascotas cuentan como asistentes, el formulario las suma al total.
+			'pets_count'            => (bool) $s['pets_count_as_participants'],
+			'group_note'            => (string) $s['group_note'],
 			// 6.3 campo 5: sin la leyenda sobre si cuentan; el texto público es "Pet friendly".
 			'pet_friendly'          => (bool) $s['pets_allowed'],
 			'fast_delivery'         => ! empty( $s['fast_delivery']['enabled'] ) ? array(

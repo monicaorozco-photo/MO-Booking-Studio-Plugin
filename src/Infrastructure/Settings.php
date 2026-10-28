@@ -28,6 +28,11 @@ final class Settings {
 			'email_mode'           => 'simulate', // simulate | live. En simulación no se envía nada.
 			'email_from_name'      => '',
 			'email_from'           => '',
+			// beta.6.3: identidad visual de los correos.
+			'email_logo_url'       => '',
+			'email_tagline'        => 'Fotógrafa',
+			'email_button_text'    => 'Consultar mi reserva',
+			'email_footer'         => "{{negocio}} | Fotógrafa 📸\nEste es un mensaje automático del sistema de reservas de {{negocio}}.",
 			'whatsapp_mode'        => 'manual', // off | manual | automatic
 			'whatsapp_number'      => '',
 			'reminder_hours'       => 48,   // Propuesta: recordatorio 48 horas antes.

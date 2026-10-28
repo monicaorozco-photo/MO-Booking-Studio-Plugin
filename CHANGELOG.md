@@ -1,5 +1,19 @@
 # Cambios
 
+## 0.2.0-beta.6.3 — 28 de octubre de 2026
+
+Sin cambios de base de datos. Las reservas ya hechas conservan su precio.
+
+- Correos con la identidad visual de la marca: franja crema con el logo (o el nombre en Cormorant Garamond) y "Fotógrafa", título grande en marrón #63422B, el texto del aviso, tarjeta crema con fecha, hora, servicio, ubicación (solo con la cita confirmada) y número de reserva, botón marrón "Consultar mi reserva" al enlace privado y pie con firma y "Este es un mensaje automático…". Una columna de 600 px.
+  - En *Ajustes*: logo, texto bajo el logo, texto del botón y pie de los correos.
+  - En cada aviso de *Notificaciones*: título del correo (con emojis), casilla de la tarjeta de detalles y "Ver el diseño del correo" con datos de ejemplo.
+- WhatsApp manual: el menú de la reserva ofrece todos los avisos para la clienta (también Retención vencida, Pago aprobado, Comprobante recibido y Solicitud no aprobada) y preselecciona el que corresponde al estado de la reserva. "Pago aprobado" y "Corrección solicitada" llevan el importe y el motivo del último aviso.
+- Asistentes y mascotas:
+  - Con "Las mascotas cuentan como asistentes", el formulario y el resumen las suman al número de asistentes.
+  - Servicio: "Asistentes incluidos", "Máximo de adultos" y "Costo por asistente adicional". El máximo ahora es solo de adultos (es por el espacio); niños y mascotas no lo llenan, pero sí se cobran como asistentes adicionales.
+  - Nuevo "Aviso para grupos grandes" por servicio, debajo del número de asistentes (vacío = no se muestra). Texto inicial: consultar cada caso porque algunos grupos requieren un espacio doble de sesión.
+  - En el desglose: "N asistentes adicionales".
+
 ## 0.2.0-beta.6.2 — 28 de octubre de 2026
 
 - Datos para transferencia: el renglón "Banco" se muestra sin botón de copiar y los datos se ven en letra más pequeña.

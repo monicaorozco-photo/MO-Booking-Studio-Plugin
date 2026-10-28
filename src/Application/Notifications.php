@@ -115,7 +115,8 @@ final class Notifications {
 			'booking_confirmed'    => array(
 				'enabled' => true,
 				'subject' => '¡Tu cita está confirmada! ({{referencia}})',
-				'body'    => "Hola {{nombre}}:\n\nTu cita para {{servicio}} está confirmada:\n{{fecha}}, {{hora}}\n{{ubicacion}}\n\nSaldo pendiente: {{saldo}}\n\n{{instrucciones}}\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
+				// beta.6.3: la fecha, la hora y la ubicación van en la tarjeta de detalles del correo.
+				'body'    => "Hola {{nombre}}:\n\n¡Todo listo! Tu reservación para {{servicio}} ha quedado confirmada correctamente.\n\nSaldo pendiente: {{saldo}}\n\n{{instrucciones}}\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
 				'admin'   => '',
 			),
 			'booking_rejected'     => array(
@@ -156,6 +157,20 @@ final class Notifications {
 			),
 		);
 	}
+
+	/** beta.6.3: título grande de cada correo (editable en cada aviso). */
+	public const DEFAULT_TITLES = array(
+		'booking_created'      => 'Recibimos tu solicitud 📝',
+		'proof_received'       => 'Recibimos tu comprobante 🧾',
+		'correction_requested' => 'Necesitamos revisar tu pago',
+		'payment_approved'     => '¡Pago verificado! ✅',
+		'booking_confirmed'    => '¡Tu cita está confirmada! 📅',
+		'booking_rejected'     => 'Sobre tu solicitud',
+		'booking_expired'      => 'Tu horario apartado venció ⏳',
+		'booking_cancelled'    => 'Tu cita fue cancelada',
+		'booking_rescheduled'  => 'Tu cita cambió de fecha 📅',
+		'reminder'             => '¡Ya casi es tu sesión! 📸',
+	);
 
 	// ----- Plantillas propias (beta.3) -----
 
@@ -320,7 +335,8 @@ final class Notifications {
 		$out    = self::defaultTemplates();
 		foreach ( $out as $event => $tpl ) {
 			// beta.4: texto propio para WhatsApp (vacío = se usa el del correo, convertido).
-			$out[ $event ] += array( 'whatsapp' => '' );
+			// beta.6.3: título grande del correo y tarjeta con los detalles de la cita.
+			$out[ $event ] += array( 'whatsapp' => '', 'title' => self::DEFAULT_TITLES[ $event ] ?? '', 'card' => true );
 		}
 		foreach ( (array) $stored as $event => $tpl ) {
 			if ( isset( $out[ $event ] ) && is_array( $tpl ) ) {
@@ -345,7 +361,7 @@ final class Notifications {
 			}
 			$t = $templates[ $event ];
 			if ( ! empty( $t['reset'] ) ) {
-				$clean[ $event ] = array_merge( $default, array( 'enabled' => ! empty( $t['enabled'] ), 'whatsapp' => '' ) );
+				$clean[ $event ] = array_merge( $default, array( 'enabled' => ! empty( $t['enabled'] ), 'whatsapp' => '', 'title' => self::DEFAULT_TITLES[ $event ] ?? '', 'card' => true ) );
 				continue;
 			}
 			$clean[ $event ] = array(
@@ -354,8 +370,10 @@ final class Notifications {
 				'body'     => self::cleanBody( (string) ( $t['body'] ?? $default['body'] ) ),
 				'admin'    => sanitize_textarea_field( (string) ( $t['admin'] ?? $default['admin'] ) ),
 				'whatsapp' => sanitize_textarea_field( (string) ( $t['whatsapp'] ?? '' ) ),
+				'title'    => sanitize_text_field( (string) ( $t['title'] ?? ( self::DEFAULT_TITLES[ $event ] ?? '' ) ) ),
+				'card'     => ! empty( $t['card'] ),
 			);
-			$unknown = array_merge( $unknown, self::unknownCodes( implode( "\n", array( $clean[ $event ]['subject'], $clean[ $event ]['body'], $clean[ $event ]['admin'], $clean[ $event ]['whatsapp'] ) ) ) );
+			$unknown = array_merge( $unknown, self::unknownCodes( implode( "\n", array( $clean[ $event ]['subject'], $clean[ $event ]['title'], $clean[ $event ]['body'], $clean[ $event ]['admin'], $clean[ $event ]['whatsapp'] ) ) ) );
 		}
 		OptionStore::save( self::TEMPLATES_OPTION, $clean );
 		return array_values( array_unique( $unknown ) );
@@ -436,9 +454,89 @@ final class Notifications {
 		return trim( $text );
 	}
 
-	/** Correo completo: el texto dentro de un diseño sencillo y legible en el teléfono. */
-	private static function emailLayout( string $inner ): string {
-		return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;padding:0;background:#f6f4f1;"><div style="max-width:600px;margin:0 auto;padding:24px 16px;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1f2523;"><div style="background:#ffffff;border-radius:10px;padding:24px;">' . $inner . '</div></div></body></html>';
+	/** beta.6.3: identidad visual de los correos (paleta de la marca). */
+	private const BRAND_BROWN = '#63422B';
+	private const BRAND_CREAM = '#FAF7F2';
+	private const BRAND_TEXT  = '#2D2926';
+	private const BRAND_MUTED = '#6C6864';
+
+	/**
+	 * Correo completo con la identidad de la marca: franja crema con el logo o el nombre,
+	 * título, el texto del aviso, tarjeta con los detalles de la cita, botón a la reserva y
+	 * pie. Una sola columna de 600 px, con tablas y estilos en línea para que se vea bien
+	 * en Gmail, Outlook y el teléfono.
+	 *
+	 * @param array $tpl  Aviso (title, card) o plantilla propia.
+	 * @param array $vars Datos ya calculados de la reserva.
+	 */
+	public static function designedEmail( string $inner, array $tpl, array $vars, ?array $booking = null ): string {
+		$serif = "'Cormorant Garamond', Georgia, 'Times New Roman', serif";
+		$sans  = "Montserrat, Arial, Helvetica, sans-serif";
+		$e     = static function ( string $text ): string {
+			return esc_html( $text );
+		};
+
+		// Encabezado: logo si está configurado; si no, el nombre en letra con serifa.
+		$logo    = (string) Settings::get( 'email_logo_url' );
+		$tagline = trim( (string) Settings::get( 'email_tagline' ) );
+		$brand   = '' !== $logo
+			? '<img src="' . esc_url( $logo ) . '" alt="' . esc_attr( $vars['negocio'] ?? '' ) . '" width="180" style="display:block;margin:0 auto;max-width:180px;height:auto;border:0;">'
+			: '<div style="font-family:' . $serif . ';font-size:30px;line-height:1.15;font-weight:600;color:' . self::BRAND_BROWN . ';">' . $e( (string) ( $vars['negocio'] ?? '' ) ) . '</div>';
+		$header  = '<tr><td align="center" style="background:' . self::BRAND_CREAM . ';padding:28px 24px 22px;border-bottom:1px solid #ECE4D8;">' . $brand .
+			( '' !== $tagline ? '<div style="font-family:' . $sans . ';font-size:11px;letter-spacing:4px;text-transform:uppercase;color:' . self::BRAND_MUTED . ';margin-top:8px;">' . $e( $tagline ) . '</div>' : '' ) . '</td></tr>';
+
+		$title = trim( self::render( (string) ( $tpl['title'] ?? '' ), $vars ) );
+		$html  = '' !== $title ? '<h1 style="margin:0 0 18px;font-family:' . $serif . ';font-size:26px;line-height:1.25;font-weight:600;color:' . self::BRAND_BROWN . ';">' . $e( $title ) . '</h1>' : '';
+		// Los enlaces del texto, en el marrón de la marca.
+		$inner = (string) preg_replace( '/<a (?![^>]*style=)/i', '<a style="color:' . self::BRAND_BROWN . ';" ', $inner );
+		$html .= '<div style="font-family:' . $sans . ';font-size:15px;line-height:1.6;color:' . self::BRAND_TEXT . ';">' . $inner . '</div>';
+
+		// Tarjeta con fecha, hora, servicio y ubicación, en líneas separadas.
+		if ( ! empty( $tpl['card'] ) && $booking ) {
+			$rows = array(
+				'📅 Fecha'     => (string) ( $vars['fecha'] ?? '' ),
+				'🕒 Hora'      => (string) ( $vars['hora'] ?? '' ),
+				'📸 Servicio'  => (string) ( $vars['servicio'] ?? '' ),
+			);
+			// La ubicación se comparte cuando la cita ya está confirmada.
+			if ( in_array( $booking['status'], array( BookingStatus::CONFIRMED, BookingStatus::COMPLETED ), true ) ) {
+				$rows['📍 Ubicación'] = (string) ( $vars['ubicacion'] ?? '' );
+			}
+			$rows['🔖 Número de reserva'] = (string) ( $vars['referencia'] ?? '' );
+			$lines = '';
+			foreach ( array_filter( $rows, 'strlen' ) as $label => $value ) {
+				$lines .= '<p style="margin:0 0 8px;font-family:' . $sans . ';font-size:15px;line-height:1.5;color:' . self::BRAND_TEXT . ';"><strong>' . $e( $label ) . ':</strong> ' . nl2br( $e( $value ) ) . '</p>';
+			}
+			$html .= '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 4px;"><tr><td style="background:' . self::BRAND_CREAM . ';border-radius:10px;padding:18px 20px 10px;">' .
+				'<p style="margin:0 0 12px;font-family:' . $sans . ';font-size:12px;letter-spacing:2px;text-transform:uppercase;font-weight:600;color:' . self::BRAND_BROWN . ';">Detalles de tu reservación</p>' . $lines . '</td></tr></table>';
+		}
+
+		// Botón principal a la página privada de la reserva.
+		$link  = (string) ( $vars['enlace'] ?? '' );
+		$label = trim( (string) Settings::get( 'email_button_text' ) );
+		if ( '' !== $link && '' !== $label ) {
+			$html .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:28px auto 4px;"><tr><td align="center" bgcolor="' . self::BRAND_BROWN . '" style="background:' . self::BRAND_BROWN . ';border-radius:6px;">' .
+				'<a href="' . esc_url( $link ) . '" target="_blank" style="display:inline-block;padding:14px 30px;font-family:' . $sans . ';font-size:14px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#FFFFFF;text-decoration:none;border-radius:6px;">' . $e( $label ) . '</a></td></tr></table>';
+		}
+
+		// Pie: primera línea como firma; las siguientes, en letra pequeña.
+		$footer = '';
+		$lines  = array_values( array_filter( array_map( 'trim', preg_split( '/\r\n|\r|\n/', self::render( (string) Settings::get( 'email_footer' ), $vars ) ) ), 'strlen' ) );
+		foreach ( $lines as $i => $line ) {
+			$footer .= 0 === $i
+				? '<p style="margin:0 0 6px;font-family:' . $sans . ';font-size:14px;font-weight:600;color:' . self::BRAND_TEXT . ';">' . $e( $line ) . '</p>'
+				: '<p style="margin:0 0 4px;font-family:' . $sans . ';font-size:12px;font-style:italic;color:' . self::BRAND_MUTED . ';">' . $e( $line ) . '</p>';
+		}
+
+		return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light">' .
+			'<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Montserrat:wght@400;600&display=swap" rel="stylesheet"></head>' .
+			'<body style="margin:0;padding:0;background:' . self::BRAND_CREAM . ';">' .
+			'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:' . self::BRAND_CREAM . ';"><tr><td align="center" style="padding:24px 12px;">' .
+			'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#FFFFFF;border-radius:12px;overflow:hidden;border:1px solid #ECE4D8;">' .
+			$header .
+			'<tr><td style="padding:32px 28px 28px;">' . $html . '</td></tr>' .
+			( '' !== $footer ? '<tr><td align="center" style="padding:20px 28px 26px;border-top:1px solid #ECE4D8;text-align:center;">' . $footer . '</td></tr>' : '' ) .
+			'</table></td></tr></table></body></html>';
 	}
 
 	/**
@@ -653,19 +751,22 @@ final class Notifications {
 		}
 		$subject = self::render( $tpl['subject'], $vars );
 		$html    = '';
+		$design  = '';
 		if ( 'admin' === $audience ) {
 			$body    = self::render( $tpl['admin'], $vars ) . "\n\n" . admin_url( 'admin.php?page=mo-booking-bookings&booking=' . (int) $booking['id'] );
 			$subject = '[Reservas] ' . $subject;
 		} else {
 			$html = self::renderHtml( $tpl['body'], $vars );
 			$body = self::htmlToText( $html );
+			// Plantillas propias: el asunto hace de título.
+			$design = self::designedEmail( $html, isset( $tpl['name'] ) ? array( 'title' => $tpl['subject'], 'card' => true ) : $tpl, $vars, $booking );
 		}
 
-		return self::deliver( $row, $subject, $body, (bool) $booking['is_test'], $audience, $set, $payload, $html );
+		return self::deliver( $row, $subject, $body, (bool) $booking['is_test'], $audience, $set, $payload, $html, $design );
 	}
 
 	/** Envía (o simula) un correo de la cola y actualiza su estado. */
-	private static function deliver( array $row, string $subject, string $body, bool $isTest, string $audience, callable $set, array $payload = array(), string $html = '' ): bool {
+	private static function deliver( array $row, string $subject, string $body, bool $isTest, string $audience, callable $set, array $payload = array(), string $html = '', string $design = '' ): bool {
 		$id  = (int) $row['id'];
 		$now = Plugin::clock()->now();
 		// El registro conserva el texto exacto que se usó, aunque la plantilla cambie después.
@@ -695,7 +796,7 @@ final class Notifications {
 		if ( 'client' === $audience && is_email( (string) Settings::get( 'admin_email' ) ) ) {
 			$headers[] = 'Reply-To: ' . Settings::get( 'admin_email' );
 		}
-		$ok = wp_mail( $row['recipient'], $subject, '' !== $html ? self::emailLayout( $html ) : $body, $headers );
+		$ok = wp_mail( $row['recipient'], $subject, '' !== $design ? $design : $body, $headers );
 		remove_action( 'wp_mail_failed', $capture );
 		remove_action( 'phpmailer_init', $alt );
 
@@ -725,12 +826,22 @@ final class Notifications {
 
 	public static function whatsappText( array $booking, string $event ): string {
 		$tpl  = self::templates()[ $event ] ?? self::customFor( $event ) ?? self::templates()['booking_created'];
-		$vars = self::varsFor( $booking );
+		$vars = self::varsFor( $booking, self::lastExtra( (int) $booking['id'], $event ) );
 		if ( '' !== trim( (string) ( $tpl['whatsapp'] ?? '' ) ) ) {
 			return self::render( (string) $tpl['whatsapp'], $vars );
 		}
 		// Sin texto propio: el del correo, con negritas y cursivas al estilo de WhatsApp.
 		return self::isHtml( (string) $tpl['body'] ) ? self::htmlToText( self::renderHtml( (string) $tpl['body'], $vars ), true ) : self::render( (string) $tpl['body'], $vars );
+	}
+
+	/**
+	 * beta.6.3: datos del último aviso de ese tipo en la reserva (motivo, importe), para que
+	 * el WhatsApp manual de "Pago aprobado" o "Corrección solicitada" no salga incompleto.
+	 */
+	private static function lastExtra( int $bookingId, string $event ): array {
+		$wpdb    = Db::wpdb();
+		$payload = $wpdb->get_var( $wpdb->prepare( 'SELECT payload FROM ' . Schema::table( 'notifications' ) . " WHERE booking_id = %d AND event = %s AND channel = 'email' ORDER BY id DESC LIMIT 1", $bookingId, $event ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $payload ? (array) ( ( (array) Db::decode( (string) $payload ) )['extra'] ?? array() ) : array();
 	}
 
 	/** Mensajes que se pueden abrir por WhatsApp desde la reserva: avisos del sistema y plantillas propias de WhatsApp. */

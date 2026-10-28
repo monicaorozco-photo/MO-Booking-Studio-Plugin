@@ -83,6 +83,8 @@ final class Services {
 			'pets_max'                   => 0,
 			'pet_fee_cents'              => 0,
 			'pets_count_as_participants' => false,
+			// beta.6.3: aviso del formulario para grupos grandes (vacío = no se muestra).
+			'group_note'                 => 'Si son más asistentes entre niños y mascotas, consulta tu caso antes de reservar: algunos grupos requieren un espacio doble de sesión.',
 			'extras'                     => array(),
 			'questions'                  => array(),
 			'deposit_type'               => 'fixed',
@@ -401,7 +403,7 @@ final class Services {
 		}
 		$c['date_notices'] = $notices;
 
-		foreach ( array( 'description', 'location', 'instructions', 'delivery_text', 'terms_text' ) as $key ) {
+		foreach ( array( 'description', 'location', 'instructions', 'delivery_text', 'terms_text', 'group_note' ) as $key ) {
 			$c[ $key ] = trim( (string) $c[ $key ] );
 		}
 		foreach ( array( 'event_title_internal' => 'MO {estado} · {cliente}', 'event_title_client' => 'Sesión con {negocio}' ) as $key => $default ) {

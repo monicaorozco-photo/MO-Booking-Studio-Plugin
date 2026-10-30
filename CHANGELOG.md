@@ -1,5 +1,12 @@
 # Cambios
 
+## 0.2.0-beta.6.5.2 — 30 de octubre de 2026
+
+Corrección de la 6.5.1 (Google Calendar). Sin cambios de base de datos.
+
+- Los eventos que ya se habían movido al calendario nuevo quedaron marcados como "Se quedan en el calendario anterior" y fallaban con 403: al intentar moverlos de nuevo, Google responde "cannotChangeOrganizer" (no "no existe"). Ahora, ante esa respuesta (o 403), primero se revisa si el evento ya está en el calendario nuevo y, si está, se adopta ahí sin avisos.
+- Al actualizar se revisan otra vez las reservas marcadas así y se cierran sus trabajos fallidos. Solo queda en el calendario anterior lo que de verdad sigue ahí y Google no deja mover.
+
 ## 0.2.0-beta.6.5.1 — 30 de octubre de 2026
 
 Corrección de Google Calendar. Sin cambios de base de datos.

@@ -170,7 +170,8 @@ final class FakeGoogle {
 			$id   = rawurldecode( $m[2] );
 			$to   = (string) ( $query['destination'] ?? '' );
 			if ( ! isset( $this->events[ $from ][ $id ] ) || 'cancelled' === $this->events[ $from ][ $id ]['status'] ) {
-				return $this->error( 404, 'notFound' );
+				// Como Google: si el evento ya vive en otro calendario, no deja cambiar su organizador.
+				return $this->elsewhere( $from, $id ) ? $this->error( 400, 'cannotChangeOrganizer' ) : $this->error( 404, 'notFound' );
 			}
 			if ( isset( $this->blockMove[ $id ] ) ) {
 				return $this->error( 400, 'cannotChangeOrganizer' );
@@ -259,7 +260,8 @@ final class FakeGoogle {
 			return $this->json( $store[ $new ] );
 		}
 		if ( ! isset( $store[ $id ] ) ) {
-			return $this->error( 404, 'notFound' );
+			// Como Google: modificar desde un calendario que ya no lo tiene está prohibido.
+			return 'PATCH' === $method && $this->elsewhere( $cal, $id ) ? $this->error( 403, 'forbidden' ) : $this->error( 404, 'notFound' );
 		}
 		if ( 'GET' === $method ) {
 			return $this->json( $store[ $id ] );
@@ -283,6 +285,16 @@ final class FakeGoogle {
 			return array( 'headers' => array(), 'body' => '', 'response' => array( 'code' => 204, 'message' => 'No Content' ), 'cookies' => array(), 'filename' => null );
 		}
 		return $this->error( 400, 'badRequest' );
+	}
+
+	/** ¿El evento existe (vigente) en otro calendario? */
+	private function elsewhere( string $cal, string $id ): bool {
+		foreach ( $this->events as $other => $events ) {
+			if ( $other !== $cal && isset( $events[ $id ] ) && 'cancelled' !== $events[ $id ]['status'] ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private function json( array $data, int $code = 200 ): array {

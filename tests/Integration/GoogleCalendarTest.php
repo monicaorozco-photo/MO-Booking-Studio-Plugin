@@ -677,6 +677,43 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		unset( $booking );
 	}
 
+	/**
+	 * beta.6.5.2: el estado que dejó la 6.5.1 en Google real. Los eventos ya estaban en el
+	 * calendario nuevo, Google contestó "cannotChangeOrganizer" al moverlos otra vez y se
+	 * marcaron como "no se pueden mover"; al actualizarlos en el calendario anterior, 403.
+	 * Al actualizar se revisan de nuevo, se adoptan en el nuevo y se cierran los fallos.
+	 */
+	public function test_events_wrongly_marked_as_unmovable_are_recovered(): void {
+		$service = $this->christmasService();
+		$this->google->connect();
+		$booking = $this->approve( $this->book( $service, self::START )['booking'] );
+		SyncWorker::processQueue();
+		$event = $this->google->owned( 'client' )[0];
+		$moved = $event;
+		unset( $moved['extendedProperties']['private'] );
+		$this->google->events[ FakeGoogle::NEW_DEST ][ $event['id'] ] = $moved;
+		unset( $this->google->events[ FakeGoogle::DESTINATION ][ $event['id'] ] );
+		Connection::save( array( 'client_destination' => FakeGoogle::NEW_DEST ) );
+
+		// Lo que hizo la 6.5.1: lo marcó como "no se puede mover" y el trabajo falló con 403.
+		\MOBookingStudio\Infrastructure\Migrations::resumeCalendarMigration();
+		$rowId = (int) \MOBookingStudio\Infrastructure\Db::wpdb()->get_var( "SELECT id FROM " . \MOBookingStudio\Infrastructure\Schema::table( 'calendar_events' ) . " WHERE kind = 'client'" );
+		update_option( SyncWorker::MOVE_BLOCKED_OPTION, array( $rowId => FakeGoogle::DESTINATION ), false );
+		\MOBookingStudio\Infrastructure\Db::wpdb()->query( "UPDATE " . \MOBookingStudio\Infrastructure\Schema::table( 'sync_jobs' ) . " SET status = 'failed', dedupe_key = NULL, last_error = 'Google rechazó la solicitud (403, forbidden).'" );
+		$this->assertCount( 1, SyncWorker::blockedMigration() );
+		$invitations = $this->google->invitations;
+
+		\MOBookingStudio\Infrastructure\Migrations::retryBlockedMigration();
+		SyncWorker::processQueue();
+
+		$this->assertCount( 0, SyncWorker::blockedMigration() );
+		$this->assertCount( 0, SyncWorker::pendingMigration() );
+		$this->assertCount( 1, $this->google->owned( 'client', FakeGoogle::NEW_DEST ) );
+		$this->assertCount( 0, SyncWorker::jobsSummary()['failed'], 'Los fallos anteriores se cierran.' );
+		$this->assertSame( $invitations, $this->google->invitations, 'No se reenvía la invitación.' );
+		unset( $booking );
+	}
+
 	/** beta.6.5.1: si Google no deja mover una invitación, se queda en el calendario anterior sin error. */
 	public function test_event_google_cannot_move_stays_in_previous_calendar(): void {
 		$service = $this->christmasService();

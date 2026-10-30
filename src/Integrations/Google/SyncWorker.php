@@ -243,23 +243,31 @@ final class SyncWorker {
 			$api->moveEvent( $from, $row['event_id'], $destination, 'none' );
 			self::adoptMoved( $row, $destination, $from );
 		} catch ( GoogleException $e ) {
-			if ( in_array( $e->type, array( 'not_found', 'gone' ), true ) ) {
-				// ¿Ya estaba en el destino? (un intento anterior lo movió pero no lo pudo verificar).
-				try {
-					$api->getEvent( $destination, $row['event_id'] );
-					self::adoptMoved( $row, $destination, $from );
-					return self::row( (int) $row['booking_id'], $row['kind'] );
-				} catch ( GoogleException $e2 ) {
-					if ( ! in_array( $e2->type, array( 'not_found', 'gone' ), true ) ) {
-						throw $e2;
-					}
+			$gone        = in_array( $e->type, array( 'not_found', 'gone' ), true );
+			$cannotMove  = 400 === $e->http && false !== strpos( $e->getMessage(), 'cannotChangeOrganizer' );
+			$forbidden   = 403 === $e->http;
+			if ( ! $gone && ! $cannotMove && ! $forbidden ) {
+				throw $e;
+			}
+			// beta.6.5.2: ¿ya estaba en el destino? Un intento anterior lo movió (Google responde
+			// "no existe", "no se puede cambiar el organizador" o "prohibido" según el caso).
+			try {
+				$api->getEvent( $destination, $row['event_id'] );
+				self::adoptMoved( $row, $destination, $from );
+				return self::row( (int) $row['booking_id'], $row['kind'] );
+			} catch ( GoogleException $e2 ) {
+				if ( ! in_array( $e2->type, array( 'not_found', 'gone' ), true ) ) {
+					throw $e2;
 				}
+			}
+			if ( $gone ) {
 				// Ya no estaba en ningún lado: se creará de nuevo en el destino.
 				$wpdb->update( Schema::table( 'calendar_events' ), array( 'calendar_id' => $destination, 'state' => 'deleted' ), array( 'id' => $row['id'] ) );
 				Audit::log( 'booking', (int) $row['booking_id'], 'google_event_recreate', array( 'kind' => $row['kind'], 'from' => $from, 'to' => $destination ), 'system', 0 );
-			} elseif ( 400 === $e->http && false !== strpos( $e->getMessage(), 'cannotChangeOrganizer' ) ) {
-				$blocked                       = self::moveBlocked();
-				$blocked[ (int) $row['id'] ]   = $from;
+			} elseif ( $cannotMove ) {
+				// Sigue en el calendario anterior y Google no deja moverlo: se queda ahí.
+				$blocked                     = self::moveBlocked();
+				$blocked[ (int) $row['id'] ] = $from;
 				update_option( self::MOVE_BLOCKED_OPTION, $blocked, false );
 				Audit::log( 'booking', (int) $row['booking_id'], 'google_move_blocked', array( 'kind' => $row['kind'], 'calendar' => $from ), 'system', 0 );
 			} else {

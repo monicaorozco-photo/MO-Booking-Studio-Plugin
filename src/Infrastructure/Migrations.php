@@ -34,6 +34,8 @@ final class Migrations {
 			'4_proof_max_files_beta65'        => array( self::class, 'raiseProofLimit' ),
 			// 0.2.0-beta.6.5.1: retoma los eventos que se movieron de calendario pero no se pudieron verificar.
 			'4_google_move_recovery_beta651'  => array( self::class, 'resumeCalendarMigration' ),
+			// 0.2.0-beta.6.5.2: los que la 6.5.1 dejó como "no se pueden mover" se revisan de nuevo.
+			'4_google_move_recovery_beta652'  => array( self::class, 'retryBlockedMigration' ),
 		);
 	}
 
@@ -69,6 +71,11 @@ final class Migrations {
 		}
 		update_option( Schema::OPTION, Schema::VERSION, false );
 		return $ran;
+	}
+
+	public static function retryBlockedMigration(): int {
+		\MOBookingStudio\Integrations\Google\SyncWorker::clearMoveBlocked();
+		return self::resumeCalendarMigration();
 	}
 
 	public static function resumeCalendarMigration(): int {

@@ -581,6 +581,12 @@ final class Notifications {
 		// Botón principal a la página privada de la reserva.
 		$link  = (string) ( $vars['enlace'] ?? '' );
 		$label = trim( (string) Settings::get( 'email_button_text' ) );
+		// beta.6.5: guía de vestimenta (solo en el correo de cita confirmada).
+		$guide = ! empty( $tpl['guide'] ) ? (string) ( $vars['guia_vestimenta'] ?? '' ) : '';
+		if ( '' !== $guide ) {
+			$html .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:24px auto 4px;"><tr><td align="center" style="border:1.5px solid ' . self::BRAND_BROWN . ';border-radius:6px;background:#FFFFFF;">' .
+				'<a href="' . esc_url( $guide ) . '" target="_blank" style="display:inline-block;padding:13px 28px;font-family:' . $sans . ';font-size:14px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:' . self::BRAND_BROWN . ';text-decoration:none;border-radius:6px;">' . $e( (string) ( $vars['guia_vestimenta_texto'] ?? 'Descargar guía de vestimenta' ) ) . '</a></td></tr></table>';
+		}
 		if ( $showButton && '' !== $link && '' !== $label ) {
 			$html .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:28px auto 4px;"><tr><td align="center" bgcolor="' . self::BRAND_BROWN . '" style="background:' . self::BRAND_BROWN . ';border-radius:6px;">' .
 				'<a href="' . esc_url( $link ) . '" target="_blank" style="display:inline-block;padding:14px 30px;font-family:' . $sans . ';font-size:14px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#FFFFFF;text-decoration:none;border-radius:6px;">' . $e( $label ) . '</a></td></tr></table>';
@@ -692,7 +698,11 @@ final class Notifications {
 			'enlace'             => Bookings::portalUrl( $booking ),
 			'motivo'             => (string) ( $extra['reason'] ?? '' ),
 			'importe'            => isset( $extra['amount_cents'] ) ? Money::format( (int) $extra['amount_cents'] ) : '',
-		) + array( 'detalles' => '' );
+		) + array(
+			'detalles'              => '',
+			'guia_vestimenta'       => $service ? (string) ( $service['dress_guide_url'] ?? '' ) : '',
+			'guia_vestimenta_texto' => $service ? (string) ( $service['dress_guide_label'] ?? '' ) : '',
+		);
 	}
 
 	/**
@@ -870,7 +880,7 @@ final class Notifications {
 			$subject = '[Reservas] ' . $subject;
 		} else {
 			// Plantillas propias: el asunto hace de título.
-			$mail   = self::composeClientEmail( isset( $tpl['name'] ) ? array( 'title' => $tpl['subject'], 'card' => true, 'body' => $tpl['body'] ) : $tpl, $vars, (string) $booking['status'], \MOBookingStudio\Infrastructure\Tokens::linkActive( (int) $booking['id'] ) );
+			$mail   = self::composeClientEmail( isset( $tpl['name'] ) ? array( 'title' => $tpl['subject'], 'card' => true, 'body' => $tpl['body'] ) : $tpl + array( 'guide' => 'booking_confirmed' === $row['event'] ), $vars, (string) $booking['status'], \MOBookingStudio\Infrastructure\Tokens::linkActive( (int) $booking['id'] ) );
 			$html   = $mail['inner'];
 			$body   = $mail['text'];
 			$design = $mail['html'];
@@ -973,7 +983,15 @@ final class Notifications {
 		}
 		$vars    = self::sampleVars();
 		$status  = in_array( $event, array( 'booking_confirmed', 'booking_rescheduled', 'reminder' ), true ) ? BookingStatus::CONFIRMED : BookingStatus::PENDING_PAYMENT;
-		$mail    = self::composeClientEmail( $tpl, $vars, $status );
+		// La prueba de "Cita confirmada" lleva la guía del primer servicio que la tenga.
+		foreach ( Services::all() as $service ) {
+			if ( '' !== (string) ( $service['dress_guide_url'] ?? '' ) ) {
+				$vars['guia_vestimenta']       = (string) $service['dress_guide_url'];
+				$vars['guia_vestimenta_texto'] = (string) $service['dress_guide_label'];
+				break;
+			}
+		}
+		$mail    = self::composeClientEmail( $tpl + array( 'guide' => 'booking_confirmed' === $event ), $vars, $status );
 		$subject = '[PRUEBA] ' . self::render( (string) $tpl['subject'], $vars );
 
 		$error   = '';

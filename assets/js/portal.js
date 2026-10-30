@@ -22,7 +22,7 @@
 			lines: [{ label: 'Preventa · público general', amount_txt: '$1,400 MXN' }], price_rows: [{ kind: 'reference', label: 'Precio', amount_txt: '$1,800 MXN' }, { kind: 'discount', label: 'Descuento por fecha anticipada', amount_txt: '−$200 MXN' }, { kind: 'discount', label: 'Descuento por preventa', amount_txt: '−$200 MXN' }, { kind: 'discounted', label: 'Precio con descuento', amount_txt: '$1,400 MXN' }], total_txt: '$1,400 MXN', deposit_txt: '$500 MXN', paid_txt: '$0 MXN', balance_txt: '$1,400 MXN',
 			deposit_missing_txt: '$500 MXN', expires_txt: 'viernes 20 de noviembre, 22:30 h', bank: 'Banco de ejemplo\nCLABE 000000000000000000', payment_ref: 'Usa tu número de reserva como referencia.',
 			proofs: [], payments: [], can_upload: true, max_mb: 10, proof_text: 'Sube aquí tu comprobante de anticipo.', contract: { title: 'Contrato de servicio (ejemplo)', body: '<p>Texto del contrato.</p>', accepted_txt: 'viernes 20 de noviembre de 2026, 10:00 h' },
-			print_url: '#', whatsapp_url: '#', change_url: '#',
+			print_url: '#', whatsapp_url: '#', cancel_url: '#', fix_data_url: '#', email: 'ana@ejemplo.com', phone: '656 123 4567',
 			reschedule: { can: true, message: '', policy: 'Solo puedes cambiar la fecha de tu sesión UNA VEZ con mínimo 36 horas de anticipación.\n- Tu precio se respeta.\n- Tu anticipo pasa a la nueva fecha.' }
 		};
 	}
@@ -78,20 +78,10 @@
 		if (showBrand) { html += '<p class="mo-booking__brand">' + esc(b.brand) + ' · Consulta de reserva</p>'; }
 		html += '<div aria-live="polite" role="status" class="mo-booking__live">' + (message ? '<p class="mo-booking__success">' + esc(message) + '</p>' : '') + '</div>';
 
-		// Tarjeta principal: servicio, estado y lo que falta por pagar.
-		html += '<section class="mo-booking__panel mo-booking__hero"><div class="mo-booking__hero-main">';
-		if (showTitle) { html += '<h2 class="mo-booking__title" tabindex="-1">' + esc(b.service) + '</h2>'; }
-		html += '<p class="mo-booking__ref">Reserva <strong>' + esc(b.reference) + '</strong> · ' + esc(b.name) + '</p>';
-		html += '<span class="mo-booking__pill mo-booking__pill--' + esc(b.status) + '">' + I(b.status === 'confirmed' || b.status === 'completed' ? 'check' : 'clock') + esc(b.status_label) + '</span>';
-		html += '<p class="mo-booking__status">' + esc(b.status_help) + '</p></div>';
-		if (b.expires_txt) {
-			html += '<div class="mo-booking__hero-amount mo-booking__deadline"><span class="mo-booking__caps">Anticipo pendiente</span><strong>' + esc(b.deposit_txt) + '</strong><span>Antes del ' + esc(b.expires_txt) + ' (' + esc(b.timezone) + ')</span></div>';
-		} else if (awaiting && b.deposit_missing_txt) {
-			html += '<div class="mo-booking__hero-amount"><span class="mo-booking__caps">Anticipo por verificar</span><strong>' + esc(b.deposit_missing_txt) + '</strong></div>';
-		} else if (b.balance_txt && ['confirmed'].indexOf(b.status) !== -1) {
-			html += '<div class="mo-booking__hero-amount"><span class="mo-booking__caps">Saldo pendiente</span><strong>' + esc(b.balance_txt) + '</strong></div>';
-		}
-		html += '</section>';
+		// beta.6.5: orden de la página: 1) reserva y datos, 2) anticipo o saldo pendiente,
+		// 3) datos bancarios, 4) comprobante, 5) inversión y contrato, 6) cambios, 7) ayuda.
+		var title = function (icon, text) { return '<h3 class="mo-booking__card-title">' + I(icon, 'mo-booking__card-icon') + '<span>' + esc(text) + '</span></h3>'; };
+		var tile = function (label, value) { return '<div class="mo-booking__tile"><span class="mo-booking__caps">' + esc(label) + '</span><strong>' + value + '</strong></div>'; };
 
 		// Avance de la reserva.
 		var stages = ['Horario apartado', 'Comprobante en revisión', 'Sesión confirmada', 'Sesión realizada'];
@@ -105,16 +95,20 @@
 		if (b.correction) {
 			html += '<div class="mo-booking__alert"><strong>Qué necesitamos:</strong> ' + M.lines(b.correction.reason) + (b.correction.until_txt ? '<br>Plazo: ' + esc(b.correction.until_txt) + ' (' + esc(b.timezone) + ')' : '') + '</div>';
 		}
+		html += '<div class="mo-booking__flow">';
 
-		var title = function (icon, text) { return '<h3 class="mo-booking__card-title">' + I(icon, 'mo-booking__card-icon') + '<span>' + esc(text) + '</span></h3>'; };
-		var tile = function (label, value) { return '<div class="mo-booking__tile"><span class="mo-booking__caps">' + esc(label) + '</span><strong>' + value + '</strong></div>'; };
-		// En celular, si falta pagar, primero van los datos para transferir y el comprobante.
-		html += '<div class="mo-booking__grid' + (awaiting && (b.bank || b.can_upload) ? ' mo-booking__grid--pay-first' : '') + '"><div class="mo-booking__col">';
-
-		// Detalles de la sesión.
-		html += '<section class="mo-booking__panel">' + title('camera', 'Detalles de la sesión') + '<div class="mo-booking__tiles">';
-		html += tile('Fecha', esc(b.date_txt)) + tile('Horario', esc(b.time_txt) + ' h') + tile('Personas', esc(b.participants) + (b.pets ? ' y ' + esc(b.pets) + ' mascota(s)' : '')) + tile('Estado', esc(b.status_label));
-		html += '</div><dl class="mo-booking__summary mo-booking__summary--plain"><dt>Nombre</dt><dd>' + esc(b.name) + '</dd><dt>Zona horaria</dt><dd>' + esc(b.timezone) + '</dd>';
+		// 1. Reserva: servicio, estado, datos de la clienta y detalles de la sesión.
+		html += '<section class="mo-booking__panel mo-booking__hero"><div class="mo-booking__hero-main">';
+		if (showTitle) { html += '<h2 class="mo-booking__title" tabindex="-1">' + esc(b.service) + '</h2>'; }
+		html += '<p class="mo-booking__ref">Reserva <strong>' + esc(b.reference) + '</strong></p>';
+		html += '<span class="mo-booking__pill mo-booking__pill--' + esc(b.status) + '">' + I(b.status === 'confirmed' || b.status === 'completed' ? 'check' : 'clock') + esc(b.status_label) + '</span>';
+		html += '<p class="mo-booking__status">' + esc(b.status_help) + '</p></div></section>';
+		html += '<section class="mo-booking__panel">' + title('camera', 'Detalles de tu reserva') + '<div class="mo-booking__tiles">';
+		html += tile('Fecha', esc(b.date_txt)) + tile('Horario', esc(b.time_txt) + ' h') + tile('Asistentes', esc(b.participants) + (b.pets ? ' y ' + esc(b.pets) + ' mascota(s)' : '')) + tile('Estado', esc(b.status_label));
+		html += '</div><dl class="mo-booking__summary mo-booking__summary--plain"><dt>Nombre</dt><dd>' + esc(b.name) + '</dd>';
+		if (b.email) { html += '<dt>Correo</dt><dd>' + esc(b.email) + '</dd>'; }
+		if (b.phone) { html += '<dt>WhatsApp</dt><dd>' + esc(b.phone) + '</dd>'; }
+		html += '<dt>Zona horaria</dt><dd>' + esc(b.timezone) + '</dd>';
 		if (b.location) { html += '<dt>Lugar</dt><dd>' + esc(b.location) + '</dd>'; }
 		html += '</dl>';
 		if (b.location_later) { html += '<p class="mo-booking__hint">' + I('pin') + '<span>Lugar: te lo compartiremos aquí en cuanto confirmemos tu anticipo.</span></p>'; }
@@ -123,25 +117,18 @@
 		if (b.delivery_text) { html += '<p class="mo-booking__note">' + esc(b.delivery_text) + '</p>'; }
 		html += '</section>';
 
-		// Resumen de inversión.
-		html += '<section class="mo-booking__panel">' + title('receipt', 'Resumen de inversión') + '<table class="mo-booking__lines"><tbody>';
-		html += b.price_rows ? M.priceRows(b.price_rows) : b.lines.map(function (l) { return '<tr><th scope="row">' + esc(l.label) + '</th><td>' + esc(l.amount_txt) + '</td></tr>'; }).join('');
-		html += '</tbody><tfoot><tr class="mo-booking__row--total"><th scope="row">Total</th><td>' + esc(b.total_txt) + '</td></tr>';
-		html += '<tr><th scope="row">Pagado y verificado</th><td>' + esc(b.paid_txt) + '</td></tr>';
-		html += '<tr><th scope="row">Saldo</th><td>' + esc(b.balance_txt) + '</td></tr></tfoot></table>';
-		if (b.deposit_missing_txt && awaiting) { html += '<p class="mo-booking__note">Anticipo pendiente de verificar: ' + esc(b.deposit_missing_txt) + '.</p>'; }
-		if (b.refund_due_txt) { html += '<p class="mo-booking__note">Devolución pendiente a tu favor: ' + esc(b.refund_due_txt) + '. Te contactaremos para realizarla.</p>'; }
-		if (b.credit_txt) { html += '<p class="mo-booking__note">Saldo a tu favor: ' + esc(b.credit_txt) + '.</p>'; }
-		if (b.frequent_review) { html += '<p class="mo-booking__note">Estamos revisando si aplica tu tarifa de cliente frecuente.</p>'; }
-		if (b.payments && b.payments.length) {
-			html += '<h4 class="mo-booking__subtitle">Pagos recibidos</h4><ul class="mo-booking__payments">';
-			b.payments.forEach(function (p) { html += '<li>' + I('check', 'mo-booking__ok') + '<span>' + esc(p.date) + '</span><strong>' + esc(p.amount_txt) + '</strong><span class="mo-booking__note">' + esc(p.method) + '</span></li>'; });
-			html += '</ul>';
+		// 2. Anticipo pendiente (o saldo pendiente con la cita confirmada). Desaparece al liquidar.
+		var due = '';
+		if (b.expires_txt) {
+			due = '<span class="mo-booking__caps">Anticipo pendiente</span><strong>' + esc(b.deposit_missing_txt || b.deposit_txt) + '</strong><span>Antes del ' + esc(b.expires_txt) + ' (' + esc(b.timezone) + ')</span>';
+		} else if (awaiting && b.deposit_missing_txt) {
+			due = '<span class="mo-booking__caps">Anticipo por verificar</span><strong>' + esc(b.deposit_missing_txt) + '</strong>';
+		} else if (b.balance_due && (b.status === 'confirmed' || b.status === 'completed')) {
+			due = '<span class="mo-booking__caps">Saldo pendiente</span><strong>' + esc(b.balance_txt) + '</strong>';
 		}
-		html += '</section>';
-		html += '</div><div class="mo-booking__col">';
+		if (due) { html += '<section class="mo-booking__panel mo-booking__due"><div class="mo-booking__hero-amount mo-booking__deadline">' + due + '</div></section>'; }
 
-		// Datos para transferencia con botones para copiar.
+		// 3. Datos para transferencia con botones para copiar.
 		if (b.bank) {
 			html += '<section class="mo-booking__panel mo-booking__bank">' + title('bank', 'Datos para transferencia');
 			html += bankRows(b.bank);
@@ -150,47 +137,72 @@
 			html += '</section>';
 		}
 
-		// Comprobantes.
-		var uploadBox = (uploadMessage ? '<p class="mo-booking__success" role="status">' + esc(uploadMessage) + '</p>' : '');
-		uploadBox += M.uploadForm(b, 'mo-portal');
+		// 4. Enviar comprobante (mientras haya algo por pagar).
+		var proofList = '';
 		if (b.proofs.length) {
-			uploadBox += '<h4 class="mo-booking__subtitle">Comprobantes enviados</h4><ul class="mo-booking__proofs">';
+			proofList += '<h4 class="mo-booking__subtitle">Comprobantes enviados</h4><ul class="mo-booking__proofs">';
 			b.proofs.forEach(function (p) {
-				uploadBox += '<li>' + I('file', 'mo-booking__ok') + '<span>' + esc(p.date) + '</span><strong>' + esc(p.status) + '</strong>' + (p.note ? '<span>' + esc(p.note) + '</span>' : '') + (p.url ? '<a class="mo-booking__link" href="' + esc(p.url) + '" target="_blank" rel="noopener">' + (p.kind === 'PDF' ? 'Descargar' : 'Ver') + '</a>' : '') + '</li>';
+				proofList += '<li>' + I('file', 'mo-booking__ok') + '<span>' + esc(p.date) + '</span><strong>' + esc(p.status) + '</strong>' + (p.note ? '<span>' + esc(p.note) + '</span>' : '') + (p.url ? '<a class="mo-booking__link" href="' + esc(p.url) + '" target="_blank" rel="noopener">' + (p.kind === 'PDF' ? 'Descargar' : 'Ver') + '</a>' : '') + '</li>';
 			});
-			uploadBox += '</ul>';
+			proofList += '</ul>';
 		}
-		if (uploadBox) {
-			html += '<section class="mo-booking__panel mo-booking__upload-wrap">' + ((b.can_upload || b.proof_whatsapp_url || b.proofs.length) ? title('upload', 'Enviar comprobante') : '') + uploadBox + '</section>';
+		var uploadOpen = b.can_upload || b.proof_whatsapp_url || (awaiting && b.uploads_note);
+		if (uploadOpen) {
+			html += '<section class="mo-booking__panel mo-booking__upload-wrap">' + title('upload', 'Enviar comprobante') +
+				(uploadMessage ? '<p class="mo-booking__success" role="status">' + esc(uploadMessage) + '</p>' : '') + M.uploadForm(b, 'mo-portal') + proofList + '</section>';
 		}
-		// beta.6: cambio de fecha por la clienta (una vez).
-		if (b.reschedule) {
-			html += '<section class="mo-booking__panel mo-booking__reschedule">' + title('calendar', 'Cambiar fecha');
-			if (b.reschedule.can) {
-				html += '<p class="mo-booking__note">Puedes cambiar la fecha de tu sesión una vez desde aquí.</p><button type="button" class="mo-booking__button mo-booking__button--primary" data-action="reschedule-open">' + I('calendar') + 'Cambiar fecha</button>';
-			} else {
-				html += '<p class="mo-booking__hint">' + I('info') + '<span>' + esc(b.reschedule.message) + '</span></p>';
-			}
-			html += '</section>';
-		}
-		if (b.whatsapp_url || b.change_url) {
-			html += '<section class="mo-booking__panel mo-booking__help-card">' + title('phone', '¿Necesitas ayuda?') + '<div class="mo-booking__stack">';
-			if (b.whatsapp_url) { html += '<a class="mo-booking__button" href="' + esc(b.whatsapp_url) + '" target="_blank" rel="noopener noreferrer">' + I('phone') + 'Escribir por WhatsApp</a>'; }
-			if (b.change_url) { html += '<a class="mo-booking__button" href="' + esc(b.change_url) + '" target="_blank" rel="noopener noreferrer">' + I('calendar') + 'Pedir cambio o cancelación</a>'; }
-			html += '</div></section>';
-		}
-		html += '</div></div>';
 
+		// 5. Resumen de inversión y contrato.
+		html += '<section class="mo-booking__panel">' + title('receipt', 'Resumen de inversión') + '<table class="mo-booking__lines"><tbody>';
+		html += b.price_rows ? M.priceRows(b.price_rows) : b.lines.map(function (l) { return '<tr><th scope="row">' + esc(l.label) + '</th><td>' + esc(l.amount_txt) + '</td></tr>'; }).join('');
+		html += '</tbody><tfoot><tr class="mo-booking__row--total"><th scope="row">Total</th><td>' + esc(b.total_txt) + '</td></tr>';
+		html += '<tr><th scope="row">Pagado y verificado</th><td>' + esc(b.paid_txt) + '</td></tr>';
+		html += '<tr><th scope="row">Saldo</th><td>' + esc(b.balance_txt) + '</td></tr></tfoot></table>';
+		if (!uploadOpen && uploadMessage) { html += '<p class="mo-booking__success" role="status">' + esc(uploadMessage) + '</p>'; }
+		if (b.refund_due_txt) { html += '<p class="mo-booking__note">Devolución pendiente a tu favor: ' + esc(b.refund_due_txt) + '. Te contactaremos para realizarla.</p>'; }
+		if (b.credit_txt) { html += '<p class="mo-booking__note">Saldo a tu favor: ' + esc(b.credit_txt) + '.</p>'; }
+		if (b.frequent_review) { html += '<p class="mo-booking__note">Estamos revisando si aplica tu tarifa de cliente frecuente.</p>'; }
+		if (b.payments && b.payments.length) {
+			html += '<h4 class="mo-booking__subtitle">Pagos recibidos</h4><ul class="mo-booking__payments">';
+			b.payments.forEach(function (p) { html += '<li>' + I('check', 'mo-booking__ok') + '<span>' + esc(p.date) + '</span><strong>' + esc(p.amount_txt) + '</strong><span class="mo-booking__note">' + esc(p.method) + '</span></li>'; });
+			html += '</ul>';
+		}
+		if (!uploadOpen) { html += proofList; }
 		if (b.contract) {
 			html += '<details class="mo-booking__policies mo-booking__contract"><summary>' + I('file') + '<span>Contrato que aceptaste: ' + esc(b.contract.title) + '</span></summary>' +
 				(b.contract.accepted_txt ? '<p class="mo-booking__note">Aceptado el ' + esc(b.contract.accepted_txt) + '.</p>' : '') +
 				'<div class="mo-booking__contract-body">' + b.contract.body + '</div></details>';
 		}
-		html += '<div class="mo-booking__actions mo-booking__actions--portal">';
-		if (b.print_url) {
-			html += '<span class="mo-booking__print"><a class="mo-booking__button" href="' + esc(b.print_url) + '" target="_blank" rel="noopener">' + I('download') + 'Descargar mi contrato y datos de la sesión</a></span>';
+		if (b.print_url || b.dress_guide_url) {
+			html += '<div class="mo-booking__stack">';
+			if (b.dress_guide_url) { html += '<a class="mo-booking__button mo-booking__button--primary" href="' + esc(b.dress_guide_url) + '" target="_blank" rel="noopener">' + I('download') + esc(b.dress_guide_label || 'Descargar guía de vestimenta') + '</a>'; }
+			if (b.print_url) { html += '<a class="mo-booking__button" href="' + esc(b.print_url) + '" target="_blank" rel="noopener">' + I('download') + 'Descargar mi contrato y datos de la sesión</a>'; }
+			html += '</div>';
 		}
-		html += '<button type="button" class="mo-booking__button" data-action="logout">' + I('logout') + 'Cerrar sesión</button></div>';
+		html += '</section>';
+
+		// 6. Cambiar fecha, cancelar o corregir mis datos.
+		if (b.reschedule || b.cancel_url || b.fix_data_url) {
+			html += '<section class="mo-booking__panel mo-booking__reschedule">' + title('calendar', 'Cambiar fecha, cancelar o corregir mis datos');
+			if (b.reschedule) {
+				if (b.reschedule.can) {
+					html += '<p class="mo-booking__note">Puedes cambiar la fecha de tu sesión una vez desde aquí.</p><button type="button" class="mo-booking__button mo-booking__button--primary" data-action="reschedule-open">' + I('calendar') + 'Cambiar fecha</button>';
+				} else {
+					html += '<p class="mo-booking__hint">' + I('info') + '<span>' + esc(b.reschedule.message) + '</span></p>';
+				}
+			}
+			html += '<div class="mo-booking__stack">';
+			if (b.cancel_url) { html += '<a class="mo-booking__button" href="' + esc(b.cancel_url) + '" target="_blank" rel="noopener noreferrer">' + I('phone') + 'Pedir cancelación por WhatsApp</a>'; }
+			if (b.fix_data_url) { html += '<a class="mo-booking__button" href="' + esc(b.fix_data_url) + '" target="_blank" rel="noopener noreferrer">' + I('edit') + 'Corregir mis datos por WhatsApp</a>'; }
+			html += '</div></section>';
+		}
+
+		// 7. ¿Necesitas ayuda? Solo WhatsApp.
+		if (b.whatsapp_url) {
+			html += '<section class="mo-booking__panel mo-booking__help-card">' + title('phone', '¿Necesitas ayuda?') +
+				'<a class="mo-booking__button" href="' + esc(b.whatsapp_url) + '" target="_blank" rel="noopener noreferrer">' + I('phone') + 'Escribir por WhatsApp</a></section>';
+		}
+		html += '</div>';
 		this.root.innerHTML = html;
 		this.bind();
 	};

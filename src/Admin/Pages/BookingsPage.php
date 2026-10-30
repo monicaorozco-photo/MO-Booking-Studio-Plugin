@@ -3,6 +3,7 @@ namespace MOBookingStudio\Admin\Pages;
 
 use MOBookingStudio\Admin\Admin;
 use MOBookingStudio\Admin\Ui;
+use MOBookingStudio\Application\Adjustments;
 use MOBookingStudio\Application\Bookings;
 use MOBookingStudio\Application\Catalog;
 use MOBookingStudio\Application\Clients;
@@ -126,6 +127,13 @@ final class BookingsPage {
 		foreach ( (array) ( $b['quote']['lines'] ?? array() ) as $l ) {
 			$body .= '<tr><td>' . esc_html( $l['label'] ) . '</td><td>' . Ui::money( (int) $l['amount'] ) . '</td></tr>';
 		}
+		// beta.6.5: descuentos y cargos extra manuales.
+		foreach ( Adjustments::rows( (array) $b['quote'] ) as $a ) {
+			$body .= '<tr><td>' . esc_html( Adjustments::KINDS[ $a['kind'] ] . ': ' . $a['label'] ) . ( 'percent' === $a['mode'] ? ' (' . esc_html( (string) $a['value'] ) . '%)' : '' ) . '</td><td>' . ( $a['amount'] < 0 ? '−' : '+' ) . Ui::money( abs( (int) $a['amount'] ) ) . '</td></tr>';
+		}
+		if ( Bookings::isCourtesy( $b ) ) {
+			$body .= '<tr><td>Cortesía</td><td>−' . Ui::money( (int) $b['quote']['courtesy']['total_before'] ) . '</td></tr>';
+		}
 		$body .= '<tr><th>Total pactado</th><th>' . Ui::money( $b['total_cents'] ) . '</th></tr><tr><td>Anticipo requerido</td><td>' . Ui::money( $b['deposit_cents'] ) . '</td></tr>';
 		$body .= '<tr><td>Pagos verificados</td><td>' . Ui::money( $summary['received_cents'] ) . '</td></tr>';
 		if ( $summary['retained_cents'] ) {
@@ -153,14 +161,14 @@ final class BookingsPage {
 
 		// Comprobantes y pagos.
 		if ( $canPay ) {
-			echo Ui::card( 'Comprobantes y pagos', self::paymentsBlock( $b, $summary, $hidden ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+			echo Ui::card( 'Pagos, descuentos y cargos extra', self::adjustmentsBlock( $b, $summary, $hidden ) . self::paymentsBlock( $b, $summary, $hidden ) ); // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 
 		// Acciones de estado.
 		echo Ui::card( 'Acciones', self::actionsBlock( $b, $summary, $hidden, $g ) ); // phpcs:ignore WordPress.Security.EscapeOutput
 
 		// Mensajes.
-		echo Ui::card( 'Mensajes y enlace privado', self::messagesBlock( $b, $hidden ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo Ui::card( 'Mensajes y enlace privado', self::messagesBlock( $b, $hidden, $g ) ); // phpcs:ignore WordPress.Security.EscapeOutput
 
 		if ( \MOBookingStudio\Integrations\Google\Connection::isConfigured() ) {
 			echo Ui::card( 'Google Calendar', self::googleBlock( $b ) ); // phpcs:ignore WordPress.Security.EscapeOutput
@@ -182,6 +190,46 @@ final class BookingsPage {
 
 		echo '</div>';
 		Ui::footer();
+	}
+
+	/**
+	 * beta.6.5: descuentos y cargos extra (varios, con nombre visible y nota interna) y la
+	 * cortesía, arriba de los comprobantes y pagos.
+	 */
+	private static function adjustmentsBlock( array $b, array $summary, array $hidden ): string {
+		$hiddenV = array_merge( $hidden, array( 'version' => $b['version'] ) );
+		$s       = $b['status'];
+		$open    = BookingStatus::isOpen( $s ) || BookingStatus::COMPLETED === $s;
+		$html    = '<h3>Descuentos y cargos extra</h3>';
+		$rows    = Adjustments::rows( (array) $b['quote'] );
+		if ( $rows ) {
+			$html .= '<table class="widefat striped mo-adjustments"><thead><tr><th>Concepto (lo ve la clienta)</th><th>Importe</th><th>Nota interna</th><th><span class="screen-reader-text">Acciones</span></th></tr></thead><tbody>';
+			foreach ( $rows as $a ) {
+				$html .= '<tr><td>' . esc_html( Adjustments::KINDS[ $a['kind'] ] ) . ': <strong>' . esc_html( $a['label'] ) . '</strong>' . ( 'percent' === $a['mode'] ? ' (' . esc_html( (string) $a['value'] ) . '%)' : '' ) . '</td><td>' . ( $a['amount'] < 0 ? '−' : '+' ) . Ui::money( abs( (int) $a['amount'] ) ) . '</td><td>' . esc_html( (string) $a['note'] ) . '</td><td>' .
+					( $open ? Ui::formOpen( 'remove_adjustment', array_merge( $hiddenV, array( 'adjustment_id' => $a['id'] ) ), 'mo-inline-form' ) . Ui::button( 'Quitar', 'button-link-delete', '¿Quitar este ' . ( 'charge' === $a['kind'] ? 'cargo' : 'descuento' ) . '? El total y el saldo se recalculan.' ) . '</form>' : '' ) . '</td></tr>';
+			}
+			$html .= '</tbody></table>';
+		}
+		if ( $open && ! Bookings::isCourtesy( $b ) ) {
+			$html .= '<details class="mo-details"><summary>Agregar descuento o cargo extra</summary><p class="description">Cambian el total y el saldo, no el anticipo (salvo que el total quede por debajo de él). No se avisa a la clienta: lo ve en su página de reserva. Un descuento no puede dejar el total por debajo de lo que ya pagó.</p>' .
+				Ui::formOpen( 'add_adjustment', $hiddenV ) .
+				Ui::row( 'Tipo', Ui::select( 'kind', array( 'discount' => 'Descuento (resta)', 'charge' => 'Cargo extra (suma)' ), 'discount' ) ) .
+				Ui::row( 'Nombre que ve la clienta', Ui::input( 'label', '', 'text', array( 'class' => 'regular-text', 'required' => 'required', 'maxlength' => 120, 'placeholder' => 'Ej.: Descuento especial · Impresión 8×10' ) ) ) .
+				Ui::row( 'Importe', Ui::input( 'value', '', 'text', array( 'class' => 'small-text', 'inputmode' => 'decimal', 'required' => 'required' ) ) . ' ' . Ui::select( 'mode', array( 'fixed' => '$ (pesos)', 'percent' => '% (solo descuentos)' ), 'fixed', array( 'aria-label' => 'Tipo de importe' ) ), 'El % se calcula sobre el precio del servicio más los cargos extra.' ) .
+				Ui::row( 'Nota interna (opcional)', Ui::input( 'note', '', 'text', array( 'class' => 'regular-text', 'maxlength' => 250 ) ) ) .
+				Ui::button( 'Agregar', 'button-secondary' ) . '</form></details>';
+		}
+		$cort = '';
+		if ( Bookings::isCourtesy( $b ) ) {
+			$c     = $b['quote']['courtesy'];
+			$cort .= '<div class="mo-preview"><p><span class="mo-pill mo-pill--courtesy">Cortesía</span> Sin costo para la clienta (precio original ' . Ui::money( (int) $c['total_before'] ) . ')' . ( '' !== (string) $c['reason'] ? ': ' . esc_html( $c['reason'] ) : '' ) . '. No cuenta como ingreso y no se le envió ningún aviso.</p>' .
+				Ui::formOpen( 'remove_courtesy', $hiddenV ) . Ui::button( 'Quitar cortesía', 'button-secondary', '¿Quitar la cortesía? Vuelve el precio original (' . Money::format( (int) $c['total_before'] ) . ') y el anticipo quedará pendiente.' ) . '</form></div>';
+		} elseif ( in_array( $s, array_merge( BookingStatus::awaitingPayment(), array( BookingStatus::CONFIRMED ) ), true ) && $summary['applied_cents'] <= 0 ) {
+			$cort .= '<details class="mo-details"><summary>Marcar como cortesía</summary><p class="description">Para familiares o clientas que no pagarán: la cita queda confirmada con total de $0, no cuenta como ingreso y la clienta no recibe ningún aviso. Se puede deshacer.</p>' .
+				Ui::formOpen( 'courtesy', $hiddenV ) . Ui::input( 'reason', '', 'text', array( 'placeholder' => 'Nota (opcional), por ejemplo: mi hermana', 'class' => 'regular-text' ) ) . ' ' .
+				Ui::button( 'Marcar como cortesía', 'button-secondary', '¿Marcar esta reserva como cortesía? Quedará confirmada sin costo y sin avisar a la clienta.' ) . '</form></details>';
+		}
+		return $html . ( '' !== $cort ? '<h3>Cortesía</h3>' . $cort : '' ) . '<h3>Comprobantes y pagos</h3>';
 	}
 
 	private static function paymentsBlock( array $b, array $summary, array $hidden ): string {
@@ -288,6 +336,25 @@ final class BookingsPage {
 		$hiddenV = array_merge( $hidden, array( 'version' => $b['version'] ) );
 		$base   = Ui::url( 'mo-booking-bookings', array( 'booking' => $b['id'] ) );
 
+		// beta.6.5: reactivar una reserva vencida si el horario sigue libre.
+		if ( BookingStatus::EXPIRED === $s ) {
+			try {
+				$r = Bookings::previewReactivate( $b );
+			} catch ( \Throwable $e ) {
+				$r = array( 'available' => false, 'message' => $e instanceof DomainException ? $e->getMessage() : 'No se pudo calcular el precio actualizado.' );
+			}
+			$html .= '<h3>Reactivar reserva</h3>';
+			if ( empty( $r['available'] ) ) {
+				$html .= '<p class="description">No se puede reactivar: ' . esc_html( (string) $r['message'] ) . '</p>';
+			} else {
+				$covered = $r['paid'] >= $r['deposit'];
+				$html   .= '<div class="mo-preview"><p>El horario <strong>sigue libre</strong>. Precio actualizado a las tarifas de hoy: <strong>' . Ui::money( (int) $r['total'] ) . '</strong> (antes ' . Ui::money( (int) $b['total_cents'] ) . '), anticipo ' . Ui::money( (int) $r['deposit'] ) . ', pagado ' . Ui::money( (int) $r['paid'] ) . '.</p><p>' .
+					( $covered ? 'Lo pagado ya cubre el anticipo: la cita quedará <strong>confirmada</strong>.' : 'Quedará <strong>pendiente de pago</strong> con un nuevo plazo hasta el ' . esc_html( Catalog::dateTimeText( $r['hold_until'] ) ) . '.' ) . '</p></div>' .
+					Ui::formOpen( 'reactivate', array_merge( $hidden, array( 'version' => $b['version'] ) ) ) .
+					Ui::checkbox( 'notify', true, $covered ? 'Avisar a la clienta (correo de Cita confirmada)' : 'Avisar a la clienta (correo de Solicitud recibida con su nuevo plazo)' ) . ' ' .
+					Ui::button( 'Reactivar', 'button-primary', '¿Reactivar esta reserva con el precio actualizado?' ) . '</form>';
+			}
+		}
 		if ( in_array( $s, BookingStatus::awaitingPayment(), true ) ) {
 			if ( $summary['deposit_covered'] ) {
 				$html .= Ui::formOpen( 'confirm', $hidden, 'mo-action' ) . Ui::button( 'Confirmar cita' ) . '</form>';
@@ -300,16 +367,6 @@ final class BookingsPage {
 			}
 			$reasons = array( '' => 'Elige el motivo que verá la persona' ) + Settings::reviewReasons();
 			$html   .= '<details class="mo-details"><summary>Rechazar solicitud</summary>' . Ui::formOpen( 'reject', $hidden ) . Ui::select( 'reason_key', $reasons, '', array( 'required' => 'required', 'aria-label' => 'Motivo' ) ) . ' ' . Ui::input( 'internal_note', '', 'text', array( 'placeholder' => 'Nota interna (opcional)', 'class' => 'regular-text' ) ) . ' ' . Ui::button( 'Rechazar y liberar horario', 'button-link-delete', '¿Rechazar la solicitud?' ) . '</form></details>';
-		}
-		// beta.6: cortesía (familiares o clientas que no pagarán), solo desde el panel y sin avisos.
-		if ( Bookings::isCourtesy( $b ) ) {
-			$c     = $b['quote']['courtesy'];
-			$html .= '<div class="mo-preview"><p><span class="mo-pill mo-pill--courtesy">Cortesía</span> Sin costo para la clienta (precio original ' . Ui::money( (int) $c['total_before'] ) . ')' . ( '' !== (string) $c['reason'] ? ': ' . esc_html( $c['reason'] ) : '' ) . '. No cuenta como ingreso y no se le envió ningún aviso.</p>' .
-				Ui::formOpen( 'remove_courtesy', $hiddenV ) . Ui::button( 'Quitar cortesía', 'button-secondary', '¿Quitar la cortesía? Vuelve el precio original (' . Money::format( (int) $c['total_before'] ) . ') y el anticipo quedará pendiente.' ) . '</form></div>';
-		} elseif ( in_array( $s, array_merge( BookingStatus::awaitingPayment(), array( BookingStatus::CONFIRMED ) ), true ) && $summary['applied_cents'] <= 0 ) {
-			$html .= '<details class="mo-details"><summary>Marcar como cortesía</summary><p class="description">Para familiares o clientas que no pagarán: la cita queda confirmada con total de $0, no cuenta como ingreso y la clienta no recibe ningún aviso. Se puede deshacer.</p>' .
-				Ui::formOpen( 'courtesy', $hiddenV ) . Ui::input( 'reason', '', 'text', array( 'placeholder' => 'Nota (opcional), por ejemplo: mi hermana', 'class' => 'regular-text' ) ) . ' ' .
-				Ui::button( 'Marcar como cortesía', 'button-secondary', '¿Marcar esta reserva como cortesía? Quedará confirmada sin costo y sin avisar a la clienta.' ) . '</form></details>';
 		}
 		if ( BookingStatus::CONFIRMED === $s ) {
 			$html .= Ui::formOpen( 'complete', $hidden, 'mo-action mo-inline-form' ) . Ui::button( 'Marcar sesión completada' ) . '</form> ';
@@ -505,7 +562,7 @@ final class BookingsPage {
 		return $html;
 	}
 
-	private static function messagesBlock( array $b, array $hidden ): string {
+	private static function messagesBlock( array $b, array $hidden, array $g = array() ): string {
 		$html  = '<p>Enlace privado del cliente (no lo publiques):</p><p><input type="text" readonly class="large-text mo-copy" value="' . esc_attr( Bookings::portalUrl( $b ) ) . '" onclick="this.select()"></p>';
 		$html .= Ui::formOpen( 'rotate_link', $hidden, 'mo-inline-form' ) . Ui::button( 'Generar enlace nuevo (anula el anterior)', 'button-link', '¿Anular el enlace actual y crear uno nuevo?' ) . '</form>';
 		// beta.6.3: todos los avisos para la clienta (también vencimiento, pago aprobado,
@@ -549,19 +606,54 @@ final class BookingsPage {
 		}
 		$notes = Notifications::forBooking( $b['id'] );
 		if ( $notes ) {
-			$labels = Notifications::events();
-			$html  .= '<h3>Registro de mensajes</h3><table class="widefat striped"><thead><tr><th>Fecha</th><th>Mensaje</th><th>Canal</th><th>Estado</th><th></th></tr></thead><tbody>';
+			// beta.6.5: "Enviados" y "Programados" (en cola), orden por fecha y 5 por página.
+			$tab   = 'scheduled' === ( $g['mensajes'] ?? '' ) ? 'scheduled' : 'sent';
+			$order = 'asc' === ( $g['orden'] ?? '' ) ? 'asc' : 'desc';
+			$parts = array( 'sent' => array(), 'scheduled' => array() );
 			foreach ( $notes as $n ) {
-				$action = '';
-				if ( 'opened_manual' === $n['status'] ) {
-					$action = Ui::formOpen( 'whatsapp_sent', array_merge( $hidden, array( 'notification_id' => $n['id'] ) ), 'mo-inline-form' ) . Ui::button( 'Marcar enviado', 'button-link' ) . '</form>';
-				} elseif ( 'failed' === $n['status'] ) {
-					$action = Ui::formOpen( 'retry_notification', array( 'notification_id' => $n['id'] ), 'mo-inline-form' ) . Ui::button( 'Reintentar', 'button-link' ) . '</form>';
-				}
-				$channel = array( 'email' => 'Correo', 'whatsapp' => 'WhatsApp automático', 'whatsapp_manual' => 'WhatsApp manual' );
-				$html   .= '<tr><td>' . esc_html( Ui::localDateTime( 'pending' === $n['status'] ? $n['send_after'] : $n['updated_at'], 'd/m H:i' ) ) . '</td><td>' . esc_html( Notifications::eventLabel( $n['event'] ) ) . '<br><span class="description">' . esc_html( $n['recipient'] ) . '</span>' . NotificationsPage::storedText( $n ) . '</td><td>' . esc_html( $channel[ $n['channel'] ] ?? $n['channel'] ) . '</td><td>' . esc_html( Notifications::STATUS_LABELS[ $n['status'] ] ?? $n['status'] ) . ( $n['last_error'] && 'failed' === $n['status'] ? '<br><span class="description">' . esc_html( $n['last_error'] ) . '</span>' : '' ) . '</td><td>' . $action . '</td></tr>';
+				$parts[ 'pending' === $n['status'] ? 'scheduled' : 'sent' ][] = $n;
 			}
-			$html .= '</tbody></table>';
+			$list = $parts[ $tab ];
+			usort(
+				$list,
+				static function ( $x, $y ) use ( $order ) {
+					$dx  = 'pending' === $x['status'] ? $x['send_after'] : $x['updated_at'];
+					$dy  = 'pending' === $y['status'] ? $y['send_after'] : $y['updated_at'];
+					$cmp = strcmp( (string) $dx, (string) $dy ) ?: ( (int) $x['id'] <=> (int) $y['id'] );
+					return 'asc' === $order ? $cmp : -$cmp;
+				}
+			);
+			$perPage = 5;
+			$pages   = max( 1, (int) ceil( count( $list ) / $perPage ) );
+			$page    = min( $pages, max( 1, (int) ( $g['pagina_mensajes'] ?? 1 ) ) );
+			$link    = static function ( array $args ) use ( $b, $tab, $order ) {
+				return esc_url( Ui::url( 'mo-booking-bookings', array_merge( array( 'booking' => (int) $b['id'], 'mensajes' => $tab, 'orden' => $order ), $args ) ) . '#mensajes' );
+			};
+			$html .= '<h3 id="mensajes">Registro de mensajes</h3><p class="mo-tabs-inline">';
+			foreach ( array( 'sent' => 'Enviados', 'scheduled' => 'Programados' ) as $key => $label ) {
+				$text  = esc_html( $label . ' (' . count( $parts[ $key ] ) . ')' );
+				$html .= ( $key === $tab ? '<strong>' . $text . '</strong>' : '<a href="' . $link( array( 'mensajes' => $key, 'pagina_mensajes' => 1 ) ) . '">' . $text . '</a>' ) . ' · ';
+			}
+			$html .= 'Orden: ' . ( 'desc' === $order ? '<strong>más reciente primero</strong> · <a href="' . $link( array( 'orden' => 'asc', 'pagina_mensajes' => 1 ) ) . '">más antiguo primero</a>' : '<a href="' . $link( array( 'orden' => 'desc', 'pagina_mensajes' => 1 ) ) . '">más reciente primero</a> · <strong>más antiguo primero</strong>' ) . '</p>';
+			if ( ! $list ) {
+				$html .= '<p class="description">' . ( 'scheduled' === $tab ? 'No hay mensajes programados.' : 'Todavía no se ha enviado ningún mensaje.' ) . '</p>';
+			} else {
+				$html .= '<table class="widefat striped"><thead><tr><th>' . ( 'scheduled' === $tab ? 'Se enviará' : 'Fecha' ) . '</th><th>Mensaje</th><th>Canal</th><th>Estado</th><th></th></tr></thead><tbody>';
+				$channel = array( 'email' => 'Correo', 'whatsapp' => 'WhatsApp automático', 'whatsapp_manual' => 'WhatsApp manual' );
+				foreach ( array_slice( $list, ( $page - 1 ) * $perPage, $perPage ) as $n ) {
+					$action = '';
+					if ( 'opened_manual' === $n['status'] ) {
+						$action = Ui::formOpen( 'whatsapp_sent', array_merge( $hidden, array( 'notification_id' => $n['id'] ) ), 'mo-inline-form' ) . Ui::button( 'Marcar enviado', 'button-link' ) . '</form>';
+					} elseif ( 'failed' === $n['status'] ) {
+						$action = Ui::formOpen( 'retry_notification', array( 'notification_id' => $n['id'] ), 'mo-inline-form' ) . Ui::button( 'Reintentar', 'button-link' ) . '</form>';
+					}
+					$html .= '<tr><td>' . esc_html( Ui::localDateTime( 'pending' === $n['status'] ? $n['send_after'] : $n['updated_at'], 'd/m/Y H:i' ) ) . '</td><td>' . esc_html( Notifications::eventLabel( $n['event'] ) ) . '<br><span class="description">' . esc_html( $n['recipient'] ) . '</span>' . NotificationsPage::storedText( $n ) . '</td><td>' . esc_html( $channel[ $n['channel'] ] ?? $n['channel'] ) . '</td><td>' . esc_html( Notifications::STATUS_LABELS[ $n['status'] ] ?? $n['status'] ) . ( $n['last_error'] && 'failed' === $n['status'] ? '<br><span class="description">' . esc_html( $n['last_error'] ) . '</span>' : '' ) . '</td><td>' . $action . '</td></tr>';
+				}
+				$html .= '</tbody></table>';
+				if ( $pages > 1 ) {
+					$html .= '<p class="mo-pagination">' . ( $page > 1 ? '<a class="button" href="' . $link( array( 'pagina_mensajes' => $page - 1 ) ) . '">‹ Anteriores</a> ' : '' ) . esc_html( sprintf( 'Página %d de %d', $page, $pages ) ) . ( $page < $pages ? ' <a class="button" href="' . $link( array( 'pagina_mensajes' => $page + 1 ) ) . '">Siguientes ›</a>' : '' ) . '</p>';
+				}
+			}
 		}
 		return $html;
 	}

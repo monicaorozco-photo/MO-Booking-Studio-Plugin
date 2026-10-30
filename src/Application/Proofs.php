@@ -209,12 +209,19 @@ final class Proofs {
 					'proof_insert'
 				);
 				$proofId = (int) $wpdb->insert_id;
-				// 7.3: la versión anterior queda marcada como sustituida y deja de presentarse como vigente.
-				$wpdb->query( $wpdb->prepare( "UPDATE $table SET status = 'replaced' WHERE booking_id = %d AND id <> %d AND status IN ('pending', 'correction')", $bookingId, $proofId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				if ( ! empty( $window['balance'] ) ) {
+					// beta.6.5: abono o saldo de una cita confirmada: la cita sigue igual y el
+					// comprobante queda "Por revisar" junto a los anteriores.
+					$newStatus = $status;
+				} else {
+					// 7.3: la versión anterior queda marcada como sustituida y deja de presentarse como vigente.
+					$wpdb->query( $wpdb->prepare( "UPDATE $table SET status = 'replaced' WHERE booking_id = %d AND id <> %d AND status IN ('pending', 'correction')", $bookingId, $proofId ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-				// DEC-02: recibido a tiempo, la reserva no vence mientras está en revisión.
-				Bookings::transition( $booking, BookingStatus::PAYMENT_REVIEW, 1 === $version ? 'Comprobante recibido a tiempo.' : 'Comprobante sustituto recibido a tiempo.', array( 'expires_at' => null, 'correction_until' => null ) );
-				Bookings::holdIndefinitely( $bookingId );
+					// DEC-02: recibido a tiempo, la reserva no vence mientras está en revisión.
+					Bookings::transition( $booking, BookingStatus::PAYMENT_REVIEW, 1 === $version ? 'Comprobante recibido a tiempo.' : 'Comprobante sustituto recibido a tiempo.', array( 'expires_at' => null, 'correction_until' => null ) );
+					Bookings::holdIndefinitely( $bookingId );
+					$newStatus = BookingStatus::PAYMENT_REVIEW;
+				}
 				Audit::log(
 					'booking',
 					$bookingId,
@@ -231,7 +238,7 @@ final class Proofs {
 					'proof_id' => $proofId,
 					'version'  => $version,
 					'late'     => false,
-					'status'   => BookingStatus::PAYMENT_REVIEW,
+					'status'   => $newStatus,
 				);
 			}
 		);
@@ -268,6 +275,14 @@ final class Proofs {
 		}
 		if ( in_array( $status, array( BookingStatus::EXPIRED, BookingStatus::REJECTED ), true ) ) {
 			return array( 'open' => false, 'reason' => 'late', 'message' => self::LATE_MESSAGE, 'until' => null );
+		}
+		// beta.6.5: con la cita confirmada (o realizada) y saldo por cubrir, la clienta sube los
+		// comprobantes de sus abonos y del saldo. Al quedar liquidada deja de recibirlos.
+		if ( in_array( $status, array( BookingStatus::CONFIRMED, BookingStatus::COMPLETED ), true ) ) {
+			if ( Bookings::summary( $booking )['balance_cents'] > 0 ) {
+				return array( 'open' => true, 'reason' => null, 'message' => '', 'until' => null, 'balance' => true );
+			}
+			return array( 'open' => false, 'reason' => 'paid', 'message' => 'Tu sesión está liquidada. ¡Gracias!', 'until' => null );
 		}
 		if ( in_array( $status, array( BookingStatus::PAYMENT_REVIEW, BookingStatus::UNDER_REVIEW ), true ) ) {
 			return array( 'open' => false, 'reason' => 'review', 'message' => 'Ya recibimos tu comprobante y lo estamos revisando. Te avisaremos del resultado.', 'until' => null );

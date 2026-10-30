@@ -76,6 +76,8 @@ final class ServicesPage {
 		$general .= Ui::row( 'Título en tu Google Calendar', Ui::input( 'event_title_internal', $v( 'event_title_internal', 'MO {estado} · {cliente}' ), 'text', array( 'class' => 'regular-text' ) ), 'Ejemplo: HM: {cliente} · {estado} → "HM: Ana López · Confirmada". Códigos: {cliente} {servicio} {estado} {referencia} {negocio}.', 'event_title_internal' );
 		$general .= Ui::row( 'Título de la invitación a la clienta', Ui::input( 'event_title_client', $v( 'event_title_client', 'Sesión con {negocio}' ), 'text', array( 'class' => 'regular-text' ) ), 'Ejemplo: Holiday Mini: {cliente}. Mismos códigos (en la invitación, {estado} siempre es "Confirmada").', 'event_title_client' );
 		$general .= Ui::row( 'Entrega', Ui::input( 'delivery_text', $v( 'delivery_text' ), 'text', array( 'class' => 'large-text', 'placeholder' => 'Entrega de 5 a 7 días hábiles' ) ), '', 'delivery_text' );
+		$general .= Ui::row( 'Guía de vestimenta (enlace)', Ui::input( 'dress_guide_url', $v( 'dress_guide_url' ), 'url', array( 'class' => 'large-text', 'placeholder' => 'https://…/wp-content/uploads/guia-de-vestimenta.pdf' ) ), 'Opcional. Sube el JPG o PDF a Medios y pega aquí la URL del archivo. Si lo llenas, la clienta ve el botón en el correo de Cita confirmada y en su página de reserva (con la cita confirmada).', 'dress_guide_url' );
+		$general .= Ui::row( 'Texto del botón de la guía', Ui::input( 'dress_guide_label', $v( 'dress_guide_label' ), 'text', array( 'class' => 'regular-text' ) ), '', 'dress_guide_label' );
 		echo Ui::card( 'Datos generales', $general ); // phpcs:ignore WordPress.Security.EscapeOutput
 
 		$time  = Ui::row( 'Duración (minutos)', Ui::input( 'duration', $v( 'duration' ), 'number', array( 'min' => 5, 'step' => 5, 'required' => 'required' ) ), '', 'duration' );
@@ -274,6 +276,8 @@ final class ServicesPage {
 				'event_title_internal'       => sanitize_text_field( (string) ( $p['event_title_internal'] ?? '' ) ),
 				'event_title_client'         => sanitize_text_field( (string) ( $p['event_title_client'] ?? '' ) ),
 				'delivery_text'              => sanitize_text_field( (string) ( $p['delivery_text'] ?? '' ) ),
+				'dress_guide_url'            => esc_url_raw( trim( (string) ( $p['dress_guide_url'] ?? '' ) ), array( 'http', 'https' ) ),
+				'dress_guide_label'          => sanitize_text_field( (string) ( $p['dress_guide_label'] ?? '' ) ),
 				'duration'                   => (int) ( $p['duration'] ?? 0 ),
 				'buffer_before'              => (int) ( $p['buffer_before'] ?? 0 ),
 				'buffer_after'               => (int) ( $p['buffer_after'] ?? 0 ),

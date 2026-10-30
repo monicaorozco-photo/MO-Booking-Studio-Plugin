@@ -130,6 +130,9 @@ final class Portal {
 			'service'         => $service ? $service['title'] : (string) ( $booking['quote']['service_title'] ?? '' ),
 			'brand'           => ( $service && $service['brand'] ) ? $service['brand'] : (string) Settings::get( 'business_name' ),
 			'name'            => $booking['contact']['name'] ?? '',
+			// beta.6.5: para que la clienta revise sus datos (y pida corregirlos).
+			'email'           => (string) ( $booking['contact']['email'] ?? '' ),
+			'phone'           => (string) ( $booking['contact']['phone'] ?? '' ),
 			'date_txt'        => Catalog::dateText( $local ),
 			'time_txt'        => $local->format( 'H:i' ),
 			'timezone'        => $booking['timezone'],
@@ -163,7 +166,9 @@ final class Portal {
 			'expires_at'      => $window['open'] && $window['until'] && BookingStatus::PENDING_PAYMENT === $status ? $window['until']->format( 'c' ) : null,
 			'expires_txt'     => $window['open'] && $window['until'] && BookingStatus::PENDING_PAYMENT === $status ? Catalog::dateTimeText( $window['until'] ) : null,
 			'correction'      => $correction,
-			'bank'            => $paying && $summary['balance_cents'] > 0 ? (string) Settings::get( 'bank_instructions' ) : '',
+			'bank'            => ( $paying || BookingStatus::COMPLETED === $status ) && $summary['balance_cents'] > 0 ? (string) Settings::get( 'bank_instructions' ) : '',
+			// beta.6.5: saldo por cubrir (con la cita confirmada se muestra como "Saldo pendiente").
+			'balance_due'     => $summary['balance_cents'] > 0,
 			'payment_ref'     => $paying ? (string) Settings::get( 'payment_reference' ) : '',
 			'proofs'          => $proofs,
 			'payments'        => $payments,
@@ -171,7 +176,7 @@ final class Portal {
 			'can_upload'      => $canUpload,
 			'uploads_note'    => ! PrivateStorage::uploadsEnabled() ? ( $paying && Settings::proofWhatsappUrl( '', '' ) ? '' : 'Por ahora no podemos recibir archivos aquí. Envíanos tu comprobante por WhatsApp o correo con tu número de reserva.' ) : ( 'late' === $window['reason'] ? $window['message'] : '' ),
 			// beta.3: sin carga de archivos, botón al WhatsApp del negocio con el mensaje listo.
-			'proof_whatsapp_url'   => ! PrivateStorage::uploadsEnabled() && in_array( $status, BookingStatus::awaitingPayment(), true ) ? Settings::proofWhatsappUrl( (string) ( $booking['contact']['name'] ?? '' ), $booking['public_ref'] ) : null,
+			'proof_whatsapp_url'   => ! PrivateStorage::uploadsEnabled() && ( in_array( $status, BookingStatus::awaitingPayment(), true ) || ( in_array( $status, array( BookingStatus::CONFIRMED, BookingStatus::COMPLETED ), true ) && $summary['balance_cents'] > 0 ) ) ? Settings::proofWhatsappUrl( (string) ( $booking['contact']['name'] ?? '' ), $booking['public_ref'] ) : null,
 			'proof_whatsapp_label' => (string) Settings::get( 'whatsapp_proof_button' ),
 			'max_mb'          => (float) Settings::get( 'proof_max_mb' ),
 			'policies'        => $policies,
@@ -180,6 +185,12 @@ final class Portal {
 			'proof_text'      => str_replace( '{whatsapp}', (string) Settings::get( 'whatsapp_number' ), (string) Settings::get( 'portal_proof_text' ) ),
 			// 16.1: durante la preventa, cambios y cancelaciones se piden por WhatsApp.
 			'change_url'      => $waNumber && BookingStatus::isOpen( $status ) ? Contact::whatsappLink( $waNumber, 'Hola, quiero hacer un cambio o cancelar mi reserva ' . $booking['public_ref'] ) : null,
+			// beta.6.5: por ahora, cancelar y corregir datos se piden por WhatsApp con el mensaje listo.
+			'cancel_url'      => $waNumber && BookingStatus::isOpen( $status ) ? Contact::whatsappLink( $waNumber, 'Hola, quiero cancelar mi reserva ' . $booking['public_ref'] ) : null,
+			'fix_data_url'    => $waNumber && BookingStatus::isOpen( $status ) ? Contact::whatsappLink( $waNumber, 'Hola, quiero corregir mis datos de la reserva ' . $booking['public_ref'] . ' (' . ( $booking['contact']['name'] ?? '' ) . ').' ) : null,
+			// beta.6.5: guía de vestimenta del servicio, solo con la cita confirmada.
+			'dress_guide_url'   => $service && $confirmed ? (string) ( $service['dress_guide_url'] ?? '' ) : '',
+			'dress_guide_label' => $service ? (string) ( $service['dress_guide_label'] ?? '' ) : '',
 			// beta.3: página para imprimir o guardar como PDF (contrato exacto y datos de la sesión).
 			'print_url'       => \MOBookingStudio\Frontend\PrintView::url(),
 			// beta.6: cambio de fecha por la clienta (null = no se muestra).
@@ -192,6 +203,11 @@ final class Portal {
 	/** Renglones del precio; una cortesía muestra el precio original y "Cortesía" hasta $0. */
 	private static function priceRows( array $booking ): array {
 		$rows = Catalog::priceRows( array_merge( array( 'base_cents' => 0, 'discount_cents' => 0 ), (array) $booking['quote'] ) );
+		// beta.6.5: descuentos y cargos extra con el nombre que ve la clienta.
+		foreach ( Adjustments::rows( (array) $booking['quote'] ) as $a ) {
+			$amount = (int) $a['amount'];
+			$rows[] = array( 'kind' => $amount < 0 ? 'discount' : 'charge', 'label' => (string) $a['label'], 'amount' => $amount, 'amount_txt' => ( $amount < 0 ? '−' : '+' ) . Money::format( abs( $amount ) ) );
+		}
 		if ( Bookings::isCourtesy( $booking ) ) {
 			$before = (int) $booking['quote']['courtesy']['total_before'];
 			$rows[] = array( 'kind' => 'discount', 'label' => 'Cortesía', 'amount' => -$before, 'amount_txt' => '−' . Money::format( $before ) );

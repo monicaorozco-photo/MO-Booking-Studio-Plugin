@@ -30,6 +30,8 @@ final class Migrations {
 			'3_contracts_from_terms'          => array( \MOBookingStudio\Application\Contracts::class, 'migrateTerms' ),
 			// 0.2.0-beta.6.4: los 10 correos de la clienta con las plantillas nuevas (WhatsApp sin cambios).
 			'4_email_templates_beta64'        => array( \MOBookingStudio\Application\Notifications::class, 'migrateEmailTemplates' ),
+			// 0.2.0-beta.6.5: con comprobantes de abonos y del saldo, el límite pasa de 5 a 10 (si no se cambió).
+			'4_proof_max_files_beta65'        => array( self::class, 'raiseProofLimit' ),
 		);
 	}
 
@@ -65,6 +67,15 @@ final class Migrations {
 		}
 		update_option( Schema::OPTION, Schema::VERSION, false );
 		return $ran;
+	}
+
+	public static function raiseProofLimit(): int {
+		$stored = (array) OptionStore::load( Settings::OPTION, array() );
+		if ( isset( $stored['proof_max_files'] ) && 5 === (int) $stored['proof_max_files'] ) {
+			Settings::update( array( 'proof_max_files' => 10 ) );
+			return 1;
+		}
+		return 0;
 	}
 
 	public static function pinTokenKey(): int {

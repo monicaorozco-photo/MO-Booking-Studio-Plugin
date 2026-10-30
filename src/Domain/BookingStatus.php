@@ -41,7 +41,9 @@ final class BookingStatus {
 		self::CONFIRMED            => array( self::COMPLETED, self::NO_SHOW, self::CANCELLED, self::PENDING_PAYMENT ),
 		self::COMPLETED            => array( self::CONFIRMED ),
 		self::NO_SHOW              => array( self::CONFIRMED ),
-		self::EXPIRED              => array(),
+		// beta.6.5: la administradora puede reactivar una vencida si el horario sigue libre
+		// (vuelve a "Pendiente de pago"; si lo pagado cubre el anticipo, después se confirma).
+		self::EXPIRED              => array( self::PENDING_PAYMENT ),
 		self::REJECTED             => array(),
 		self::CANCELLED            => array(),
 	);

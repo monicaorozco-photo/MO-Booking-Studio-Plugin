@@ -1,5 +1,19 @@
 # Cambios
 
+## 0.2.0-beta.6.5 — 30 de octubre de 2026
+
+Sin cambios de base de datos.
+
+- **Pagos, descuentos y cargos extra** (antes "Comprobantes y pagos"), en cada reserva:
+  - Descuentos en $ o % y cargos extra en $, varios por reserva, con el nombre que ve la clienta y una nota interna; se pueden quitar. Cambian el total y el saldo, no el anticipo (salvo que el total quede por debajo). Un descuento no puede dejar el total por debajo de lo ya pagado. Sin avisos: la clienta los ve en su resumen de inversión. Se conservan al editar, reprogramar o recalcular.
+  - La cortesía se movió a este recuadro.
+- **Comprobantes del saldo y de abonos:** con la cita confirmada (o realizada) y saldo pendiente, la clienta puede subir más comprobantes desde su página; la cita sigue confirmada y el comprobante te llega "Por revisar". Al quedar liquidada deja de recibirlos. El máximo de archivos por reserva pasa de 5 a 10 (si no lo habías cambiado).
+- **Registro de mensajes de cada reserva:** pestañas "Enviados" y "Programados", orden del más reciente o del más antiguo y 5 mensajes por página.
+- **Página de reserva en este orden:** reserva y datos de la clienta (nombre, correo y WhatsApp) → anticipo pendiente (o saldo pendiente con la cita confirmada; desaparece al liquidar) → datos bancarios → enviar comprobante → resumen de inversión y contrato → cambiar fecha, pedir cancelación o corregir mis datos (por WhatsApp) → ¿Necesitas ayuda? (WhatsApp). Sin "Cerrar sesión".
+- **Información importante:** la pregunta y el texto de ejemplo del formulario se editan en *Ajustes*.
+- **Guía de vestimenta por servicio:** enlace de Medios (JPG o PDF) y texto del botón en el servicio. Si lo llenas, aparece el botón en el correo de Cita confirmada y en la página de reserva con la cita confirmada.
+- **Reactivar reservas vencidas** desde el panel: si el horario sigue libre (agenda y Google), muestra el precio actualizado a las tarifas de hoy y la deja en "Pendiente de pago" con un nuevo plazo (o confirmada si lo pagado ya cubre el anticipo). Casilla "Avisar a la clienta". Si el horario ya está ocupado, lo indica y no reactiva.
+
 ## 0.2.0-beta.6.4 — 29 de octubre de 2026
 
 Sin cambios de base de datos. Al actualizar se aplican las plantillas nuevas de correo (una sola vez).

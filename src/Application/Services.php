@@ -67,6 +67,9 @@ final class Services {
 			'event_title_internal'       => 'MO {estado} · {cliente}',
 			'event_title_client'         => 'Sesión con {negocio}',
 			'delivery_text'              => '',
+			// beta.6.5: guía de vestimenta (enlace de Medios, JPG o PDF). Vacío = sin botón.
+			'dress_guide_url'            => '',
+			'dress_guide_label'          => 'Descargar guía de vestimenta',
 			'image_id'                   => 0,
 			'duration'                   => 60,
 			'buffer_before'              => 0,
@@ -406,6 +409,8 @@ final class Services {
 		foreach ( array( 'description', 'location', 'instructions', 'delivery_text', 'terms_text', 'group_note' ) as $key ) {
 			$c[ $key ] = trim( (string) $c[ $key ] );
 		}
+		$c['dress_guide_url']   = esc_url_raw( trim( (string) $c['dress_guide_url'] ), array( 'http', 'https' ) );
+		$c['dress_guide_label'] = trim( (string) $c['dress_guide_label'] ) ?: 'Descargar guía de vestimenta';
 		foreach ( array( 'event_title_internal' => 'MO {estado} · {cliente}', 'event_title_client' => 'Sesión con {negocio}' ) as $key => $default ) {
 			$c[ $key ] = mb_substr( trim( (string) ( $c[ $key ] ?? '' ) ), 0, 190 ) ?: $default;
 		}

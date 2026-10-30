@@ -196,9 +196,9 @@ final class Routes {
 		}
 		// PAY-04: además del límite por IP, un límite por reserva.
 		RateLimit::hit( 'proof_booking_' . $id, 6, 3600 );
-		Proofs::upload( $id, $files['file'] );
+		$result = Proofs::upload( $id, $files['file'] );
 		return array(
-			'message' => 'Recibimos tu comprobante. Tu horario sigue apartado mientras verificamos tu depósito.',
+			'message' => \MOBookingStudio\Domain\BookingStatus::PAYMENT_REVIEW === $result['status'] ? 'Recibimos tu comprobante. Tu horario sigue apartado mientras verificamos tu depósito.' : 'Recibimos tu comprobante. Te avisaremos cuando verifiquemos tu pago.',
 			'booking' => Portal::view( Bookings::get( $id ) ),
 		);
 	}

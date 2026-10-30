@@ -20,7 +20,7 @@ final class Settings {
 			'correction_hours'     => 2,    // DEC-01: una sola sustitución en 2 horas.
 			'review_reasons'       => "Archivo ilegible\nNo se identifica el monto\nReferencia incorrecta\nArchivo equivocado\nMonto incompleto\nNo recibimos el depósito", // P5: motivos que ve la persona.
 			'proof_max_mb'         => 10,   // Propuesta: tamaño máximo de comprobante.
-			'proof_max_files'      => 5,
+			'proof_max_files'      => 10,  // beta.6.5: también comprobantes de abonos y del saldo.
 			'token_days_after'     => 90,   // Propuesta: el enlace privado vence 90 días después de la cita.
 			'booking_page_id'      => 0,
 			'portal_page_id'       => 0,
@@ -65,6 +65,9 @@ final class Settings {
 			'self_reschedule_used_text' => 'Ya usaste tu cambio de fecha. Para otra fecha es necesario cancelar esta reserva y reservar de nuevo con el precio vigente.',
 			'contract_notice'           => 'Antes de continuar, lee con calma el contrato completo. Ahí explicamos qué incluye tu sesión y cómo funcionan el anticipo, los cambios de fecha y las cancelaciones. Al aceptarlo confirmas que estás de acuerdo con todo lo que dice.',
 			'whatsapp_consent_text'     => 'Acepto recibir por WhatsApp y por correo los avisos de mi reserva',
+			// beta.6.5: pregunta y texto de ejemplo de "información importante" en el formulario.
+			'important_info_label'       => 'Alguna información importante que debamos saber antes de tu sesión:',
+			'important_info_placeholder' => 'Por ejemplo: edades de los niños o algo que debamos considerar',
 			'whatsapp_consent_required' => true,
 			// beta.3: si no se pueden subir archivos, botón a WhatsApp del negocio con mensaje listo.
 			'whatsapp_proof_button'  => 'Da clic en este botón para enviar tu comprobante por WhatsApp',

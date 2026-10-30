@@ -57,6 +57,9 @@ final class Admin {
 		'invite_without_deposit' => Cap::BOOKINGS,
 		'courtesy'            => Cap::BOOKINGS,
 		'remove_courtesy'     => Cap::BOOKINGS,
+		'add_adjustment'      => Cap::PAYMENTS,
+		'reactivate'          => Cap::BOOKINGS,
+		'remove_adjustment'   => Cap::PAYMENTS,
 		'duplicate_service'   => Cap::SETTINGS,
 		'service_status'      => Cap::SETTINGS,
 		'delete_service'      => Cap::SETTINGS,
@@ -516,6 +519,21 @@ final class Admin {
 			case 'courtesy':
 				Bookings::markCourtesy( $bookingId, (string) ( $p['reason'] ?? '' ), (int) ( $p['version'] ?? 0 ) );
 				Ui::flash( 'success', 'Reserva marcada como cortesía: confirmada sin costo y sin avisos a la clienta.' );
+				return $bookingUrl;
+
+			case 'reactivate':
+				$after = Bookings::reactivate( $bookingId, ! empty( $p['notify'] ), (int) ( $p['version'] ?? 0 ) );
+				Ui::flash( 'success', \MOBookingStudio\Domain\BookingStatus::CONFIRMED === $after['status'] ? 'Reserva reactivada y confirmada.' : 'Reserva reactivada: pendiente de pago con un nuevo plazo.' . ( empty( $p['notify'] ) ? ' No se avisó a la clienta.' : ' Se avisó a la clienta.' ) );
+				return $bookingUrl;
+
+			case 'add_adjustment':
+				\MOBookingStudio\Application\Adjustments::add( $bookingId, $p, (int) ( $p['version'] ?? 0 ) );
+				Ui::flash( 'success', 'charge' === ( $p['kind'] ?? '' ) ? 'Cargo extra agregado; el total y el saldo se recalcularon.' : 'Descuento agregado; el total y el saldo se recalcularon.' );
+				return $bookingUrl;
+
+			case 'remove_adjustment':
+				\MOBookingStudio\Application\Adjustments::remove( $bookingId, sanitize_key( (string) ( $p['adjustment_id'] ?? '' ) ), (int) ( $p['version'] ?? 0 ) );
+				Ui::flash( 'success', 'Se quitó; el total y el saldo se recalcularon.' );
 				return $bookingUrl;
 
 			case 'remove_courtesy':

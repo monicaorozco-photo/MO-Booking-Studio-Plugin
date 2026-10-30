@@ -480,7 +480,8 @@
 
 		// 4. Detalles adicionales y preguntas del servicio.
 		html += '<section class="mo-booking__panel">' + this.cardTitle('edit', 'Detalles adicionales');
-		html += this.field('important_info', 'Alguna información importante que debamos saber antes de tu sesión:', '<textarea class="mo-booking__input" id="mo-f-important_info" name="important_info" rows="4" maxlength="2000" placeholder="Por ejemplo: edades de los niños o algo que debamos considerar">' + esc(f.important_info) + '</textarea>', '(Opcional. Máximo 2,000 caracteres.)');
+		// beta.6.5: pregunta y ejemplo editables en Ajustes.
+		html += this.field('important_info', esc(this.text('important_label', 'Alguna información importante que debamos saber antes de tu sesión:')), '<textarea class="mo-booking__input" id="mo-f-important_info" name="important_info" rows="4" maxlength="2000" placeholder="' + esc(this.text('important_example', 'Por ejemplo: edades de los niños o algo que debamos considerar')) + '">' + esc(f.important_info) + '</textarea>', '(Opcional. Máximo 2,000 caracteres.)');
 		(svc.questions || []).forEach(function (q) {
 			var name = 'answers.' + q.key;
 			var id = 'mo-f-' + name;

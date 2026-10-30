@@ -71,6 +71,8 @@ final class Catalog {
 			'texts'                 => array(
 				'slot_taken'        => (string) Settings::get( 'slot_taken_label' ) ?: 'No disponible',
 				'contract_notice'   => (string) Settings::get( 'contract_notice' ),
+				'important_label'   => (string) Settings::get( 'important_info_label' ),
+				'important_example' => (string) Settings::get( 'important_info_placeholder' ),
 				'whatsapp_consent'  => (string) Settings::get( 'whatsapp_consent_text' ) ?: 'Acepto recibir por WhatsApp y por correo los avisos de mi reserva',
 				'consent_required'  => (bool) Settings::get( 'whatsapp_consent_required' ),
 			),

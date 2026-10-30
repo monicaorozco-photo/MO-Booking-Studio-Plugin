@@ -1301,8 +1301,9 @@ final class Bookings {
 							'pets'          => $p['quote']['pets'],
 							'children'      => $p['context']['children'],
 							'adults'        => $p['context']['adults'],
-							'total_cents'   => $p['quote']['total_cents'],
-							'deposit_cents' => $p['quote']['deposit_cents'],
+							// beta.6.5: se conservan los descuentos y cargos extra.
+							'total_cents'   => Adjustments::total( array_merge( $booking['quote'], $p['quote'] ) ),
+							'deposit_cents' => Adjustments::deposit( (int) $p['quote']['deposit_cents'], Adjustments::total( array_merge( $booking['quote'], $p['quote'] ) ) ),
 							'quote'         => Db::json(
 								array_merge(
 									$booking['quote'],
@@ -1406,6 +1407,124 @@ final class Bookings {
 		return $outcome;
 	}
 
+	// ----- Reactivar una reserva vencida (beta.6.5) -----
+
+	/**
+	 * Lo que pasaría al reactivar: si el horario sigue libre (agenda y Google) y el precio
+	 * actualizado (tarifas vigentes hoy, con su tipo de cliente). Los descuentos y cargos
+	 * extra que tuviera se conservan.
+	 *
+	 * @return array{available:bool,message:string,quote:?array,total:int,deposit:int,paid:int,hold_until:?\DateTimeImmutable}
+	 */
+	public static function previewReactivate( array $booking, ?array $externalBusy = null ): array {
+		$out = array( 'available' => false, 'message' => '', 'quote' => null, 'total' => 0, 'deposit' => 0, 'paid' => 0, 'hold_until' => null );
+		if ( BookingStatus::EXPIRED !== $booking['status'] ) {
+			$out['message'] = 'Solo se reactivan reservas vencidas.';
+			return $out;
+		}
+		$service = Services::find( $booking['service_id'] );
+		if ( ! $service ) {
+			$out['message'] = 'El servicio de la reserva ya no existe.';
+			return $out;
+		}
+		$now = Plugin::clock()->now();
+		if ( $booking['start'] <= $now ) {
+			$out['message'] = 'La fecha de la sesión ya pasó.';
+			return $out;
+		}
+		$externalBusy = $externalBusy ?? Catalog::freshGoogleBusy( $service, $booking['start'] );
+		if ( ! Catalog::findAvailableSlot( $service, $booking['start'], $now, $booking['id'], true, $externalBusy ) ) {
+			$out['message'] = 'Ese horario ya no está disponible (lo ocupa otra reserva o un evento de tu calendario). Para atenderla, crea una reserva nueva en otro horario.';
+			return $out;
+		}
+		$quote = ( new Pricing( Settings::timezone() ) )->quote(
+			Services::forPricing( $service ),
+			Services::rules( (int) $service['id'] ),
+			array(
+				'start'        => $booking['start'],
+				'requested_at' => $now,
+				'category'     => $booking['client_category'],
+				'participants' => $booking['participants'],
+				'pets'         => $booking['pets'],
+				'extras'       => (array) ( $booking['quote']['extras_input'] ?? array() ),
+			)
+		);
+		$merged          = array_merge( $booking['quote'], $quote );
+		$out['available'] = true;
+		$out['quote']     = $quote;
+		$out['total']     = Adjustments::total( $merged );
+		$out['deposit']   = Adjustments::deposit( (int) $quote['deposit_cents'], $out['total'] );
+		$out['paid']      = (int) self::summary( $booking )['applied_cents'];
+		$out['hold_until'] = $now->modify( sprintf( '+%d minutes', (int) round( Services::holdHours( $service ) * 60 ) ) );
+		return $out;
+	}
+
+	/**
+	 * Reactiva una reserva vencida: vuelve a "Pendiente de pago" con un nuevo plazo, aparta
+	 * de nuevo el horario, actualiza el precio y conserva los pagos. Si ya cubre el anticipo,
+	 * queda confirmada. Con $notify, la clienta recibe "Solicitud recibida" con su nuevo plazo.
+	 */
+	public static function reactivate( int $bookingId, bool $notify, int $expectedVersion ): array {
+		$booking      = self::get( $bookingId );
+		$service      = Services::find( $booking['service_id'] );
+		$externalBusy = $service ? Catalog::freshGoogleBusy( $service, $booking['start'] ) : array();
+		$now          = Plugin::clock()->now();
+		$event        = Db::transaction(
+			static function () use ( $bookingId, $expectedVersion, $externalBusy, $now ) {
+				$booking = self::get( $bookingId, true );
+				self::assertVersion( $booking, $expectedVersion );
+				$service = Services::get( $booking['service_id'] );
+				$occupy  = Availability::occupancyFor( $booking['start'], Services::availabilityParams( $service ) );
+				self::lockDays( $booking['resource_id'], $occupy->utcDays() );
+				$p = self::previewReactivate( $booking, $externalBusy );
+				if ( ! $p['available'] ) {
+					throw new DomainException( 'slot_unavailable', $p['message'], 409 );
+				}
+				$covered = $p['paid'] >= $p['deposit'];
+				$hold    = $covered ? null : $p['hold_until'];
+				$fields  = array(
+					'total_cents'      => $p['total'],
+					'deposit_cents'    => $p['deposit'],
+					'quote'            => Db::json( array_merge( $booking['quote'], $p['quote'], array( 'previous' => array( 'total' => $booking['total_cents'], 'deposit' => $booking['deposit_cents'] ), 'reactivated_at' => Db::toSql( $now ) ) ) ),
+					'expires_at'       => $hold ? Db::toSql( $hold ) : null,
+					'deadline_at'      => $hold ? Db::toSql( $hold ) : $booking['deadline_at'],
+					'correction_until' => null,
+				);
+				self::transition( $booking, BookingStatus::PENDING_PAYMENT, 'Reactivada por la administradora.', $fields );
+				if ( $covered ) {
+					self::transition( self::get( $bookingId, true ), BookingStatus::CONFIRMED, 'Reactivada: lo pagado cubre el anticipo.' );
+				}
+				self::releaseOccupancy( $bookingId, $now );
+				Db::check(
+					Db::wpdb()->insert(
+						Schema::table( 'occupancies' ),
+						array(
+							'resource_id' => $booking['resource_id'],
+							'booking_id'  => $bookingId,
+							'start_utc'   => Db::toSql( $occupy->start ),
+							'end_utc'     => Db::toSql( $occupy->end ),
+							'kind'        => 'booking',
+							'expires_at'  => $hold ? Db::toSql( $hold ) : null,
+							'created_at'  => Db::toSql( $now ),
+						)
+					),
+					'occupancy_insert'
+				);
+				Tokens::updateExpiry( $bookingId, self::tokenExpiry( $booking['start'] ) );
+				Audit::log( 'booking', $bookingId, 'reactivated', array( 'total_before' => (int) $booking['total_cents'], 'total' => $p['total'], 'deposit' => $p['deposit'], 'confirmed' => $covered ) );
+				return $covered ? 'booking_confirmed' : 'booking_created';
+			}
+		);
+		CalendarSync::enqueue( $bookingId );
+		$booking = self::get( $bookingId );
+		if ( $notify ) {
+			Notifications::bookingEvent( $event, $booking );
+		} elseif ( 'booking_confirmed' === $event ) {
+			Notifications::scheduleReminder( $booking );
+		}
+		return $booking;
+	}
+
 	/**
 	 * @param bool $bySelf beta.6: cambio hecho por la clienta (solo uno por reserva; se cuenta
 	 *                     dentro de la misma transacción para que dos pestañas no lo usen dos veces).
@@ -1446,8 +1565,8 @@ final class Bookings {
 				$fields       = array(
 					'start_utc'     => Db::toSql( $newStart ),
 					'end_utc'       => Db::toSql( $outcome['slot']['end'] ),
-					'total_cents'   => $quote['total_cents'],
-					'deposit_cents' => (int) $outcome['new_deposit'],
+					'total_cents'   => Adjustments::total( array_merge( $booking['quote'], $quote ) ),
+					'deposit_cents' => Adjustments::deposit( (int) $outcome['new_deposit'], Adjustments::total( array_merge( $booking['quote'], $quote ) ) ),
 					'quote'         => Db::json( array_merge( $booking['quote'], $quote, array( 'previous' => $old ), $bySelf ? array( 'self_reschedules' => (int) ( $booking['quote']['self_reschedules'] ?? 0 ) + 1 ) : array() ) ),
 				);
 				if ( $needsPayment ) {
@@ -1523,8 +1642,8 @@ final class Bookings {
 					array(
 						'client_category' => $quote['category'],
 						'frequent_match'  => FrequentCheck::isAuto( (string) ( $booking['frequent_match'] ?? '' ) ) && Pricing::CATEGORY_GENERAL === $quote['category'] ? 'reverted' : (string) ( $booking['frequent_match'] ?? '' ),
-						'total_cents'     => $quote['total_cents'],
-						'deposit_cents'   => $quote['deposit_cents'],
+						'total_cents'     => Adjustments::total( array_merge( $booking['quote'], $quote ) ),
+						'deposit_cents'   => Adjustments::deposit( (int) $quote['deposit_cents'], Adjustments::total( array_merge( $booking['quote'], $quote ) ) ),
 						'quote'           => Db::json( array_merge( $booking['quote'], $quote, array( 'previous' => array( 'total' => $booking['total_cents'], 'category' => $booking['client_category'] ) ) ) ),
 					)
 				);
@@ -1586,7 +1705,8 @@ final class Bookings {
 		Audit::log( 'booking', $booking['id'], 'status:' . $to, array( 'from' => $booking['status'], 'reason' => $reason, 'version' => $booking['version'] + 1 ) );
 	}
 
-	private static function update( array $booking, array $fields ): void {
+	/** También lo usan los ajustes de precio (Adjustments). */
+	public static function update( array $booking, array $fields ): void {
 		$wpdb  = Db::wpdb();
 		$sets  = array();
 		$vals  = array();
@@ -1612,7 +1732,7 @@ final class Bookings {
 		CalendarSync::enqueue( (int) $booking['id'] );
 	}
 
-	private static function assertVersion( array $booking, int $expected ): void {
+	public static function assertVersion( array $booking, int $expected ): void {
 		if ( $expected > 0 && $booking['version'] !== $expected ) {
 			throw new DomainException( 'version_conflict', 'La reserva cambió mientras trabajabas. Recarga la página para ver la versión actual.', 409 );
 		}

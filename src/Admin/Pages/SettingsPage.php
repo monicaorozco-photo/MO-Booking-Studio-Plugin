@@ -52,6 +52,8 @@ final class SettingsPage {
 		$body .= Ui::row( 'Desglose: Descuento cliente frecuente', Ui::input( 'label_discount_frequent', $s['label_discount_frequent'], 'text', array( 'class' => 'regular-text' ) ), '', 'label_discount_frequent' );
 		$body .= Ui::row( 'Desglose: Descuento por preventa', Ui::input( 'label_discount_presale', $s['label_discount_presale'], 'text', array( 'class' => 'regular-text' ) ), '', 'label_discount_presale' );
 		$body .= Ui::row( 'Desglose: Precio con descuento', Ui::input( 'label_price_discounted', $s['label_price_discounted'], 'text', array( 'class' => 'regular-text' ) ), '', 'label_price_discounted' );
+		$body .= Ui::row( 'Pregunta de información importante', Ui::input( 'important_info_label', $s['important_info_label'], 'text', array( 'class' => 'large-text' ) ), 'En el formulario, sobre el cuadro de texto libre.', 'important_info_label' );
+		$body .= Ui::row( 'Texto de ejemplo de información importante', Ui::textarea( 'important_info_placeholder', $s['important_info_placeholder'], 2 ), 'Aparece en gris dentro del cuadro y se borra al escribir. Vacío = sin ejemplo.', 'important_info_placeholder' );
 		$body .= Ui::row( 'Aviso antes del contrato', Ui::textarea( 'contract_notice', $s['contract_notice'], 3 ), 'Se muestra arriba del acordeón del contrato en el formulario. Vacío = sin aviso.', 'contract_notice' );
 		$body .= Ui::row( 'Casilla de avisos', Ui::input( 'whatsapp_consent_text', $s['whatsapp_consent_text'], 'text', array( 'class' => 'large-text' ) ) . '<br>' . Ui::checkbox( 'whatsapp_consent_required', (bool) $s['whatsapp_consent_required'], 'Obligatoria para reservar' ), 'Texto de la casilla del resumen. Si es obligatoria, sin marcarla no se puede enviar la solicitud.', 'whatsapp_consent_text' );
 		$body .= Ui::row( 'Botón para enviar el comprobante por WhatsApp', Ui::input( 'whatsapp_proof_button', $s['whatsapp_proof_button'], 'text', array( 'class' => 'large-text' ) ), 'Aparece en el enlace privado y al terminar la reserva cuando no se pueden subir archivos. Abre WhatsApp con el número del negocio.', 'whatsapp_proof_button' );
@@ -186,6 +188,8 @@ final class SettingsPage {
 				'label_discount_presale' => sanitize_text_field( (string) ( $p['label_discount_presale'] ?? '' ) ) ?: 'Descuento por preventa',
 				'label_price_discounted' => sanitize_text_field( (string) ( $p['label_price_discounted'] ?? '' ) ) ?: 'Precio con descuento',
 				'contract_notice'           => sanitize_textarea_field( (string) ( $p['contract_notice'] ?? '' ) ),
+				'important_info_label'       => sanitize_text_field( (string) ( $p['important_info_label'] ?? '' ) ) ?: Settings::defaults()['important_info_label'],
+				'important_info_placeholder' => sanitize_textarea_field( (string) ( $p['important_info_placeholder'] ?? '' ) ),
 				'whatsapp_consent_text'     => sanitize_text_field( (string) ( $p['whatsapp_consent_text'] ?? '' ) ),
 				'whatsapp_consent_required' => ! empty( $p['whatsapp_consent_required'] ),
 				'self_reschedule_enabled'   => ! empty( $p['self_reschedule_enabled'] ),

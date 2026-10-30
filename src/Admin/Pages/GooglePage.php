@@ -103,6 +103,11 @@ final class GooglePage {
 			$refs  = array_unique( array_column( $migration, 'public_ref' ) );
 			$body .= '<div class="notice notice-warning inline"><p><strong>Migración al nuevo calendario destino:</strong> ' . count( $migration ) . ' eventos de ' . count( $refs ) . ' reservas siguen en el calendario anterior (' . esc_html( implode( ', ', array_slice( $refs, 0, 20 ) ) ) . ( count( $refs ) > 20 ? '…' : '' ) . '). Se mueven con la sincronización; los errores aparecen abajo con "Reintentar".</p></div>';
 		}
+		// beta.6.5.1: invitaciones que Google no deja mover (se quedan en el calendario anterior).
+		$blocked = SyncWorker::blockedMigration();
+		if ( $blocked ) {
+			$body .= '<div class="notice notice-info inline"><p><strong>Se quedan en el calendario anterior:</strong> ' . esc_html( implode( ', ', $blocked ) ) . '. Google no permite moverlas a otro calendario; siguen funcionando normal ahí y la clienta conserva su invitación.</p></div>';
+		}
 		$body .= Ui::formOpen( 'google_reconcile', array(), 'mo-inline-form' ) . Ui::button( 'Sincronizar y conciliar ahora', 'button-secondary' ) . '</form>';
 		if ( $jobs['failed'] ) {
 			$body .= '<table class="widefat striped"><thead><tr><th>Reserva</th><th>Error</th><th></th></tr></thead><tbody>';
@@ -188,6 +193,7 @@ final class GooglePage {
 			self::enqueueActive();
 		} elseif ( $before['destination'] !== $destination || (string) $before['client_destination'] !== $clientDest ) {
 			// SEG-05: migración explícita de los eventos propios al nuevo destino.
+			SyncWorker::clearMoveBlocked();
 			$ids = array_unique( array_map( 'intval', array_column( SyncWorker::pendingMigration(), 'booking_id' ) ) );
 			foreach ( $ids as $id ) {
 				CalendarSync::enqueue( $id );

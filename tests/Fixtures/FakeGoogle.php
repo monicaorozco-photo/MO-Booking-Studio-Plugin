@@ -26,6 +26,8 @@ final class FakeGoogle {
 	public $cancellations = 0;
 	/** Eventos movidos de calendario. */
 	public $moves = 0;
+	/** @var array<string,bool> Eventos que Google no deja mover (cannotChangeOrganizer). */
+	public $blockMove = array();
 	/** @var int[] Códigos HTTP a devolver en las siguientes solicitudes a Calendar. */
 	public $failNext = array();
 	/** Google caído: toda solicitud falla con error de conexión. */
@@ -170,7 +172,12 @@ final class FakeGoogle {
 			if ( ! isset( $this->events[ $from ][ $id ] ) || 'cancelled' === $this->events[ $from ][ $id ]['status'] ) {
 				return $this->error( 404, 'notFound' );
 			}
+			if ( isset( $this->blockMove[ $id ] ) ) {
+				return $this->error( 400, 'cannotChangeOrganizer' );
+			}
 			$this->events[ $to ][ $id ] = $this->events[ $from ][ $id ];
+			// Como Google: las propiedades privadas son de la copia de cada calendario y no se mueven.
+			unset( $this->events[ $to ][ $id ]['extendedProperties']['private'] );
 			unset( $this->events[ $from ][ $id ] );
 			++$this->moves;
 			return $this->json( $this->events[ $to ][ $id ] );

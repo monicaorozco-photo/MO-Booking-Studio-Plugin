@@ -62,6 +62,8 @@ final class SyncWorker {
 				$wpdb->query( $wpdb->prepare( "UPDATE $table SET locked_until = NULL, force_sync = 0 WHERE id = %d", $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			} else {
 				$wpdb->update( Schema::table( 'bookings' ), array( 'sync_state' => 'synced' ), array( 'id' => (int) $job['booking_id'] ) );
+				// beta.6.5.1: una sincronización correcta deja atrás los fallos anteriores de la reserva.
+				$wpdb->query( $wpdb->prepare( "UPDATE $table SET status = 'done', last_error = CONCAT('Resuelto: ', last_error) WHERE booking_id = %d AND status = 'failed'", (int) $job['booking_id'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			}
 			return true;
 		} catch ( GoogleException $e ) {
@@ -207,33 +209,74 @@ final class SyncWorker {
 		}
 	}
 
+	/** beta.6.5.1: eventos que Google no deja mover (cannotChangeOrganizer): id de fila => calendario. */
+	public const MOVE_BLOCKED_OPTION = 'mo_booking_google_move_blocked';
+
+	public static function moveBlocked(): array {
+		return array_map( 'strval', (array) get_option( self::MOVE_BLOCKED_OPTION, array() ) );
+	}
+
+	/** Al elegir otros calendarios se vuelve a intentar mover todo. */
+	public static function clearMoveBlocked(): void {
+		delete_option( self::MOVE_BLOCKED_OPTION );
+	}
+
 	/**
 	 * SEG-05: el calendario destino cambió. Se mueve el evento propio, se verifica en el
 	 * calendario nuevo y solo entonces se actualiza el registro. Si el evento ya no existía
 	 * en el calendario anterior, se recreará en el nuevo. Un fallo deja el trabajo en la
 	 * cola para reintentar; nunca se borra nada del calendario anterior que no sea propio.
+	 *
+	 * beta.6.5.1: Google no conserva las propiedades privadas al mover un evento (son de la
+	 * copia de cada calendario), así que después de moverlo se le vuelven a poner sin avisar
+	 * a nadie. Si un intento anterior ya lo movió, se encuentra en el destino y se adopta. Si
+	 * Google no permite moverlo, se queda en el calendario anterior y sigue funcionando ahí.
 	 */
 	private static function moveToDestination( array $row, string $destination ): array {
-		$api         = new Api();
-		$from        = $row['calendar_id'];
-		$wpdb        = Db::wpdb();
+		$api  = new Api();
+		$from = $row['calendar_id'];
+		$wpdb = Db::wpdb();
+		if ( isset( self::moveBlocked()[ (int) $row['id'] ] ) ) {
+			return $row;
+		}
 		try {
 			$api->moveEvent( $from, $row['event_id'], $destination, 'none' );
-			$moved = $api->getEvent( $destination, $row['event_id'] );
-			if ( ( $moved['extendedProperties']['private']['mo_owner'] ?? '' ) !== EventBuilder::siteKey() ) {
-				throw new GoogleException( 'permanent', 0, 'No se pudo verificar el evento movido.' );
-			}
-			$wpdb->update( Schema::table( 'calendar_events' ), array( 'calendar_id' => $destination, 'etag' => (string) ( $moved['etag'] ?? '' ) ), array( 'id' => $row['id'] ) );
-			Audit::log( 'booking', (int) $row['booking_id'], 'google_event_moved', array( 'kind' => $row['kind'], 'from' => $from, 'to' => $destination ), 'system', 0 );
+			self::adoptMoved( $row, $destination, $from );
 		} catch ( GoogleException $e ) {
-			if ( ! in_array( $e->type, array( 'not_found', 'gone' ), true ) ) {
+			if ( in_array( $e->type, array( 'not_found', 'gone' ), true ) ) {
+				// ¿Ya estaba en el destino? (un intento anterior lo movió pero no lo pudo verificar).
+				try {
+					$api->getEvent( $destination, $row['event_id'] );
+					self::adoptMoved( $row, $destination, $from );
+					return self::row( (int) $row['booking_id'], $row['kind'] );
+				} catch ( GoogleException $e2 ) {
+					if ( ! in_array( $e2->type, array( 'not_found', 'gone' ), true ) ) {
+						throw $e2;
+					}
+				}
+				// Ya no estaba en ningún lado: se creará de nuevo en el destino.
+				$wpdb->update( Schema::table( 'calendar_events' ), array( 'calendar_id' => $destination, 'state' => 'deleted' ), array( 'id' => $row['id'] ) );
+				Audit::log( 'booking', (int) $row['booking_id'], 'google_event_recreate', array( 'kind' => $row['kind'], 'from' => $from, 'to' => $destination ), 'system', 0 );
+			} elseif ( 400 === $e->http && false !== strpos( $e->getMessage(), 'cannotChangeOrganizer' ) ) {
+				$blocked                       = self::moveBlocked();
+				$blocked[ (int) $row['id'] ]   = $from;
+				update_option( self::MOVE_BLOCKED_OPTION, $blocked, false );
+				Audit::log( 'booking', (int) $row['booking_id'], 'google_move_blocked', array( 'kind' => $row['kind'], 'calendar' => $from ), 'system', 0 );
+			} else {
 				throw $e;
 			}
-			// Ya no estaba en el calendario anterior: se creará de nuevo en el destino.
-			$wpdb->update( Schema::table( 'calendar_events' ), array( 'calendar_id' => $destination, 'state' => 'deleted' ), array( 'id' => $row['id'] ) );
-			Audit::log( 'booking', (int) $row['booking_id'], 'google_event_recreate', array( 'kind' => $row['kind'], 'from' => $from, 'to' => $destination ), 'system', 0 );
 		}
 		return self::row( (int) $row['booking_id'], $row['kind'] );
+	}
+
+	/** Le vuelve a poner sus propiedades al evento movido (sin avisos) y actualiza el registro. */
+	private static function adoptMoved( array $row, string $destination, string $from ): void {
+		$moved = ( new Api() )->patchEvent( $destination, $row['event_id'], array( 'extendedProperties' => EventBuilder::ownerProps( (int) $row['booking_id'], (string) $row['kind'] ) ), 'none' );
+		if ( (string) ( $moved['id'] ?? '' ) !== (string) $row['event_id'] ) {
+			throw new GoogleException( 'permanent', 0, 'No se pudo verificar el evento movido.' );
+		}
+		Db::wpdb()->update( Schema::table( 'calendar_events' ), array( 'calendar_id' => $destination, 'etag' => (string) ( $moved['etag'] ?? '' ), 'external_change' => '' ), array( 'id' => $row['id'] ) );
+		Audit::log( 'booking', (int) $row['booking_id'], 'google_event_moved', array( 'kind' => $row['kind'], 'from' => $from, 'to' => $destination ), 'system', 0 );
 	}
 
 	/** Reservas cuyos eventos todavía están en un calendario distinto del destino (SEG-05). */
@@ -243,8 +286,27 @@ final class SyncWorker {
 		if ( '' === $dest ) {
 			return array();
 		}
-		$client = Connection::targetFor( 'client' );
-		return $wpdb->get_results( $wpdb->prepare( 'SELECT ce.booking_id, ce.kind, ce.calendar_id, b.public_ref FROM ' . Schema::table( 'calendar_events' ) . ' ce JOIN ' . Schema::table( 'bookings' ) . " b ON b.id = ce.booking_id WHERE ce.state = 'active' AND ( ( ce.kind = 'client' AND ce.calendar_id <> %s ) OR ( ce.kind <> 'client' AND ce.calendar_id <> %s ) ) ORDER BY b.start_utc", $client, $dest ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$client  = Connection::targetFor( 'client' );
+		$blocked = array_map( 'intval', array_keys( self::moveBlocked() ) );
+		$rows    = $wpdb->get_results( $wpdb->prepare( 'SELECT ce.id, ce.booking_id, ce.kind, ce.calendar_id, b.public_ref FROM ' . Schema::table( 'calendar_events' ) . ' ce JOIN ' . Schema::table( 'bookings' ) . " b ON b.id = ce.booking_id WHERE ce.state = 'active' AND ( ( ce.kind = 'client' AND ce.calendar_id <> %s ) OR ( ce.kind <> 'client' AND ce.calendar_id <> %s ) ) ORDER BY b.start_utc", $client, $dest ), ARRAY_A ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return array_values(
+			array_filter(
+				$rows,
+				static function ( $r ) use ( $blocked ) {
+					return ! in_array( (int) $r['id'], $blocked, true );
+				}
+			)
+		);
+	}
+
+	/** beta.6.5.1: reservas cuyo evento se quedó en el calendario anterior porque Google no permite moverlo. */
+	public static function blockedMigration(): array {
+		$ids = array_map( 'intval', array_keys( self::moveBlocked() ) );
+		if ( ! $ids ) {
+			return array();
+		}
+		$wpdb = Db::wpdb();
+		return $wpdb->get_col( 'SELECT DISTINCT b.public_ref FROM ' . Schema::table( 'calendar_events' ) . ' ce JOIN ' . Schema::table( 'bookings' ) . " b ON b.id = ce.booking_id WHERE ce.state = 'active' AND ce.id IN (" . implode( ',', $ids ) . ')' ) ?: array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/** Borra solo eventos que el plugin registró como suyos (CAL-09). */

@@ -638,6 +638,66 @@ final class GoogleCalendarTest extends IntegrationTestCase {
 		$this->assertCount( 2, $this->google->owned( 'internal' ) );
 	}
 
+	/**
+	 * beta.6.5.1: como en Google real, el evento movido pierde sus propiedades privadas. Un
+	 * movimiento anterior que quedó "sin verificar" se adopta sin reenviar nada, y el
+	 * escaneo no lo marca como borrado.
+	 */
+	public function test_moved_events_left_unverified_are_adopted_without_notifications(): void {
+		$service = $this->christmasService();
+		$this->google->connect();
+		$booking = $this->approve( $this->book( $service, self::START )['booking'] );
+		SyncWorker::processQueue();
+		$event = $this->google->owned( 'client' )[0];
+
+		// Lo que dejó la beta.6.5: Google ya movió el evento (sin sus propiedades privadas),
+		// pero el registro sigue apuntando al calendario anterior y el trabajo quedó fallido.
+		$moved = $event;
+		unset( $moved['extendedProperties']['private'] );
+		$this->google->events[ FakeGoogle::NEW_DEST ][ $event['id'] ] = $moved;
+		unset( $this->google->events[ FakeGoogle::DESTINATION ][ $event['id'] ] );
+		Connection::save( array( 'client_destination' => FakeGoogle::NEW_DEST ) );
+		$this->assertCount( 1, SyncWorker::pendingMigration() );
+
+		$inserts  = $this->google->count( 'POST', '/events?' );
+		$requests = count( $this->google->requests );
+		\MOBookingStudio\Infrastructure\Migrations::resumeCalendarMigration();
+		SyncWorker::processQueue();
+
+		$this->assertCount( 0, SyncWorker::pendingMigration() );
+		$this->assertCount( 1, $this->google->owned( 'client', FakeGoogle::NEW_DEST ), 'Recupera sus propiedades en el calendario nuevo.' );
+		$this->assertSame( 1, $this->google->invitations, 'No se reenvía la invitación.' );
+		$this->assertSame( $inserts, $this->google->count( 'POST', '/events?' ), 'No se crea un evento duplicado.' );
+		foreach ( array_slice( $this->google->requests, $requests ) as $r ) {
+			if ( 'PATCH' === $r['method'] ) {
+				$this->assertStringContainsString( 'sendUpdates=none', $r['url'], 'Sin avisos a la clienta.' );
+			}
+		}
+		$this->assertSame( 0, \MOBookingStudio\Integrations\Google\Conflicts::scanExternalEdits( $this->clock->now(), $this->clock->now()->modify( '+60 days' ) ), 'No aparece como borrado en Google.' );
+		unset( $booking );
+	}
+
+	/** beta.6.5.1: si Google no deja mover una invitación, se queda en el calendario anterior sin error. */
+	public function test_event_google_cannot_move_stays_in_previous_calendar(): void {
+		$service = $this->christmasService();
+		$this->google->connect();
+		$this->approve( $this->book( $service, self::START )['booking'] );
+		SyncWorker::processQueue();
+		$event                                   = $this->google->owned( 'client' )[0];
+		$this->google->blockMove[ $event['id'] ] = true;
+
+		Connection::save( array( 'client_destination' => FakeGoogle::NEW_DEST ) );
+		foreach ( array_unique( array_column( SyncWorker::pendingMigration(), 'booking_id' ) ) as $id ) {
+			\MOBookingStudio\Application\CalendarSync::enqueue( (int) $id );
+		}
+		SyncWorker::processQueue();
+
+		$this->assertCount( 0, SyncWorker::pendingMigration(), 'Ya no aparece como migración pendiente.' );
+		$this->assertCount( 1, SyncWorker::blockedMigration() );
+		$this->assertCount( 1, $this->google->owned( 'client' ), 'Sigue en el calendario anterior.' );
+		$this->assertCount( 0, SyncWorker::jobsSummary()['failed'], 'No queda como trabajo fallido.' );
+	}
+
 	/** AC-09 y AC-10: contenido exacto de los dos eventos (9.4 y 9.5). */
 	public function test_event_contents_follow_spec(): void {
 		\MOBookingStudio\Infrastructure\Settings::update( array( 'public_contact' => 'WhatsApp 656 634 4849' ) );

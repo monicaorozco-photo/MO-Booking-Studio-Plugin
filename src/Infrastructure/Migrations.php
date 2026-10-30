@@ -32,6 +32,8 @@ final class Migrations {
 			'4_email_templates_beta64'        => array( \MOBookingStudio\Application\Notifications::class, 'migrateEmailTemplates' ),
 			// 0.2.0-beta.6.5: con comprobantes de abonos y del saldo, el límite pasa de 5 a 10 (si no se cambió).
 			'4_proof_max_files_beta65'        => array( self::class, 'raiseProofLimit' ),
+			// 0.2.0-beta.6.5.1: retoma los eventos que se movieron de calendario pero no se pudieron verificar.
+			'4_google_move_recovery_beta651'  => array( self::class, 'resumeCalendarMigration' ),
 		);
 	}
 
@@ -67,6 +69,14 @@ final class Migrations {
 		}
 		update_option( Schema::OPTION, Schema::VERSION, false );
 		return $ran;
+	}
+
+	public static function resumeCalendarMigration(): int {
+		$ids = array_unique( array_map( 'intval', array_column( \MOBookingStudio\Integrations\Google\SyncWorker::pendingMigration(), 'booking_id' ) ) );
+		foreach ( $ids as $id ) {
+			\MOBookingStudio\Application\CalendarSync::enqueue( $id );
+		}
+		return count( $ids );
 	}
 
 	public static function raiseProofLimit(): int {

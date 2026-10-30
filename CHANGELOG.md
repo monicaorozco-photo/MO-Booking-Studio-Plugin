@@ -1,5 +1,13 @@
 # Cambios
 
+## 0.2.0-beta.6.5.1 — 30 de octubre de 2026
+
+Corrección de Google Calendar. Sin cambios de base de datos.
+
+- Al cambiar el calendario de invitaciones (o el destino), los eventos sí se movían pero el plugin los marcaba como fallidos ("No se pudo verificar el evento movido"): Google borra las propiedades privadas con las que el plugin reconoce sus eventos al moverlos de calendario. Ahora se las vuelve a poner después de moverlos, sin avisar a la clienta.
+- Al actualizar, los eventos que ya se habían movido se encuentran en el calendario nuevo y se dan por migrados, sin reenviar invitaciones ni crear duplicados; los trabajos fallidos de esas reservas se cierran solos al sincronizar bien.
+- Si Google no permite mover una invitación ("cannotChangeOrganizer"), se queda en el calendario anterior y sigue funcionando; ya no aparece como error y el panel la lista aparte.
+
 ## 0.2.0-beta.6.5 — 30 de octubre de 2026
 
 Sin cambios de base de datos.

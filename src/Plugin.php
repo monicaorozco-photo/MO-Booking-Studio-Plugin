@@ -99,6 +99,8 @@ final class Plugin {
 		set_transient( 'mo_booking_queue_lock', 1, 4 * MINUTE_IN_SECONDS );
 		try {
 			Bookings::expireDue( 200 );
+			// beta.6.6: sesiones realizadas 15 minutos después de terminar.
+			Application\Delivery::completeDue( 50 );
 			Notifications::processQueue( 50 );
 			Integrations\Google\SyncWorker::processQueue( 50 );
 			// Conciliación de empalmes y ediciones externas, como máximo cada 10 minutos.

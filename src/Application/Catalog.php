@@ -204,7 +204,8 @@ final class Catalog {
 			'timezone'     => Settings::timezoneInfo()['requested'],
 			'category'     => $category,
 			'presale'      => $anyPresale,
-			'presale_txt'  => $until && ! empty( $table['presale_until'] ) ? 'Preventa hasta el ' . self::dateTimeText( \DateTimeImmutable::createFromFormat( strlen( $table['presale_until'] ) === 16 ? '!Y-m-d H:i' : '!Y-m-d H:i:s', $table['presale_until'], $zone )->setTimezone( new \DateTimeZone( 'UTC' ) ) ) : '',
+			// beta.6.6: lo ven todas (nuevas y frecuentes) mientras la preventa esté vigente.
+			'presale_txt'  => $until && ! empty( $table['presale_until'] ) ? '✨ Estás reservando con precio de preventa, válido hasta el ' . self::dateText( \DateTimeImmutable::createFromFormat( strlen( $table['presale_until'] ) === 16 ? '!Y-m-d H:i' : '!Y-m-d H:i:s', $table['presale_until'], $zone ) ) : '',
 			'days'         => array_values( $out ),
 			'stale'        => $google['stale'],
 			'note'         => ( $google['stale'] ? 'Vista preliminar: confirmaremos el horario al enviar tu solicitud. ' : '' ) . ( Pricing::CATEGORY_FREQUENT === $category ? 'Precios para clientes frecuentes' : 'Precios para público general' ) . ', para el número de personas incluido. El precio final se confirma en el resumen.',

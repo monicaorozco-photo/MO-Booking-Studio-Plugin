@@ -60,6 +60,9 @@ final class Notifications {
 			'motivo'             => 'Motivo (corrección, cancelación)',
 			'importe'            => 'Importe del pago aprobado',
 			'detalles'           => 'Tarjeta con servicio, fecha, hora, ubicación y número de reserva',
+			'entrega'            => 'Fecha de entrega: "a más tardar el …"',
+			'entrega_rango'      => 'Fechas de entrega: "entre el … y el …"',
+			'aviso_saldo'        => 'Aviso de saldo pendiente (vacío si ya está liquidada)',
 		);
 	}
 
@@ -77,6 +80,10 @@ final class Notifications {
 			'booking_rescheduled'   => array( 'label' => 'Cambio confirmado', 'to' => array( 'client' ) ),
 			'client_rescheduled'    => array( 'label' => 'La clienta cambió su fecha (aviso para ti)', 'to' => array( 'admin' ) ),
 			'reminder'              => array( 'label' => 'Recordatorio de la cita', 'to' => array( 'client' ) ),
+			// beta.6.6: después de la sesión y entrega rápida agregada por la clienta.
+			'session_completed'     => array( 'label' => 'Gracias por tu sesión (fecha de entrega)', 'to' => array( 'client' ) ),
+			'session_paid_delivery' => array( 'label' => 'Sesión liquidada después de la sesión (fecha de entrega)', 'to' => array( 'client' ) ),
+			'fast_delivery_added'   => array( 'label' => 'La clienta agregó entrega rápida', 'to' => array( 'client', 'admin' ) ),
 		);
 	}
 
@@ -105,6 +112,7 @@ final class Notifications {
 			),
 			array_slice( $out, 2, null, true )
 		);
+		$out['fast_delivery_added']['admin'] = '{{nombre}} agregó entrega rápida desde su página de reserva ({{referencia}}, {{servicio}} {{fecha}} {{hora}}). Nuevo total: {{total}} · Saldo: {{saldo}}.';
 		$out['client_rescheduled'] = array(
 			'enabled' => true,
 			'subject' => 'Cambio de fecha {{referencia}}',
@@ -200,6 +208,24 @@ final class Notifications {
 					$p( '<strong>📋 Recomendaciones e indicaciones</strong><br>{{instrucciones}}', 'Te sugerimos revisar la ubicación con anticipación y considerar el tiempo necesario para llegar puntualmente.', '<strong>💳 Saldo pendiente:</strong> {{saldo}}', 'Puedes consultar toda la información de tu cita con el botón de abajo.', 'Si tienes alguna pregunta, estamos disponibles para ayudarte.', '¡Esperamos que disfrutes mucho esta experiencia!' ),
 			),
 		);
+		// beta.6.6: después de la sesión y entrega rápida.
+		$texts['session_completed']     = array(
+			'subject'    => '¡Gracias por tu sesión! 📸',
+			'card_title' => '📸 Tu sesión',
+			'body'       => $p( $hello, '¡Muchas gracias por confiar en nosotros para tu sesión de <strong>{{servicio}}</strong>! Fue un gusto acompañarte.', '<strong>📦 Fecha estimada de entrega:</strong> tus fotos estarán listas {{entrega}}.', '{{aviso_saldo}}', 'Puedes consultar tu reserva y el estado de tu entrega con el botón de abajo.', '¡Esperamos que disfrutes mucho tus fotos!' ),
+		);
+		$texts['session_paid_delivery'] = array(
+			'subject'    => '¡Tu sesión está liquidada! 📦',
+			'card_title' => '📸 Tu sesión',
+			'body'       => $p( $hello, 'Recibimos el pago de tu saldo y tu sesión quedó liquidada. ¡Muchas gracias!', '<strong>📦 Fecha estimada de entrega:</strong> tus fotos estarán listas {{entrega}}.', 'Puedes consultar tu reserva con el botón de abajo.' ),
+		);
+		$texts['fast_delivery_added']   = array(
+			'subject'    => 'Agregaste entrega rápida a tu reserva ⚡',
+			'card_title' => '📅 Detalles de tu reserva',
+			'body'       => $p( $hello, '¡Listo! Agregamos la <strong>entrega rápida</strong> a tu reserva de <strong>{{servicio}}</strong>.' ) .
+				'<p><strong>💳 Información de pago actualizada</strong></p>' . $list( array( 'Total' => '{{total}}', 'Saldo pendiente' => '{{saldo}}' ) ) .
+				$p( '<strong>📦 Fecha estimada de entrega:</strong> si tu sesión está liquidada, tus fotos estarán listas {{entrega_rango}}.', 'Recuerda que los días de entrega empiezan a correr cuando tu sesión esté liquidada.', 'Puedes consultar tu reserva con el botón de abajo.' ),
+		);
 		foreach ( $texts as $event => $t ) {
 			// El título grande del correo es el mismo asunto.
 			$texts[ $event ]['title'] = $t['subject'];
@@ -223,6 +249,9 @@ final class Notifications {
 			'booking_expired' => "Hola {{nombre}}:\n\nEl plazo para pagar el anticipo de tu solicitud {{referencia}} terminó y el horario se liberó. Si ya transferiste, escríbenos con tu comprobante para revisarlo." . $sign,
 			'booking_cancelled' => "Hola {{nombre}}:\n\nTu cita para {{servicio}} del {{fecha}} a las {{hora}} quedó cancelada.\n{{motivo}}\n\nConsulta el detalle:\n{{enlace}}" . $sign,
 			'booking_rescheduled' => "Hola {{nombre}}:\n\nTu cita para {{servicio}} ahora es el {{fecha}} a las {{hora}}.\n\nSaldo pendiente: {{saldo}}\n\nConsulta el detalle:\n{{enlace}}" . $sign,
+			'session_completed' => "Hola {{nombre}}:\n\n¡Muchas gracias por tu sesión de {{servicio}}! Fue un gusto acompañarte.\n\n📦 Tus fotos estarán listas {{entrega}}.\n{{aviso_saldo}}\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
+			'session_paid_delivery' => "Hola {{nombre}}:\n\nRecibimos el pago de tu saldo y tu sesión quedó liquidada. ¡Gracias!\n\n📦 Tus fotos estarán listas {{entrega}}.\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
+			'fast_delivery_added' => "Hola {{nombre}}:\n\nAgregamos la entrega rápida a tu reserva de {{servicio}}.\nTotal: {{total}} · Saldo pendiente: {{saldo}}\n\n📦 Si tu sesión está liquidada, tus fotos estarán listas {{entrega_rango}}.\n\nConsulta tu reserva:\n{{enlace}}" . $sign,
 			'reminder' => "Hola {{nombre}}:\n\nTe recordamos tu cita para {{servicio}} el {{fecha}} a las {{hora}}.\n{{ubicacion}}\n\n{{instrucciones}}\n\nSaldo pendiente: {{saldo}}\n{{enlace}}" . $sign,
 		);
 	}
@@ -350,6 +379,9 @@ final class Notifications {
 			'motivo'             => 'El comprobante no se lee completo.',
 			'importe'            => '$500.00 MXN',
 			'detalles'           => "📸 Servicio: Minis navideñas\n📅 Fecha: sábado 21 de noviembre de 2026\n🕒 Hora: 10:30 hrs\n🔖 Número de reserva: MO-AB12CD",
+			'entrega'            => 'a más tardar el martes 1 de diciembre de 2026',
+			'entrega_rango'      => 'entre el jueves 26 de noviembre y el martes 1 de diciembre de 2026',
+			'aviso_saldo'        => 'Recuerda que los días de entrega empiezan a correr cuando tu sesión esté liquidada. Tu saldo pendiente es de $900.00 MXN.',
 		);
 	}
 
@@ -702,7 +734,7 @@ final class Notifications {
 			'detalles'              => '',
 			'guia_vestimenta'       => $service ? (string) ( $service['dress_guide_url'] ?? '' ) : '',
 			'guia_vestimenta_texto' => $service ? (string) ( $service['dress_guide_label'] ?? '' ) : '',
-		);
+		) + Delivery::vars( $booking );
 	}
 
 	/**

@@ -37,7 +37,12 @@ final class FrequentCheck {
 		return in_array( $match, array( self::MATCH_AUTO, self::MATCH_AUTO_REVIEW ), true );
 	}
 
-	public const NOT_CONFIRMED = 'No pudimos confirmar el beneficio de cliente frecuente con esos datos. Verás los precios para público general; si crees que es un error, continúa con tu reserva y lo revisaremos antes de confirmarla.';
+	public const NOT_CONFIRMED = 'No te preocupes: continúa como cliente nuevo y verificaremos tus datos manualmente.';
+
+	/** beta.6.6: la encontramos (al menos 1 sesión registrada). */
+	public static function welcomeBack( string $name ): string {
+		return sprintf( '¡Qué gusto verte de nuevo, %s! Ya tenemos tus datos, así que puedes continuar con tu reserva.', Names::first( $name ) );
+	}
 
 	public static function automaticEnabled(): bool {
 		return (bool) apply_filters( 'mo_booking_frequent_automatic', true );
@@ -78,13 +83,17 @@ final class FrequentCheck {
 
 		$found  = self::findClient( $email, $phone );
 		$client = $found['client'];
-		$ok     = self::automaticEnabled() && $client && Names::shareWord( $name, (string) $client['name'] ) && Pricing::CATEGORY_FREQUENT === Clients::effectiveCategory( $client );
+		$named  = $client && Names::shareWord( $name, (string) $client['name'] );
+		// beta.6.6: se reconoce a quien tenga al menos 1 sesión registrada (o categoría manual
+		// de frecuente); el precio de cliente frecuente sigue el umbral de Ajustes (3).
+		$known  = $named && ( Clients::sessions( $client ) >= 1 || Pricing::CATEGORY_FREQUENT === Clients::effectiveCategory( $client ) );
+		$ok     = self::automaticEnabled() && $known && Pricing::CATEGORY_FREQUENT === Clients::effectiveCategory( $client );
 		Audit::log(
 			'client',
 			$client ? (int) $client['id'] : 0,
 			'frequent_check',
 			array(
-				'result' => $ok ? ( empty( $found['review'] ) ? 'verified' : 'verified_email_phone_elsewhere' ) : ( $found['reason'] ?: ( $client ? 'name_or_category' : 'not_found' ) ),
+				'result' => $ok ? ( empty( $found['review'] ) ? 'verified' : 'verified_email_phone_elsewhere' ) : ( $known ? 'recognized_general' : ( $found['reason'] ?: ( ! $client ? 'not_found' : ( $named ? 'no_sessions' : 'name_mismatch' ) ) ) ),
 				'by'     => $found['by'],
 			),
 			'client',
@@ -92,8 +101,9 @@ final class FrequentCheck {
 		);
 		if ( ! $ok ) {
 			return array(
-				'frequent' => false,
-				'message'  => self::NOT_CONFIRMED,
+				'frequent'   => false,
+				'recognized' => $known,
+				'message'    => $known ? self::welcomeBack( $name ) : self::NOT_CONFIRMED,
 				// Se devuelve lo que escribió la persona para no pedirlo dos veces.
 				'email'    => $rawMail,
 				'phone'    => $rawTel,
@@ -112,9 +122,10 @@ final class FrequentCheck {
 			self::TTL
 		);
 		return array(
-			'frequent' => true,
-			'token'    => $token,
-			'message'  => '¡Gracias por volver! Verás los precios para clientes frecuentes.',
+			'frequent'   => true,
+			'recognized' => true,
+			'token'      => $token,
+			'message'    => self::welcomeBack( $name ),
 			'email'    => $rawMail,
 			'phone'    => $rawTel,
 			'locked'   => array( 'email' => in_array( 'email', $found['by'], true ), 'phone' => in_array( 'phone', $found['by'], true ) ),

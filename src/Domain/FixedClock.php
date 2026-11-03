@@ -17,6 +17,10 @@ final class FixedClock implements Clock {
 		return $this->now;
 	}
 
+	public function set( \DateTimeImmutable $at ): void {
+		$this->now = $at->setTimezone( new \DateTimeZone( 'UTC' ) );
+	}
+
 	public function advance( string $modifier ): void {
 		$this->now = $this->now->modify( $modifier );
 	}

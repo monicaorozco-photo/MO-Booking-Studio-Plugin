@@ -59,6 +59,7 @@ final class Routes {
 		register_rest_route( self::NS, '/portal/reschedule/availability', array( 'methods' => 'GET', 'callback' => $this->wrap( array( $this, 'portalRescheduleAvailability' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/portal/reschedule/preview', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalReschedulePreview' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/portal/reschedule', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalReschedule' ) ), 'permission_callback' => $public ) );
+		register_rest_route( self::NS, '/portal/fast-delivery', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalFastDelivery' ) ), 'permission_callback' => $public ) );
 		register_rest_route( self::NS, '/portal/logout', array( 'methods' => 'POST', 'callback' => $this->wrap( array( $this, 'portalLogout' ) ), 'permission_callback' => $public ) );
 	}
 
@@ -222,6 +223,17 @@ final class Routes {
 		$booking = \MOBookingStudio\Application\SelfReschedule::apply( $id, self::startParam( $r ), ! empty( $params['accept_difference'] ) );
 		return array(
 			'message' => 'Listo, tu sesión cambió de fecha. Te enviamos la confirmación por correo.',
+			'booking' => Portal::view( $booking ),
+		);
+	}
+
+	/** beta.6.6: la clienta agrega la entrega rápida desde su página de reserva. */
+	public function portalFastDelivery( \WP_REST_Request $r ): array {
+		RateLimit::hit( 'fast_delivery', 10, 3600 );
+		$id      = Tokens::sessionBooking( Portal::cookie(), (string) $r->get_header( 'x_mo_csrf' ), true );
+		$booking = \MOBookingStudio\Application\Delivery::addFast( $id );
+		return array(
+			'message' => 'Listo, agregamos la entrega rápida a tu reserva. Te enviamos la confirmación por correo.',
 			'booking' => Portal::view( $booking ),
 		);
 	}

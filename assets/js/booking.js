@@ -248,9 +248,9 @@
 			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--back" data-action="welcome-back">Atrás</button><button type="submit" class="mo-booking__button mo-booking__button--primary mo-booking__button--next">Revisar</button></div>';
 			html += '</form>';
 		} else if (s.welcome === 'not-found') {
-			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>No encontramos tu tarifa de cliente frecuente</h3>';
+			html += '<h3 class="mo-booking__panel-title" id="mo-step-0" tabindex="-1" data-step-heading>¡Ups! No pudimos encontrar tus datos.</h3>';
 			html += '<p class="mo-booking__panel-lead">' + esc(s.identifyMessage) + '</p>';
-			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--back" data-action="returning">Intentar con otros datos</button><button type="button" class="mo-booking__button mo-booking__button--primary mo-booking__button--next" data-action="continue-general">Continuar</button></div>';
+			html += '<div class="mo-booking__actions"><button type="button" class="mo-booking__button mo-booking__button--back" data-action="returning">Intentar con otros datos</button><button type="button" class="mo-booking__button mo-booking__button--primary mo-booking__button--next" data-action="continue-general">Continuar como cliente nuevo</button></div>';
 		}
 		html += '</section>';
 		return html;
@@ -285,6 +285,15 @@
 				return;
 			}
 			s.form.frequent_claim = true;
+			// beta.6.6: la encontramos pero aún no tiene el precio de frecuente: precios generales, sin revisión.
+			if (!res.data.frequent && res.data.recognized) {
+				s.frequentToken = null;
+				s.locked = {};
+				s.form.frequent_claim = false;
+				self.openCalendar();
+				s.message = res.data.message; s.messageOk = true;
+				return;
+			}
 			if (res.data.frequent) {
 				s.frequentToken = res.data.token;
 				s.locked = res.data.locked || {};
@@ -374,7 +383,7 @@
 			html += '<p class="mo-booking__empty">' + M.icon('calendar') + '<span>Elige una fecha en el calendario para ver sus horarios.</span></p>';
 		}
 		if (s.presaleText) {
-			html += '<p class="mo-booking__presale">' + M.icon('tag') + '<span>' + esc(s.presaleText) + '</span></p>';
+			html += '<p class="mo-booking__presale"><span>' + esc(s.presaleText) + '</span></p>';
 		}
 		html += '</section>';
 		if (day && day.price_txt) {

@@ -70,6 +70,11 @@ final class Services {
 			// beta.6.5: guía de vestimenta (enlace de Medios, JPG o PDF). Vacío = sin botón.
 			'dress_guide_url'            => '',
 			'dress_guide_label'          => 'Descargar guía de vestimenta',
+			// beta.6.6: días hábiles de entrega (rango). 0 = sin fecha de entrega.
+			'delivery_days_min'          => 0,
+			'delivery_days_max'          => 0,
+			'fast_days_min'              => 0,
+			'fast_days_max'              => 0,
 			'image_id'                   => 0,
 			'duration'                   => 60,
 			'buffer_before'              => 0,
@@ -411,6 +416,12 @@ final class Services {
 		}
 		$c['dress_guide_url']   = esc_url_raw( trim( (string) $c['dress_guide_url'] ), array( 'http', 'https' ) );
 		$c['dress_guide_label'] = trim( (string) $c['dress_guide_label'] ) ?: 'Descargar guía de vestimenta';
+		foreach ( array( 'delivery', 'fast' ) as $kind ) {
+			$max = max( 0, min( 120, (int) $c[ $kind . '_days_max' ] ) );
+			$min = max( 0, min( 120, (int) $c[ $kind . '_days_min' ] ) );
+			$c[ $kind . '_days_max' ] = max( $max, $min );
+			$c[ $kind . '_days_min' ] = $min ?: $c[ $kind . '_days_max' ];
+		}
 		foreach ( array( 'event_title_internal' => 'MO {estado} · {cliente}', 'event_title_client' => 'Sesión con {negocio}' ) as $key => $default ) {
 			$c[ $key ] = mb_substr( trim( (string) ( $c[ $key ] ?? '' ) ), 0, 190 ) ?: $default;
 		}

@@ -76,6 +76,8 @@ final class ServicesPage {
 		$general .= Ui::row( 'Título en tu Google Calendar', Ui::input( 'event_title_internal', $v( 'event_title_internal', 'MO {estado} · {cliente}' ), 'text', array( 'class' => 'regular-text' ) ), 'Ejemplo: HM: {cliente} · {estado} → "HM: Ana López · Confirmada". Códigos: {cliente} {servicio} {estado} {referencia} {negocio}.', 'event_title_internal' );
 		$general .= Ui::row( 'Título de la invitación a la clienta', Ui::input( 'event_title_client', $v( 'event_title_client', 'Sesión con {negocio}' ), 'text', array( 'class' => 'regular-text' ) ), 'Ejemplo: Holiday Mini: {cliente}. Mismos códigos (en la invitación, {estado} siempre es "Confirmada").', 'event_title_client' );
 		$general .= Ui::row( 'Entrega', Ui::input( 'delivery_text', $v( 'delivery_text' ), 'text', array( 'class' => 'large-text', 'placeholder' => 'Entrega de 5 a 7 días hábiles' ) ), '', 'delivery_text' );
+		$general .= Ui::row( 'Días hábiles de entrega', 'de ' . Ui::input( 'delivery_days_min', $v( 'delivery_days_min' ), 'number', array( 'min' => 0, 'max' => 120, 'class' => 'small-text', 'aria-label' => 'Días hábiles de entrega, mínimo' ) ) . ' a ' . Ui::input( 'delivery_days_max', $v( 'delivery_days_max' ), 'number', array( 'min' => 0, 'max' => 120, 'class' => 'small-text', 'aria-label' => 'Días hábiles de entrega, máximo' ) ) . ' días', 'Se cuentan desde el día siguiente a la sesión, sin fines de semana ni días festivos de México. La página de reserva muestra el rango; el correo "Gracias por tu sesión", el último día ("a más tardar"). 0 = sin fecha de entrega.', 'delivery_days_max' );
+		$general .= Ui::row( 'Días hábiles de la entrega rápida', 'de ' . Ui::input( 'fast_days_min', $v( 'fast_days_min' ), 'number', array( 'min' => 0, 'max' => 120, 'class' => 'small-text', 'aria-label' => 'Días hábiles de la entrega rápida, mínimo' ) ) . ' a ' . Ui::input( 'fast_days_max', $v( 'fast_days_max' ), 'number', array( 'min' => 0, 'max' => 120, 'class' => 'small-text', 'aria-label' => 'Días hábiles de la entrega rápida, máximo' ) ) . ' días', 'Se usan si la clienta tiene entrega rápida. Puede agregarla desde su página de reserva hasta que termina el día de su sesión.', 'fast_days_max' );
 		$general .= Ui::row( 'Guía de vestimenta (enlace)', Ui::input( 'dress_guide_url', $v( 'dress_guide_url' ), 'url', array( 'class' => 'large-text', 'placeholder' => 'https://…/wp-content/uploads/guia-de-vestimenta.pdf' ) ), 'Opcional. Sube el JPG o PDF a Medios y pega aquí la URL del archivo. Si lo llenas, la clienta ve el botón en el correo de Cita confirmada y en su página de reserva (con la cita confirmada).', 'dress_guide_url' );
 		$general .= Ui::row( 'Texto del botón de la guía', Ui::input( 'dress_guide_label', $v( 'dress_guide_label' ), 'text', array( 'class' => 'regular-text' ) ), '', 'dress_guide_label' );
 		echo Ui::card( 'Datos generales', $general ); // phpcs:ignore WordPress.Security.EscapeOutput
@@ -278,6 +280,10 @@ final class ServicesPage {
 				'delivery_text'              => sanitize_text_field( (string) ( $p['delivery_text'] ?? '' ) ),
 				'dress_guide_url'            => esc_url_raw( trim( (string) ( $p['dress_guide_url'] ?? '' ) ), array( 'http', 'https' ) ),
 				'dress_guide_label'          => sanitize_text_field( (string) ( $p['dress_guide_label'] ?? '' ) ),
+				'delivery_days_min'          => (int) ( $p['delivery_days_min'] ?? 0 ),
+				'delivery_days_max'          => (int) ( $p['delivery_days_max'] ?? 0 ),
+				'fast_days_min'              => (int) ( $p['fast_days_min'] ?? 0 ),
+				'fast_days_max'              => (int) ( $p['fast_days_max'] ?? 0 ),
 				'duration'                   => (int) ( $p['duration'] ?? 0 ),
 				'buffer_before'              => (int) ( $p['buffer_before'] ?? 0 ),
 				'buffer_after'               => (int) ( $p['buffer_after'] ?? 0 ),

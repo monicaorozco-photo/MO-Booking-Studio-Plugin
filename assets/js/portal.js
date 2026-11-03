@@ -117,6 +117,21 @@
 		if (b.delivery_text) { html += '<p class="mo-booking__note">' + esc(b.delivery_text) + '</p>'; }
 		html += '</section>';
 
+		// beta.6.6: fecha de entrega estimada, aviso para liquidar y entrega rápida.
+		if (b.delivery) {
+			var dv = b.delivery;
+			html += '<section class="mo-booking__panel mo-booking__delivery">' + title('gift', 'Fecha de entrega estimada');
+			html += '<p class="mo-booking__delivery-range">' + (dv.paid ? 'Tu entrega estará lista ' : 'Si tu sesión está liquidada, tu entrega estará lista ') + '<strong>' + esc(dv.range_txt) + '</strong>' + (dv.has_fast ? ' (con entrega rápida)' : '') + '.</p>';
+			if (!dv.paid) {
+				html += '<p class="mo-booking__alert mo-booking__alert--soft"><strong>Liquida tu sesión:</strong> tu saldo pendiente es de ' + esc(dv.balance_txt) + '. Los días de entrega empiezan a correr cuando tu sesión esté liquidada.' + (b.bank ? ' <a class="mo-booking__link" href="#mo-datos-bancarios">Ver datos para transferir</a>' : '') + '</p>';
+			}
+			if (dv.fast) {
+				html += '<div class="mo-booking__fast-offer"><p><strong>¿La necesitas antes?</strong> Con ' + esc(dv.fast.label.toLowerCase()) + (dv.fast.range_txt ? ' estaría lista ' + esc(dv.fast.range_txt) : '') + '.</p>' +
+					'<button type="button" class="mo-booking__button mo-booking__button--primary" data-action="add-fast">' + I('bolt') + 'Agregar ' + esc(dv.fast.label.toLowerCase()) + ' · +' + esc(dv.fast.price_txt) + '</button><p class="mo-booking__field-error" data-fast-error role="alert"></p></div>';
+			}
+			html += '</section>';
+		}
+
 		// 2. Anticipo pendiente (o saldo pendiente con la cita confirmada). Desaparece al liquidar.
 		var due = '';
 		if (b.expires_txt) {
@@ -130,7 +145,7 @@
 
 		// 3. Datos para transferencia con botones para copiar.
 		if (b.bank) {
-			html += '<section class="mo-booking__panel mo-booking__bank">' + title('bank', 'Datos para transferencia');
+			html += '<section class="mo-booking__panel mo-booking__bank" id="mo-datos-bancarios">' + title('bank', 'Datos para transferencia');
 			html += bankRows(b.bank);
 			html += '<div class="mo-booking__copybox mo-booking__copybox--ref"><p><span class="mo-booking__caps">Referencia</span><strong>' + esc(b.reference) + '</strong></p><button type="button" class="mo-booking__copy" data-copy="' + esc(b.reference) + '">' + I('copy') + '<span>Copiar</span></button></div>';
 			if (b.payment_ref) { html += '<p class="mo-booking__note">' + esc(b.payment_ref) + '</p>'; }
@@ -461,6 +476,26 @@
 				if (window.navigator.clipboard) { window.navigator.clipboard.writeText(text).then(done, function () { window.prompt('Copia el texto:', text); }); } else { window.prompt('Copia el texto:', text); }
 			});
 		});
+		// beta.6.6: agregar entrega rápida (pide confirmar; suma al total y al saldo).
+		var addFast = this.root.querySelector('[data-action=add-fast]');
+		if (addFast) {
+			addFast.addEventListener('click', function () {
+				var dv = self.view.delivery;
+				if (!window.confirm('¿Agregar ' + dv.fast.label.toLowerCase() + ' por ' + dv.fast.price_txt + '? Se suma a tu total y a tu saldo pendiente.')) { return; }
+				if (self.config && self.config.preview) { return; }
+				addFast.disabled = true;
+				self.api('portal/fast-delivery', { body: {}, csrf: self.csrf }).then(function (res) {
+					if (!res.ok) {
+						addFast.disabled = false;
+						var err = self.root.querySelector('[data-fast-error]');
+						if (err) { err.textContent = M.errorMessage(res); }
+						return;
+					}
+					self.view = res.data.booking;
+					self.render(res.data.message);
+				});
+			});
+		}
 		var logout = this.root.querySelector('[data-action=logout]');
 		if (logout) {
 			logout.addEventListener('click', function () {

@@ -195,8 +195,38 @@ final class Portal {
 			'print_url'       => \MOBookingStudio\Frontend\PrintView::url(),
 			// beta.6: cambio de fecha por la clienta (null = no se muestra).
 			'reschedule'      => SelfReschedule::status( $booking ),
+			// beta.6.6: fechas de entrega, aviso para liquidar y entrega rápida.
+			'delivery'        => self::delivery( $booking, $summary ),
 			'children'        => $booking['children'],
 			'adults'          => $booking['adults'],
+		);
+	}
+
+	/** Recuadro "Fecha de entrega estimada" (null = el servicio no tiene días de entrega). */
+	private static function delivery( array $booking, array $summary ): ?array {
+		if ( ! in_array( $booking['status'], array_merge( BookingStatus::active(), array( BookingStatus::COMPLETED ) ), true ) ) {
+			return null;
+		}
+		$range = Delivery::range( $booking );
+		if ( ! $range ) {
+			return null;
+		}
+		$fast    = null;
+		$service = Services::find( $booking['service_id'] );
+		if ( Delivery::canAddFast( $booking ) ) {
+			$fastRange = Delivery::range( $booking, true );
+			$fast      = array(
+				'label'     => (string) $service['fast_delivery']['label'],
+				'price_txt' => Money::format( (int) $service['fast_delivery']['price_cents'] ),
+				'range_txt' => $fastRange ? Delivery::rangeText( $fastRange ) : '',
+			);
+		}
+		return array(
+			'range_txt'   => Delivery::rangeText( $range ),
+			'paid'        => $summary['balance_cents'] <= 0,
+			'balance_txt' => Money::format( max( 0, (int) $summary['balance_cents'] ) ),
+			'has_fast'    => Delivery::hasFast( $booking ),
+			'fast'        => $fast,
 		);
 	}
 

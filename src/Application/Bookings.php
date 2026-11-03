@@ -795,6 +795,8 @@ final class Bookings {
 		if ( $result['event'] ) {
 			Notifications::bookingEvent( $result['event'], $booking, array( 'amount_cents' => $amount, 'payment_id' => $result['payment_id'] ) );
 		}
+		// beta.6.6: si con este pago se liquida una sesión ya realizada, aviso de entrega.
+		Delivery::afterPayment( $booking );
 		return $booking;
 	}
 
@@ -1339,11 +1341,11 @@ final class Bookings {
 		return self::get( $bookingId );
 	}
 
-	public static function complete( int $bookingId ): array {
+	public static function complete( int $bookingId, string $reason = 'Sesión realizada.' ): array {
 		Db::transaction(
-			static function () use ( $bookingId ) {
+			static function () use ( $bookingId, $reason ) {
 				$booking = self::get( $bookingId, true );
-				self::transition( $booking, BookingStatus::COMPLETED, 'Sesión realizada.' );
+				self::transition( $booking, BookingStatus::COMPLETED, $reason );
 				if ( ! $booking['session_counted'] ) {
 					Clients::adjustCompleted( $booking['client_id'], 1, 'Reserva ' . $booking['public_ref'] . ' completada.' );
 					Db::wpdb()->update( Schema::table( 'bookings' ), array( 'session_counted' => 1 ), array( 'id' => $bookingId ) );

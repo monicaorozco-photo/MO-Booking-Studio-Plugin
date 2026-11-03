@@ -1,5 +1,17 @@
 # Cambios
 
+## 0.2.0-beta.6.6 — 3 de noviembre de 2026
+
+Sin cambios de base de datos.
+
+- **Cliente frecuente:** "Ya me he tomado fotos con ustedes" reconoce a quien tenga al menos 1 sesión registrada: "¡Qué gusto verte de nuevo, [nombre]! Ya tenemos tus datos, así que puedes continuar con tu reserva." El precio de cliente frecuente sigue aplicando desde el número de sesiones de *Ajustes* (3). Si no la encuentra: "¡Ups! No pudimos encontrar tus datos…" con [← Intentar con otros datos] y [Continuar como cliente nuevo →] (queda "frecuente por revisar"). El historial del expediente guarda por qué no se reconoció.
+- **Preventa:** "✨ Estás reservando con precio de preventa, válido hasta el [fecha]" para todas, mientras la preventa esté vigente.
+- **Sesión realizada automática:** 15 minutos después de que termina, la cita confirmada se marca como realizada (suma la sesión al expediente) y la clienta recibe "Gracias por tu sesión" con la fecha de entrega "a más tardar el…" y, si tiene saldo, el aviso de que los días de entrega empiezan a correr al liquidar. Si marcas inasistencia antes, no se envía. Aviso editable en *Notificaciones*.
+- **Fechas de entrega:** cada servicio tiene "Días hábiles de entrega" y "Días hábiles de la entrega rápida" (de … a …). Se cuentan desde el día siguiente a la sesión, sin fines de semana ni días festivos de México (incluye Viernes Santo).
+- **Aviso al liquidar después de la sesión** con la fecha de entrega contada desde el pago (editable).
+- **Página de reserva:** recuadro "Fecha de entrega estimada" con el rango de fechas, aviso "Liquida tu sesión" con el saldo y, hasta que termina el día de la sesión, el botón para **agregar entrega rápida** (pide confirmar, se suma al total y al saldo; avisos a la clienta y a ti, editables).
+- Nuevos códigos para los avisos: `{{entrega}}`, `{{entrega_rango}}` y `{{aviso_saldo}}`.
+
 ## 0.2.0-beta.6.5.2 — 30 de octubre de 2026
 
 Corrección de la 6.5.1 (Google Calendar). Sin cambios de base de datos.

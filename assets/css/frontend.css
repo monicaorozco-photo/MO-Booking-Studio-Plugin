@@ -414,3 +414,8 @@
 .mo-booking .mo-booking__slots .mo-booking__slot--off, .mo-booking .mo-booking__slots .mo-booking__slot--off:hover, .mo-booking .mo-booking__slots .mo-booking__slot--off:disabled { background: var(--mo-slot-off-bg) !important; color: var(--mo-slot-off-text) !important; border-color: transparent !important; opacity: 1 !important; cursor: not-allowed; }
 .mo-booking .mo-booking__slots .mo-booking__slot--selected, .mo-booking .mo-booking__slots .mo-booking__slot--selected:hover, .mo-booking .mo-booking__slots .mo-booking__slot--selected:focus, .mo-booking .mo-booking__slots .mo-booking__slot--selected:active { background: var(--mo-selected) !important; color: var(--mo-primary-contrast) !important; border-color: var(--mo-selected) !important; font-weight: 600; }
 .mo-booking button:focus-visible, .mo-booking a:focus-visible { outline: 2px solid var(--mo-selected) !important; outline-offset: 2px; }
+/* beta.6.6: fecha de entrega estimada y entrega rápida desde la página de reserva. */
+.mo-booking__delivery-range { margin: 0 0 12px; font-size: 15px; }
+.mo-booking .mo-booking__alert--soft { background: var(--mo-surface); border: 1px solid var(--mo-border); color: var(--mo-text); }
+.mo-booking__fast-offer { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--mo-border); }
+.mo-booking__fast-offer p { margin: 0 0 10px; }

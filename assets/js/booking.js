@@ -48,7 +48,7 @@
 		this.config = config;
 		this.api = function (path, options) { return M.api(config.api, path, options); };
 		this.state = {
-			step: 0, welcome: 'choose', frequentToken: null, locked: {}, identify: { name: '', email: '', phone: '', phone_country: 'MX' }, identifyMessage: '', service: null, year: null, month: null, days: {}, selectedDate: null, selectedSlot: null,
+			step: 0, welcome: 'choose', frequentToken: null, knownClient: false, locked: {}, identify: { name: '', email: '', phone: '', phone_country: 'MX' }, identifyMessage: '', service: null, year: null, month: null, days: {}, selectedDate: null, selectedSlot: null,
 			form: { children: '', adults: '', pets: '', important_info: '', extras: {}, answers: {}, fast_delivery: false, accept_contract: false, name: '', email: '', phone: '', phone_country: 'MX', whatsapp_consent: false, frequent_claim: false },
 			quote: null, idempotencyKey: null, result: null, csrf: null, message: '', busy: false
 		};
@@ -287,6 +287,7 @@
 			s.form.frequent_claim = true;
 			// beta.6.6: la encontramos pero aún no tiene el precio de frecuente: precios generales, sin revisión.
 			if (!res.data.frequent && res.data.recognized) {
+				s.knownClient = true;
 				s.frequentToken = null;
 				s.locked = {};
 				s.form.frequent_claim = false;
@@ -295,12 +296,14 @@
 				return;
 			}
 			if (res.data.frequent) {
+				s.knownClient = true;
 				s.frequentToken = res.data.token;
 				s.locked = res.data.locked || {};
 				self.openCalendar();
 				s.message = res.data.message; s.messageOk = true;
 				return;
 			}
+			s.knownClient = false;
 			s.frequentToken = null;
 			s.locked = {};
 			s.identifyMessage = res.data.message;
@@ -350,7 +353,7 @@
 			} else if (info && info.status === 'sold_out') {
 				cls += ' mo-booking__day--soldout';
 				extra = '<span class="mo-booking__soldout-mark" aria-hidden="true">✕</span>';
-				label += ', ' + String(this.text('slot_taken', 'No disponible')).toLowerCase();
+				label += ', ' + String(this.text('soldout_date', 'Horarios agotados')).toLowerCase();
 			} else {
 				cls += ' mo-booking__day--closed';
 				label += ', sin horarios';
@@ -416,7 +419,7 @@
 		if (has.presale) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--presale" aria-hidden="true"></span> Precio de preventa</li>'); }
 		if (has.regular) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--regular" aria-hidden="true"></span> ' + (has.presale ? 'Precio regular' : 'Fecha disponible') + '</li>'); }
 		if (has.special) { items.push('<li>' + TAG_ICON + ' Precio especial por fecha</li>'); }
-		if (has.soldout) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--soldout" aria-hidden="true">✕</span> ' + esc(this.text('slot_taken', 'No disponible')) + '</li>'); }
+		if (has.soldout) { items.push('<li><span class="mo-booking__swatch mo-booking__swatch--soldout" aria-hidden="true">✕</span> ' + esc(this.text('soldout_date', 'Horarios agotados')) + '</li>'); }
 		items.push('<li><span class="mo-booking__swatch mo-booking__swatch--closed" aria-hidden="true"></span> Sin horarios</li>');
 		return '<ul class="mo-booking__legend" aria-label="Significado de los colores">' + items.join('') + '</ul>';
 	};
@@ -492,6 +495,8 @@
 		// beta.6.5: pregunta y ejemplo editables en Ajustes.
 		html += this.field('important_info', esc(this.text('important_label', 'Alguna información importante que debamos saber antes de tu sesión:')), '<textarea class="mo-booking__input" id="mo-f-important_info" name="important_info" rows="4" maxlength="2000" placeholder="' + esc(this.text('important_example', 'Por ejemplo: edades de los niños o algo que debamos considerar')) + '">' + esc(f.important_info) + '</textarea>', '(Opcional. Máximo 2,000 caracteres.)');
 		(svc.questions || []).forEach(function (q) {
+			// beta.6.7: "Solo para clientes nuevos" no se muestra a quien reconocimos.
+			if (q.new_only && s.knownClient) { return; }
 			var name = 'answers.' + q.key;
 			var id = 'mo-f-' + name;
 			var value = f.answers[q.key] || '';
@@ -759,6 +764,7 @@
 		if (f.phone.replace(/\D/g, '').length < 10) { return ['phone', 'Escribe tu teléfono a 10 dígitos.']; }
 		for (var i = 0; i < (svc.questions || []).length; i++) {
 			var q = svc.questions[i];
+			if (q.new_only && this.state.knownClient) { continue; }
 			if (q.required && !String(f.answers[q.key] || '').trim()) { return ['answers.' + q.key, 'Esta respuesta es obligatoria.']; }
 		}
 		if (svc.contract && !f.accept_contract) { return ['accept_contract', 'Para continuar, lee y acepta el contrato.']; }
@@ -891,6 +897,7 @@
 			return;
 		}
 		if (name === 'new-client') {
+			s.knownClient = false;
 			s.form.frequent_claim = false;
 			s.frequentToken = null;
 			s.locked = {};
@@ -898,7 +905,7 @@
 			return;
 		}
 		if (name === 'returning') { s.welcome = 'identify'; this.setStep(0); return; }
-		if (name === 'welcome-back') { s.welcome = 'choose'; s.form.frequent_claim = false; s.frequentToken = null; s.locked = {}; this.setStep(0); return; }
+		if (name === 'welcome-back') { s.knownClient = false; s.welcome = 'choose'; s.form.frequent_claim = false; s.frequentToken = null; s.locked = {}; this.setStep(0); return; }
 		if (name === 'continue-general') { s.frequentToken = null; s.locked = {}; s.form.frequent_claim = true; this.openCalendar(); return; }
 		if (name === 'to-details') {
 			var summaryForm = this.root.querySelector('[data-form=summary]');

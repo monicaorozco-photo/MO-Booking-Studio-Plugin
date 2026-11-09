@@ -312,7 +312,7 @@ final class Bookings {
 			throw new DomainException( 'invalid_request', 'Falta la clave de la solicitud. Recarga la página e intenta de nuevo.', 400 );
 		}
 		$contact = self::validateContact( $input );
-		$answers = self::validateAnswers( $service, (array) ( $input['answers'] ?? array() ) );
+		$answers = self::validateAnswers( $service, (array) ( $input['answers'] ?? array() ), self::isKnownClient( $contact ) );
 		$info    = self::validateImportantInfo( $input['important_info'] ?? '' );
 		// 6.5: copia inmutable del contrato vigente; en línea es obligatorio aceptarlo.
 		$contract = $isAdmin
@@ -593,9 +593,35 @@ final class Bookings {
 		return $text;
 	}
 
-	public static function validateAnswers( array $service, array $answers ): array {
+	/**
+	 * beta.6.7: ¿ya es cliente? Mismo criterio que "Ya me he tomado fotos con ustedes":
+	 * un expediente con su correo o teléfono y al menos 1 sesión (o categoría de frecuente).
+	 */
+	public static function isKnownClient( array $contact ): bool {
+		$ids = array_unique(
+			array_merge(
+				! empty( $contact['email_norm'] ) ? Clients::idsByEmail( (string) $contact['email_norm'] ) : array(),
+				! empty( $contact['phone_e164'] ) ? Clients::idsByPhone( (string) $contact['phone_e164'] ) : array()
+			)
+		);
+		foreach ( $ids as $id ) {
+			$client = Clients::find( (int) $id );
+			if ( $client && ( Clients::sessions( $client ) >= 1 || Pricing::CATEGORY_FREQUENT === Clients::effectiveCategory( $client ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * @param bool $knownClient Si ya es cliente, las preguntas "Solo para clientes nuevos" no se piden ni se guardan.
+	 */
+	public static function validateAnswers( array $service, array $answers, bool $knownClient = false ): array {
 		$out = array();
 		foreach ( (array) $service['questions'] as $q ) {
+			if ( $knownClient && ! empty( $q['new_only'] ) ) {
+				continue;
+			}
 			$value = $answers[ $q['key'] ] ?? '';
 			$value = is_scalar( $value ) ? trim( (string) $value ) : '';
 			if ( '' === $value ) {

@@ -1,5 +1,12 @@
 # Cambios
 
+## 0.2.0-beta.6.7 — 9 de noviembre de 2026
+
+Sin cambios de base de datos.
+
+- **Texto de fecha agotada:** nuevo campo en *Ajustes → Comunicaciones*, debajo de "Texto de horario ocupado". Es el texto de la leyenda del calendario junto a la ✕ (y lo que lee el lector de pantalla en esos días). Viene como "Horarios agotados". "Texto de horario ocupado" queda solo para cada horario apartado en la lista de horarios de una fecha ("No disponible").
+- **Preguntas solo para clientes nuevos:** en *Servicios → Preguntas adicionales*, cada pregunta tiene la casilla "Solo para clientes nuevos" (por ejemplo, "¿Dónde te enteraste de nosotros?"). No se muestra a quien el formulario reconoce con "Ya me he tomado fotos con ustedes". Además, al enviar la solicitud se revisa si el correo o el teléfono pertenecen a una clienta con al menos 1 sesión registrada: si es así, la pregunta no se exige ni se guarda.
+
 ## 0.2.0-beta.6.6 — 3 de noviembre de 2026
 
 Sin cambios de base de datos.

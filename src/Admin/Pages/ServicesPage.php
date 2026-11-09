@@ -154,10 +154,10 @@ final class ServicesPage {
 			$options = isset( $q['options'] ) ? ( is_array( $q['options'] ) ? implode( "\n", $q['options'] ) : (string) $q['options'] ) : '';
 			$rows   .= '<tr><td>' . Ui::input( "questions[$i][order]", (string) ( $i + 1 ), 'number', array( 'class' => 'small-text', 'min' => 1, 'aria-label' => 'Orden' ) ) . '</td><td>' . Ui::input( "questions[$i][label]", $q['label'] ?? '', 'text', array( 'placeholder' => 'Pregunta', 'aria-label' => 'Pregunta' ) ) . Ui::input( "questions[$i][key]", $q['key'] ?? '', 'hidden' ) . '</td>' .
 				'<td>' . Ui::select( "questions[$i][type]", $types, $q['type'] ?? 'text', array( 'aria-label' => 'Tipo' ) ) . '</td>' .
-				'<td>' . Ui::checkbox( "questions[$i][required]", ! empty( $q['required'] ), 'Obligatoria' ) . '</td>' .
+				'<td>' . Ui::checkbox( "questions[$i][required]", ! empty( $q['required'] ), 'Obligatoria' ) . '<br>' . Ui::checkbox( "questions[$i][new_only]", ! empty( $q['new_only'] ), 'Solo para clientes nuevos' ) . '</td>' .
 				'<td>' . Ui::textarea( "questions[$i][options]", $options, 2, array( 'placeholder' => 'Opciones, una por línea (solo selección)', 'aria-label' => 'Opciones' ) ) . '</td></tr>';
 		}
-		echo Ui::card( 'Preguntas adicionales', '<p class="description">Aparecen después de los datos de contacto y antes de la entrega rápida, en el orden indicado. Deja la pregunta vacía para retirarla; las reservas ya hechas conservan la pregunta y la respuesta tal como estaban. Las respuestas se guardan como texto.</p><table class="widefat mo-repeat"><thead><tr><th>Orden</th><th>Pregunta</th><th>Tipo</th><th></th><th>Opciones</th></tr></thead><tbody>' . $rows . '</tbody></table><p><button type="button" class="button" data-mo-add-row>Agregar fila</button></p>' ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo Ui::card( 'Preguntas adicionales', '<p class="description">Aparecen después de los datos de contacto y antes de la entrega rápida, en el orden indicado. Deja la pregunta vacía para retirarla; las reservas ya hechas conservan la pregunta y la respuesta tal como estaban. Las respuestas se guardan como texto. "Solo para clientes nuevos" oculta la pregunta a quien ya tiene al menos una sesión registrada (la reconocemos por su correo o teléfono).</p><table class="widefat mo-repeat"><thead><tr><th>Orden</th><th>Pregunta</th><th>Tipo</th><th></th><th>Opciones</th></tr></thead><tbody>' . $rows . '</tbody></table><p><button type="button" class="button" data-mo-add-row>Agregar fila</button></p>' ); // phpcs:ignore WordPress.Security.EscapeOutput
 
 		// 6.3 campo 10: entrega rápida (extra con precio; se congela en cada reserva).
 		$fast  = (array) $v( 'fast_delivery', array() );
@@ -243,6 +243,7 @@ final class ServicesPage {
 				'label'    => sanitize_text_field( (string) $q['label'] ),
 				'type'     => sanitize_key( (string) ( $q['type'] ?? 'text' ) ),
 				'required' => ! empty( $q['required'] ),
+				'new_only' => ! empty( $q['new_only'] ),
 				'options'  => array_map( 'sanitize_text_field', explode( "\n", (string) ( $q['options'] ?? '' ) ) ),
 			);
 		}

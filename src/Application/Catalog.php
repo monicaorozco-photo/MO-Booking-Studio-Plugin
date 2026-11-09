@@ -70,6 +70,7 @@ final class Catalog {
 			// beta.4: textos editables del formulario.
 			'texts'                 => array(
 				'slot_taken'        => (string) Settings::get( 'slot_taken_label' ) ?: 'No disponible',
+				'soldout_date'      => (string) Settings::get( 'soldout_date_label' ) ?: 'Horarios agotados',
 				'contract_notice'   => (string) Settings::get( 'contract_notice' ),
 				'important_label'   => (string) Settings::get( 'important_info_label' ),
 				'important_example' => (string) Settings::get( 'important_info_placeholder' ),

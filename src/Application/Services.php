@@ -388,6 +388,8 @@ final class Services {
 				'type'     => $type,
 				'required' => ! empty( $q['required'] ),
 				'options'  => $options,
+				// beta.6.7: solo se muestra a quien el formulario no reconoce como cliente.
+				'new_only' => ! empty( $q['new_only'] ),
 			);
 		}
 		$c['questions'] = $questions;

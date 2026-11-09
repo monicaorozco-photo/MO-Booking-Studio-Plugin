@@ -56,6 +56,8 @@ final class Settings {
 			'label_price_discounted'   => 'Precio con descuento',
 			// beta.4: textos del formulario público.
 			'slot_taken_label'          => 'No disponible',
+			// beta.6.7: leyenda y días con ✕ (fecha sin horarios libres), aparte de cada horario ocupado.
+			'soldout_date_label'        => 'Horarios agotados',
 			// Mensajes que tú envías desde el panel: app de WhatsApp o WhatsApp Web.
 			'whatsapp_open'             => 'app',
 			// beta.6: cambio de fecha por la clienta (apagado hasta que lo actives).
